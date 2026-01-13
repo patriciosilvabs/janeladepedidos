@@ -24,17 +24,18 @@ export function useSettings() {
   const queryClient = useQueryClient();
 
   const { data: settings, isLoading, error } = useQuery({
-    queryKey: ['settings'],
+    queryKey: ['app-settings'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_settings')
         .select('*')
         .eq('id', 'default')
-        .single();
+        .maybeSingle();
 
       if (error) throw error;
-      return data as AppSettings;
+      return data as AppSettings | null;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const saveSettings = useMutation({
@@ -50,7 +51,7 @@ export function useSettings() {
       return data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.invalidateQueries({ queryKey: ['app-settings'] });
     },
   });
 

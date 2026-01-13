@@ -9,16 +9,17 @@ export function useOrders() {
 
   // Fetch settings
   const { data: settings } = useQuery({
-    queryKey: ['settings'],
+    queryKey: ['app-settings'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('app_settings')
         .select('*')
         .eq('id', 'default')
-        .single();
+        .maybeSingle();
       if (error) throw error;
       return data;
     },
+    staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
   const GROUPING_RADIUS_KM = settings?.grouping_radius_km || 2;
