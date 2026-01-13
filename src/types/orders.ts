@@ -1,0 +1,33 @@
+export interface Order {
+  id: string;
+  external_id: string | null;
+  customer_name: string;
+  customer_phone: string | null;
+  address: string;
+  neighborhood: string | null;
+  lat: number;
+  lng: number;
+  status: 'pending' | 'waiting_buffer' | 'dispatched';
+  group_id: string | null;
+  items: any;
+  total_amount: number | null;
+  notes: string | null;
+  created_at: string;
+  ready_at: string | null;
+  dispatched_at: string | null;
+}
+
+export interface DeliveryGroup {
+  id: string;
+  center_lat: number;
+  center_lng: number;
+  order_count: number;
+  max_orders: number;
+  created_at: string;
+  dispatched_at: string | null;
+  status: 'waiting' | 'dispatched';
+}
+
+export interface OrderWithGroup extends Order {
+  delivery_groups?: DeliveryGroup | null;
+}
