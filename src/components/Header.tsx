@@ -1,6 +1,7 @@
 import { Truck, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQueryClient } from '@tanstack/react-query';
+import { SettingsDialog } from '@/components/SettingsDialog';
 
 export function Header() {
   const queryClient = useQueryClient();
@@ -22,7 +23,8 @@ export function Header() {
           </p>
         </div>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        <SettingsDialog />
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
         </Button>

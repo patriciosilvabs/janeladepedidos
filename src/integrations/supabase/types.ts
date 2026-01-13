@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      app_settings: {
+        Row: {
+          buffer_timeout_minutes: number | null
+          cardapioweb_api_token: string | null
+          cardapioweb_api_url: string | null
+          cardapioweb_enabled: boolean | null
+          cardapioweb_webhook_token: string | null
+          created_at: string | null
+          default_city: string | null
+          default_country: string | null
+          default_region: string | null
+          foody_api_token: string | null
+          foody_api_url: string | null
+          foody_enabled: boolean | null
+          grouping_radius_km: number | null
+          id: string
+          max_orders_per_group: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          buffer_timeout_minutes?: number | null
+          cardapioweb_api_token?: string | null
+          cardapioweb_api_url?: string | null
+          cardapioweb_enabled?: boolean | null
+          cardapioweb_webhook_token?: string | null
+          created_at?: string | null
+          default_city?: string | null
+          default_country?: string | null
+          default_region?: string | null
+          foody_api_token?: string | null
+          foody_api_url?: string | null
+          foody_enabled?: boolean | null
+          grouping_radius_km?: number | null
+          id?: string
+          max_orders_per_group?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          buffer_timeout_minutes?: number | null
+          cardapioweb_api_token?: string | null
+          cardapioweb_api_url?: string | null
+          cardapioweb_enabled?: boolean | null
+          cardapioweb_webhook_token?: string | null
+          created_at?: string | null
+          default_city?: string | null
+          default_country?: string | null
+          default_region?: string | null
+          foody_api_token?: string | null
+          foody_api_url?: string | null
+          foody_enabled?: boolean | null
+          grouping_radius_km?: number | null
+          id?: string
+          max_orders_per_group?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       delivery_groups: {
         Row: {
           center_lat: number
@@ -50,56 +107,92 @@ export type Database = {
       orders: {
         Row: {
           address: string
+          cardapioweb_order_id: string | null
+          city: string | null
+          country: string | null
           created_at: string
           customer_name: string
           customer_phone: string | null
+          delivery_fee: number | null
           dispatched_at: string | null
           external_id: string | null
+          foody_error: string | null
+          foody_status: string | null
+          foody_uid: string | null
           group_id: string | null
+          house_number: string | null
           id: string
           items: Json | null
           lat: number
           lng: number
           neighborhood: string | null
           notes: string | null
+          payment_method: string | null
+          postal_code: string | null
           ready_at: string | null
+          region: string | null
           status: string
+          street: string | null
           total_amount: number | null
         }
         Insert: {
           address: string
+          cardapioweb_order_id?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string
           customer_name: string
           customer_phone?: string | null
+          delivery_fee?: number | null
           dispatched_at?: string | null
           external_id?: string | null
+          foody_error?: string | null
+          foody_status?: string | null
+          foody_uid?: string | null
           group_id?: string | null
+          house_number?: string | null
           id?: string
           items?: Json | null
           lat: number
           lng: number
           neighborhood?: string | null
           notes?: string | null
+          payment_method?: string | null
+          postal_code?: string | null
           ready_at?: string | null
+          region?: string | null
           status?: string
+          street?: string | null
           total_amount?: number | null
         }
         Update: {
           address?: string
+          cardapioweb_order_id?: string | null
+          city?: string | null
+          country?: string | null
           created_at?: string
           customer_name?: string
           customer_phone?: string | null
+          delivery_fee?: number | null
           dispatched_at?: string | null
           external_id?: string | null
+          foody_error?: string | null
+          foody_status?: string | null
+          foody_uid?: string | null
           group_id?: string | null
+          house_number?: string | null
           id?: string
           items?: Json | null
           lat?: number
           lng?: number
           neighborhood?: string | null
           notes?: string | null
+          payment_method?: string | null
+          postal_code?: string | null
           ready_at?: string | null
+          region?: string | null
           status?: string
+          street?: string | null
           total_amount?: number | null
         }
         Relationships: [

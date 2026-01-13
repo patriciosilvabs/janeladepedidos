@@ -4,11 +4,25 @@ import { Order, DeliveryGroup, OrderWithGroup } from '@/types/orders';
 import { isWithinRadius } from '@/lib/geo';
 import { useEffect } from 'react';
 
-const GROUPING_RADIUS_KM = 2;
-const MAX_ORDERS_PER_GROUP = 3;
-
 export function useOrders() {
   const queryClient = useQueryClient();
+
+  // Fetch settings
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('app_settings')
+        .select('*')
+        .eq('id', 'default')
+        .single();
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  const GROUPING_RADIUS_KM = settings?.grouping_radius_km || 2;
+  const MAX_ORDERS_PER_GROUP = settings?.max_orders_per_group || 3;
 
   // Fetch all orders
   const { data: orders = [], isLoading, error } = useQuery({
@@ -114,43 +128,48 @@ export function useOrders() {
     },
   });
 
-  // Dispatch a group
+  // Dispatch a group via edge function
   const dispatchGroup = useMutation({
     mutationFn: async (groupId: string) => {
-      const now = new Date().toISOString();
+      // Get all orders in the group
+      const groupOrders = orders.filter((o) => o.group_id === groupId);
+      const orderIds = groupOrders.map((o) => o.id);
 
-      // Update all orders in the group
-      const { error: ordersError } = await supabase
-        .from('orders')
-        .update({ status: 'dispatched', dispatched_at: now })
-        .eq('group_id', groupId);
+      if (orderIds.length === 0) {
+        throw new Error('Nenhum pedido encontrado no grupo');
+      }
 
-      if (ordersError) throw ordersError;
+      // Call edge function to dispatch to Foody
+      const { data, error } = await supabase.functions.invoke('dispatch-to-foody', {
+        body: { orderIds, groupId },
+      });
 
-      // Update group status
-      const { error: groupError } = await supabase
-        .from('delivery_groups')
-        .update({ status: 'dispatched', dispatched_at: now })
-        .eq('id', groupId);
+      if (error) throw error;
+      if (!data.success && data.errors > 0) {
+        throw new Error(`Alguns pedidos falharam: ${data.errorDetails?.map((e: any) => e.error).join(', ')}`);
+      }
 
-      if (groupError) throw groupError;
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
 
-  // Force dispatch a single order
+  // Force dispatch a single order via edge function
   const forceDispatch = useMutation({
     mutationFn: async (orderId: string) => {
-      const now = new Date().toISOString();
-
-      const { error } = await supabase
-        .from('orders')
-        .update({ status: 'dispatched', dispatched_at: now })
-        .eq('id', orderId);
+      // Call edge function to dispatch to Foody
+      const { data, error } = await supabase.functions.invoke('dispatch-to-foody', {
+        body: { orderIds: [orderId] },
+      });
 
       if (error) throw error;
+      if (!data.success && data.errors > 0) {
+        throw new Error(data.errorDetails?.[0]?.error || 'Erro ao despachar pedido');
+      }
+
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
