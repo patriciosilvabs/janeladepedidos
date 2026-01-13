@@ -29,8 +29,14 @@ Deno.serve(async (req) => {
     const startDate = `${day}/${month}/${year}`;
     const endDate = startDate;
 
+    // URL encode the dates (slashes need to be encoded)
+    const encodedStartDate = encodeURIComponent(startDate);
+    const encodedEndDate = encodeURIComponent(endDate);
+    
+    console.log('Testing Foody connection with dates:', startDate, 'to', endDate);
+    
     const response = await fetch(
-      `${baseUrl}/orders?startDate=${startDate}&endDate=${endDate}`,
+      `${baseUrl}/orders?startDate=${encodedStartDate}&endDate=${encodedEndDate}`,
       {
         method: 'GET',
         headers: {
