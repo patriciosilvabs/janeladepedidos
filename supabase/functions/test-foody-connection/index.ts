@@ -21,8 +21,12 @@ Deno.serve(async (req) => {
     const baseUrl = url || 'https://app.foodydelivery.com/rest/1.2';
     
     // Test connection by fetching orders from today
+    // Foody API expects dates in DD/MM/YYYY format
     const today = new Date();
-    const startDate = today.toISOString().split('T')[0];
+    const day = String(today.getDate()).padStart(2, '0');
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const year = today.getFullYear();
+    const startDate = `${day}/${month}/${year}`;
     const endDate = startDate;
 
     const response = await fetch(
