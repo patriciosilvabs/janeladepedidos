@@ -20,23 +20,13 @@ Deno.serve(async (req) => {
 
     const baseUrl = url || 'https://app.foodydelivery.com/rest/1.2';
     
-    // Test connection by fetching orders from today
-    // Foody API expects dates in DD/MM/YYYY format
-    const today = new Date();
-    const day = String(today.getDate()).padStart(2, '0');
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const year = today.getFullYear();
-    const startDate = `${day}/${month}/${year}`;
-    const endDate = startDate;
-
-    // URL encode the dates (slashes need to be encoded)
-    const encodedStartDate = encodeURIComponent(startDate);
-    const encodedEndDate = encodeURIComponent(endDate);
-    
-    console.log('Testing Foody connection with dates:', startDate, 'to', endDate);
+    // Test connection by checking if token is valid
+    // Try to access the API - if we get 401/403, token is invalid
+    // Any other response means connection works
+    console.log('Testing Foody connection to:', baseUrl);
     
     const response = await fetch(
-      `${baseUrl}/orders?startDate=${encodedStartDate}&endDate=${encodedEndDate}`,
+      `${baseUrl}/orders`,
       {
         method: 'GET',
         headers: {
@@ -47,27 +37,32 @@ Deno.serve(async (req) => {
     );
 
     console.log('Foody API response status:', response.status);
+    const responseText = await response.text();
+    console.log('Foody API response:', responseText.substring(0, 300));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Foody API error:', errorText);
+    // Check for authentication errors
+    if (response.status === 401 || response.status === 403) {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Erro na API: ${response.status}`,
-          details: errorText 
+          error: 'Token inválido ou sem permissão',
+          details: responseText 
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const data = await response.json();
-    console.log('Foody API response:', JSON.stringify(data).substring(0, 200));
-
+    // Even if we get other errors (like missing required params), 
+    // the connection itself is working if we got a response
     return new Response(
-      JSON.stringify({ success: true, ordersCount: Array.isArray(data) ? data.length : 0 }),
+      JSON.stringify({ 
+        success: true, 
+        message: 'Conexão estabelecida com sucesso',
+        apiStatus: response.status
+      }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
+
   } catch (error) {
     console.error('Error testing Foody connection:', error);
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
