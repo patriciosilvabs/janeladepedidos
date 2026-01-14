@@ -132,6 +132,7 @@ export type Database = {
           ready_at: string | null
           region: string | null
           status: string
+          store_id: string | null
           street: string | null
           total_amount: number | null
         }
@@ -162,6 +163,7 @@ export type Database = {
           ready_at?: string | null
           region?: string | null
           status?: string
+          store_id?: string | null
           street?: string | null
           total_amount?: number | null
         }
@@ -192,6 +194,7 @@ export type Database = {
           ready_at?: string | null
           region?: string | null
           status?: string
+          store_id?: string | null
           street?: string | null
           total_amount?: number | null
         }
@@ -203,7 +206,53 @@ export type Database = {
             referencedRelation: "delivery_groups"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "orders_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
         ]
+      }
+      stores: {
+        Row: {
+          cardapioweb_api_token: string | null
+          cardapioweb_api_url: string | null
+          cardapioweb_enabled: boolean | null
+          created_at: string
+          default_city: string | null
+          default_country: string | null
+          default_region: string | null
+          id: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          cardapioweb_api_token?: string | null
+          cardapioweb_api_url?: string | null
+          cardapioweb_enabled?: boolean | null
+          created_at?: string
+          default_city?: string | null
+          default_country?: string | null
+          default_region?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          cardapioweb_api_token?: string | null
+          cardapioweb_api_url?: string | null
+          cardapioweb_enabled?: boolean | null
+          created_at?: string
+          default_city?: string | null
+          default_country?: string | null
+          default_region?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
