@@ -8,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export function Header() {
   const queryClient = useQueryClient();
-  const { user, isOwner, signOut } = useAuth();
+  const { user, isOwner, isAdmin, signOut } = useAuth();
   const { toast } = useToast();
 
   const handleRefresh = () => {
@@ -53,7 +53,7 @@ export function Header() {
             </span>
           </div>
         )}
-        <SettingsDialog />
+        {isAdmin && <SettingsDialog />}
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
         </Button>

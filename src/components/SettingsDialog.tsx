@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StoresManager } from '@/components/StoresManager';
+import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -14,10 +15,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useSettings, AppSettings } from '@/hooks/useSettings';
+import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export function SettingsDialog() {
   const { settings, isLoading, saveSettings } = useSettings();
+  const { isOwner, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
   const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
@@ -86,13 +89,19 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className="grid w-full grid-cols-3">
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4' : 'grid-cols-3'}`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
               </TabsTrigger>
               <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio</TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
+              {isOwner && (
+                <TabsTrigger value="users" className="text-xs sm:text-sm">
+                  <Users className="h-3 w-3 mr-1 hidden sm:inline" />
+                  Usuários
+                </TabsTrigger>
+              )}
             </TabsList>
 
             <TabsContent value="stores" className="space-y-4 mt-4">
@@ -182,6 +191,12 @@ export function SettingsDialog() {
                 />
               </div>
             </TabsContent>
+
+            {isOwner && (
+              <TabsContent value="users" className="space-y-4 mt-4">
+                <UsersAdminPanel />
+              </TabsContent>
+            )}
 
           </Tabs>
         )}
