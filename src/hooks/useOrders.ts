@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Order, DeliveryGroup, OrderWithGroup } from '@/types/orders';
 import { isWithinRadius } from '@/lib/geo';
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 export function useOrders() {
   const queryClient = useQueryClient();
@@ -26,7 +26,7 @@ export function useOrders() {
   const MAX_ORDERS_PER_GROUP = settings?.max_orders_per_group || 3;
 
   // Fetch all orders
-  const { data: orders = [], isLoading, error } = useQuery({
+  const { data: orders = [], isLoading, isFetching, error } = useQuery({
     queryKey: ['orders'],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -37,34 +37,46 @@ export function useOrders() {
       if (error) throw error;
       return data as OrderWithGroup[];
     },
+    placeholderData: (previousData) => previousData, // Keep previous data during refetch
+    staleTime: 1000, // 1 second cache
   });
 
-  // Real-time subscription
+  // Debounced realtime subscription to prevent flickering
+  const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  const debouncedInvalidate = useCallback(() => {
+    if (debounceTimeoutRef.current) {
+      clearTimeout(debounceTimeoutRef.current);
+    }
+    debounceTimeoutRef.current = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    }, 500); // 500ms debounce
+  }, [queryClient]);
+
   useEffect(() => {
     const channel = supabase
       .channel('orders-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-        }
+        debouncedInvalidate
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'delivery_groups' },
-        () => {
-          queryClient.invalidateQueries({ queryKey: ['orders'] });
-        }
+        debouncedInvalidate
       )
       .subscribe();
 
     return () => {
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
+      }
       supabase.removeChannel(channel);
     };
-  }, [queryClient]);
+  }, [queryClient, debouncedInvalidate]);
 
-  // Mark order as ready and add to buffer
+  // Mark order as ready and add to buffer with optimistic update
   const markAsReady = useMutation({
     mutationFn: async (orderId: string) => {
       const order = orders.find((o) => o.id === orderId);
@@ -123,8 +135,35 @@ export function useOrders() {
         .eq('id', orderId);
 
       if (error) throw error;
+      
+      return { orderId, groupId };
     },
-    onSuccess: () => {
+    onMutate: async (orderId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['orders'] });
+      
+      // Snapshot previous value
+      const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
+      
+      // Optimistically update the order status
+      queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
+        old?.map((order) =>
+          order.id === orderId
+            ? { ...order, status: 'waiting_buffer' as const }
+            : order
+        ) ?? []
+      );
+      
+      return { previousOrders };
+    },
+    onError: (_err, _orderId, context) => {
+      // Rollback on error
+      if (context?.previousOrders) {
+        queryClient.setQueryData(['orders'], context.previousOrders);
+      }
+    },
+    onSettled: () => {
+      // Always refetch after error or success
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
@@ -211,6 +250,7 @@ export function useOrders() {
   return {
     orders,
     isLoading,
+    isFetching,
     error,
     markAsReady,
     dispatchGroup,
