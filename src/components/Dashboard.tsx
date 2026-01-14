@@ -138,7 +138,7 @@ export function Dashboard() {
         </div>
       )}
       
-      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-3 overflow-hidden">
+      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-3 min-h-0">
       {/* Column 1: Em Produção */}
       <OrderColumn
         title="Em Produção"
