@@ -1,13 +1,28 @@
-import { Truck, RefreshCw } from 'lucide-react';
+import { Truck, RefreshCw, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useQueryClient } from '@tanstack/react-query';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { useAuth } from '@/hooks/useAuth';
+import { useToast } from '@/hooks/use-toast';
 
 export function Header() {
   const queryClient = useQueryClient();
+  const { user, signOut } = useAuth();
+  const { toast } = useToast();
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['orders'] });
+  };
+
+  const handleLogout = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Erro ao fazer logout',
+      });
+    }
   };
 
   return (
@@ -24,9 +39,17 @@ export function Header() {
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {user && (
+          <span className="text-sm text-muted-foreground hidden sm:inline">
+            {user.email}
+          </span>
+        )}
         <SettingsDialog />
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
+        </Button>
+        <Button variant="outline" size="icon" onClick={handleLogout} title="Sair">
+          <LogOut className="h-4 w-4" />
         </Button>
       </div>
     </header>
