@@ -66,9 +66,11 @@ export function Dashboard() {
     }
   };
 
-  const handleDispatchGroup = async (groupId: string) => {
+  const handleDispatchGroup = async (groupId: string): Promise<void> => {
+    console.log(`[Dashboard] Dispatching group ${groupId}`);
     try {
       const result = await dispatchGroup.mutateAsync(groupId);
+      console.log(`[Dashboard] Dispatch result for group ${groupId}:`, result);
       
       if (result.errors > 0) {
         // Orders dispatched, but notification failed
@@ -83,11 +85,14 @@ export function Dashboard() {
         });
       }
     } catch (err) {
+      console.error(`[Dashboard] Failed to dispatch group ${groupId}:`, err);
       toast({
         title: 'Erro',
         description: 'Não foi possível despachar o grupo.',
         variant: 'destructive',
       });
+      // Re-throw to allow GroupCard to handle retry logic
+      throw err;
     }
   };
 

@@ -1,15 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, Users, Truck, AlertTriangle } from 'lucide-react';
+import { Clock, Users, Truck, AlertTriangle, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface GroupCardProps {
   groupId: string;
   orders: OrderWithGroup[];
-  onDispatch: () => void;
+  onDispatch: () => Promise<void>;
   onForceDispatchOrder: (orderId: string) => void;
   timerDuration?: number;
 }
@@ -33,10 +33,40 @@ export function GroupCard({
   timerDuration = 600,
 }: GroupCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [isDispatching, setIsDispatching] = useState(false);
   const hasDispatchedRef = useRef(false);
+  const groupIdRef = useRef(groupId);
+
+  // Keep groupId ref updated
+  useEffect(() => {
+    groupIdRef.current = groupId;
+  }, [groupId]);
 
   const firstOrder = orders[0];
   const group = firstOrder?.delivery_groups;
+
+  // Memoized dispatch handler with error recovery
+  const handleAutoDispatch = useCallback(async () => {
+    if (hasDispatchedRef.current || isDispatching) {
+      console.log(`[GroupCard] Dispatch already in progress or completed for group ${groupIdRef.current}`);
+      return;
+    }
+
+    console.log(`[GroupCard] Auto-dispatching group ${groupIdRef.current}`);
+    hasDispatchedRef.current = true;
+    setIsDispatching(true);
+
+    try {
+      await onDispatch();
+      console.log(`[GroupCard] Successfully dispatched group ${groupIdRef.current}`);
+    } catch (error) {
+      console.error(`[GroupCard] Failed to dispatch group ${groupIdRef.current}:`, error);
+      // Reset flag to allow retry on next tick or manual dispatch
+      hasDispatchedRef.current = false;
+    } finally {
+      setIsDispatching(false);
+    }
+  }, [onDispatch, isDispatching]);
 
   useEffect(() => {
     if (!firstOrder?.ready_at) return;
@@ -54,14 +84,13 @@ export function GroupCard({
       const remaining = calculateTimeLeft();
       setTimeLeft(remaining);
       
-      if (remaining <= 0 && !hasDispatchedRef.current) {
-        hasDispatchedRef.current = true;
-        onDispatch();
+      if (remaining <= 0 && !hasDispatchedRef.current && !isDispatching) {
+        handleAutoDispatch();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [firstOrder?.ready_at, timerDuration, onDispatch]);
+  }, [firstOrder?.ready_at, timerDuration, handleAutoDispatch, isDispatching]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -86,11 +115,10 @@ export function GroupCard({
   const isFull = group && group.order_count >= group.max_orders;
 
   useEffect(() => {
-    if (isFull && !hasDispatchedRef.current) {
-      hasDispatchedRef.current = true;
-      onDispatch();
+    if (isFull && !hasDispatchedRef.current && !isDispatching) {
+      handleAutoDispatch();
     }
-  }, [isFull, onDispatch]);
+  }, [isFull, handleAutoDispatch, isDispatching]);
 
   return (
     <Card
@@ -156,11 +184,16 @@ export function GroupCard({
 
         <Button
           onClick={onDispatch}
+          disabled={isDispatching}
           className="w-full bg-primary hover:bg-primary/90"
           size="lg"
         >
-          <Truck className="mr-2 h-5 w-5" />
-          DESPACHAR GRUPO
+          {isDispatching ? (
+            <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+          ) : (
+            <Truck className="mr-2 h-5 w-5" />
+          )}
+          {isDispatching ? 'DESPACHANDO...' : 'DESPACHAR GRUPO'}
         </Button>
       </CardContent>
     </Card>
