@@ -8,6 +8,8 @@ const corsHeaders = {
 interface OrderToDispatch {
   id: string;
   external_id: string | null;
+  cardapioweb_order_id: string | null;
+  store_id: string | null;
   customer_name: string;
   customer_phone: string | null;
   address: string;
@@ -75,6 +77,91 @@ function formatItems(items: any): string {
     }).join(', ');
   }
   return JSON.stringify(items);
+}
+
+// Função para notificar o CardápioWeb que o pedido está pronto
+async function notifyCardapioWebReady(
+  supabase: any,
+  order: OrderToDispatch
+): Promise<{ success: boolean; error?: string }> {
+  const storeId = order.store_id;
+  const cardapiowebOrderId = order.cardapioweb_order_id;
+
+  if (!cardapiowebOrderId) {
+    console.log(`Order ${order.id} has no cardapioweb_order_id, skipping CardápioWeb notification`);
+    return { success: true };
+  }
+
+  if (!storeId) {
+    console.log(`Order ${order.id} has no store_id, skipping CardápioWeb notification`);
+    return { success: true };
+  }
+
+  // Buscar configurações da loja
+  const { data: store, error: storeError } = await supabase
+    .from('stores')
+    .select('cardapioweb_api_url, cardapioweb_api_token, cardapioweb_enabled')
+    .eq('id', storeId)
+    .single();
+
+  if (storeError) {
+    console.error(`Error fetching store ${storeId}:`, storeError);
+    return { success: false, error: `Store fetch error: ${storeError.message}` };
+  }
+
+  if (!store?.cardapioweb_enabled || !store?.cardapioweb_api_token) {
+    console.log(`CardápioWeb not enabled or configured for store ${storeId}`);
+    return { success: true }; // Não é erro, apenas não está configurado
+  }
+
+  const apiUrl = store.cardapioweb_api_url || 'https://integracao.cardapioweb.com';
+
+  try {
+    console.log(`Notifying CardápioWeb that order ${cardapiowebOrderId} is ready...`);
+    
+    // Tentar atualizar status no CardápioWeb para "ready"
+    // Primeiro tentamos PUT /orders/{id}/status
+    let response = await fetch(
+      `${apiUrl}/api/partner/v1/orders/${cardapiowebOrderId}/status`,
+      {
+        method: 'PUT',
+        headers: {
+          'X-API-KEY': store.cardapioweb_api_token,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ status: 'ready' }),
+      }
+    );
+
+    // Se não funcionar, tenta PATCH no pedido
+    if (!response.ok && response.status === 404) {
+      console.log('PUT /status not found, trying PATCH on order...');
+      response = await fetch(
+        `${apiUrl}/api/partner/v1/orders/${cardapiowebOrderId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'X-API-KEY': store.cardapioweb_api_token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ status: 'ready', order_status: 'ready' }),
+        }
+      );
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`CardápioWeb status update failed: ${response.status}`, errorText);
+      return { success: false, error: `CardápioWeb API Error: ${response.status} - ${errorText}` };
+    }
+
+    console.log(`CardápioWeb notified successfully: Order ${cardapiowebOrderId} is ready`);
+    return { success: true };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Error notifying CardápioWeb:', errorMsg);
+    return { success: false, error: errorMsg };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -161,6 +248,13 @@ Deno.serve(async (req) => {
 
     for (const order of orders as OrderToDispatch[]) {
       try {
+        // Primeiro, notificar o CardápioWeb que o pedido está pronto
+        const cardapioResult = await notifyCardapioWebReady(supabase, order);
+        if (!cardapioResult.success) {
+          console.warn(`CardápioWeb notification failed for order ${order.id}:`, cardapioResult.error);
+          // Registra o erro mas continua o processo - não bloqueia o despacho
+        }
+
         // Transform order to Foody format
         const foodyOrder: FoodyOrder = {
           id: (order.external_id || order.id).substring(0, 10),
