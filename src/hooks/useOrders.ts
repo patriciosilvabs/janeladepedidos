@@ -146,10 +146,9 @@ export function useOrders() {
       });
 
       if (error) throw error;
-      if (!data.success && data.errors > 0) {
-        throw new Error(`Alguns pedidos falharam: ${data.errorDetails?.map((e: any) => e.error).join(', ')}`);
-      }
-
+      
+      // Return data even with notification errors
+      // The orders were dispatched locally, only the notification failed
       return data;
     },
     onSuccess: () => {

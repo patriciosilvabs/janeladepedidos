@@ -68,11 +68,20 @@ export function Dashboard() {
 
   const handleDispatchGroup = async (groupId: string) => {
     try {
-      await dispatchGroup.mutateAsync(groupId);
-      toast({
-        title: 'Grupo despachado!',
-        description: 'Os pedidos foram enviados para o Foody Delivery.',
-      });
+      const result = await dispatchGroup.mutateAsync(groupId);
+      
+      if (result.errors > 0) {
+        // Orders dispatched, but notification failed
+        toast({
+          title: 'Grupo despachado com avisos',
+          description: `${result.processed} pedido(s) despachado(s). ${result.errors} falha(s) de notificação ao CardápioWeb. Use o botão "Reenviar" para tentar novamente.`,
+        });
+      } else {
+        toast({
+          title: 'Grupo despachado!',
+          description: `${result.processed} pedido(s) despachado(s) com sucesso.`,
+        });
+      }
     } catch (err) {
       toast({
         title: 'Erro',
