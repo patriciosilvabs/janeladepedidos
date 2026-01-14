@@ -1,6 +1,12 @@
+export interface Store {
+  id: string;
+  name: string;
+}
+
 export interface Order {
   id: string;
   external_id: string | null;
+  cardapioweb_order_id: string | null;
   customer_name: string;
   customer_phone: string | null;
   address: string;
@@ -9,6 +15,7 @@ export interface Order {
   lng: number;
   status: 'pending' | 'waiting_buffer' | 'dispatched';
   group_id: string | null;
+  store_id: string | null;
   items: any;
   total_amount: number | null;
   notes: string | null;
@@ -30,4 +37,5 @@ export interface DeliveryGroup {
 
 export interface OrderWithGroup extends Order {
   delivery_groups?: DeliveryGroup | null;
+  stores?: Store | null;
 }

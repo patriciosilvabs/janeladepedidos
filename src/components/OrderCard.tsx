@@ -85,6 +85,16 @@ export function OrderCard({
       )}
     >
       <CardHeader className="pb-2">
+        <div className="flex items-center justify-between text-xs mb-1">
+          <span className="font-mono font-bold text-primary">
+            #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
+          </span>
+          {order.stores?.name && (
+            <Badge variant="secondary" className="text-xs">
+              {order.stores.name}
+            </Badge>
+          )}
+        </div>
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-muted-foreground" />
