@@ -140,8 +140,8 @@ export function useOrders() {
         throw new Error('Nenhum pedido encontrado no grupo');
       }
 
-      // Call edge function to dispatch to Foody
-      const { data, error } = await supabase.functions.invoke('dispatch-to-foody', {
+      // Call edge function to notify CardápioWeb that orders are ready
+      const { data, error } = await supabase.functions.invoke('notify-order-ready', {
         body: { orderIds, groupId },
       });
 
@@ -160,8 +160,8 @@ export function useOrders() {
   // Force dispatch a single order via edge function
   const forceDispatch = useMutation({
     mutationFn: async (orderId: string) => {
-      // Call edge function to dispatch to Foody
-      const { data, error } = await supabase.functions.invoke('dispatch-to-foody', {
+      // Call edge function to notify CardápioWeb that order is ready
+      const { data, error } = await supabase.functions.invoke('notify-order-ready', {
         body: { orderIds: [orderId] },
       });
 

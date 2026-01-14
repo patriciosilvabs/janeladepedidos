@@ -1,6 +1,6 @@
 project_id = "wmrsekgxueceaeobxuss"
 
-[functions.dispatch-to-foody]
+[functions.notify-order-ready]
 verify_jwt = false
 
 [functions.test-cardapioweb-connection]
