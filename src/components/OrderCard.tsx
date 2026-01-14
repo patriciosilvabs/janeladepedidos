@@ -12,7 +12,7 @@ interface OrderCardProps {
   onForceDispatch?: () => void;
   onRetryNotification?: () => void;
   showTimer?: boolean;
-  timerDuration?: number; // in seconds
+  timerDuration?: number;
 }
 
 const GROUP_COLORS = [
@@ -52,210 +52,208 @@ function formatTime(dateString: string | null): string {
 }
 
 export const OrderCard = forwardRef<HTMLDivElement, OrderCardProps>(
-  function OrderCard(
-    {
+  function OrderCard(props, ref) {
+    const {
       order,
       onMarkReady,
       onForceDispatch,
       onRetryNotification,
       showTimer = false,
-      timerDuration = 600, // 10 minutes default
-    },
-    ref
-  ) {
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [timeAgo, setTimeAgo] = useState<string>('');
+      timerDuration = 600,
+    } = props;
 
-  // Update time ago every minute
-  useEffect(() => {
-    const orderTime = order.cardapioweb_created_at || order.created_at;
-    setTimeAgo(formatTimeAgo(orderTime));
+    const [timeLeft, setTimeLeft] = useState<number | null>(null);
+    const [timeAgo, setTimeAgo] = useState<string>('');
 
-    const interval = setInterval(() => {
+    useEffect(() => {
+      const orderTime = order.cardapioweb_created_at || order.created_at;
       setTimeAgo(formatTimeAgo(orderTime));
-    }, 60000); // Update every minute
 
-    return () => clearInterval(interval);
-  }, [order.cardapioweb_created_at, order.created_at]);
+      const interval = setInterval(() => {
+        setTimeAgo(formatTimeAgo(orderTime));
+      }, 60000);
 
-  useEffect(() => {
-    if (!showTimer || !order.ready_at) return;
+      return () => clearInterval(interval);
+    }, [order.cardapioweb_created_at, order.created_at]);
 
-    const calculateTimeLeft = () => {
-      const readyTime = new Date(order.ready_at!).getTime();
-      const endTime = readyTime + timerDuration * 1000;
-      const now = Date.now();
-      const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
-      return remaining;
+    useEffect(() => {
+      if (!showTimer || !order.ready_at) return;
+
+      const calculateTimeLeft = () => {
+        const readyTime = new Date(order.ready_at!).getTime();
+        const endTime = readyTime + timerDuration * 1000;
+        const now = Date.now();
+        const remaining = Math.max(0, Math.floor((endTime - now) / 1000));
+        return remaining;
+      };
+
+      setTimeLeft(calculateTimeLeft());
+
+      const interval = setInterval(() => {
+        const remaining = calculateTimeLeft();
+        setTimeLeft(remaining);
+      }, 1000);
+
+      return () => clearInterval(interval);
+    }, [showTimer, order.ready_at, timerDuration]);
+
+    const formatCountdown = (seconds: number) => {
+      const mins = Math.floor(seconds / 60);
+      const secs = seconds % 60;
+      return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
     };
 
-    setTimeLeft(calculateTimeLeft());
+    const getTimerColor = () => {
+      if (timeLeft === null) return '';
+      if (timeLeft <= 0) return 'text-red-500 animate-pulse';
+      if (timeLeft <= 120) return 'text-red-400';
+      if (timeLeft <= 300) return 'text-yellow-400';
+      return 'text-green-400';
+    };
 
-    const interval = setInterval(() => {
-      const remaining = calculateTimeLeft();
-      setTimeLeft(remaining);
-    }, 1000);
+    const getGroupColor = () => {
+      if (!order.group_id) return '';
+      const index = order.group_id.charCodeAt(0) % GROUP_COLORS.length;
+      return GROUP_COLORS[index];
+    };
 
-    return () => clearInterval(interval);
-  }, [showTimer, order.ready_at, timerDuration]);
+    const isUrgent = timeLeft !== null && timeLeft <= 120;
+    const orderTime = order.cardapioweb_created_at || order.created_at;
 
-  const formatCountdown = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getTimerColor = () => {
-    if (timeLeft === null) return '';
-    if (timeLeft <= 0) return 'text-red-500 animate-pulse';
-    if (timeLeft <= 120) return 'text-red-400';
-    if (timeLeft <= 300) return 'text-yellow-400';
-    return 'text-green-400';
-  };
-
-  const getGroupColor = () => {
-    if (!order.group_id) return '';
-    const index = order.group_id.charCodeAt(0) % GROUP_COLORS.length;
-    return GROUP_COLORS[index];
-  };
-
-  const isUrgent = timeLeft !== null && timeLeft <= 120;
-  const orderTime = order.cardapioweb_created_at || order.created_at;
-
-  return (
-    <Card
-      ref={ref}
-      className={cn(
-        'border-border/50 bg-card/80 backdrop-blur transition-all duration-300',
-        isUrgent && 'border-red-500/50 shadow-red-500/20 shadow-lg'
-      )}
-    >
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between text-xs mb-1">
-          <span className="font-mono font-bold text-primary">
-            #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
-          </span>
-          <div className="flex items-center gap-2">
-            {timeAgo && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <Timer className="h-3 w-3" />
-                {timeAgo}
-                {orderTime && (
-                  <span className="text-muted-foreground/70">
-                    ({formatTime(orderTime)})
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-xs mb-1">
-          {order.stores?.name && (
-            <Badge variant="secondary" className="text-xs">
-              {order.stores.name}
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <User className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-foreground">{order.customer_name}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {order.group_id && (
-              <Badge className={cn('text-white', getGroupColor())}>
-                Grupo {order.group_id.slice(0, 4).toUpperCase()}
-              </Badge>
-            )}
-            {order.delivery_groups && (
-              <Badge variant="outline">
-                {order.delivery_groups.order_count}/{order.delivery_groups.max_orders}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-start gap-2 text-sm text-muted-foreground">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p>{order.address}</p>
-            {order.neighborhood && (
-              <p className="text-xs text-muted-foreground/70">{order.neighborhood}</p>
-            )}
-          </div>
-        </div>
-
-        {order.customer_phone && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Phone className="h-4 w-4" />
-            <span>{order.customer_phone}</span>
-          </div>
+    return (
+      <Card
+        ref={ref}
+        className={cn(
+          'border-border/50 bg-card/80 backdrop-blur transition-all duration-300',
+          isUrgent && 'border-red-500/50 shadow-red-500/20 shadow-lg'
         )}
-
-        {order.total_amount && (
-          <div className="flex items-center gap-2 text-sm">
-            <Package className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-foreground">
-              R$ {order.total_amount.toFixed(2)}
+      >
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="font-mono font-bold text-primary">
+              #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
             </span>
+            <div className="flex items-center gap-2">
+              {timeAgo && (
+                <span className="flex items-center gap-1 text-muted-foreground">
+                  <Timer className="h-3 w-3" />
+                  {timeAgo}
+                  {orderTime && (
+                    <span className="text-muted-foreground/70">
+                      ({formatTime(orderTime)})
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
           </div>
-        )}
-
-        {showTimer && timeLeft !== null && (
-          <div
-            className={cn(
-              'flex items-center justify-center gap-2 rounded-lg bg-muted/50 py-3 font-mono text-2xl font-bold',
-              getTimerColor()
+          <div className="flex items-center justify-between text-xs mb-1">
+            {order.stores?.name && (
+              <Badge variant="secondary" className="text-xs">
+                {order.stores.name}
+              </Badge>
             )}
-          >
-            {isUrgent && <AlertTriangle className="h-5 w-5" />}
-            <Clock className="h-5 w-5" />
-            <span>{formatCountdown(timeLeft)}</span>
           </div>
-        )}
-
-        {/* Notification Error Indicator */}
-        {order.notification_error && (
-          <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 border border-destructive/30">
-            <AlertTriangle className="h-4 w-4 text-destructive" />
-            <span className="text-xs text-destructive">Falha na notificação</span>
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <User className="h-4 w-4 text-muted-foreground" />
+              <span className="font-semibold text-foreground">{order.customer_name}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {order.group_id && (
+                <Badge className={cn('text-white', getGroupColor())}>
+                  Grupo {order.group_id.slice(0, 4).toUpperCase()}
+                </Badge>
+              )}
+              {order.delivery_groups && (
+                <Badge variant="outline">
+                  {order.delivery_groups.order_count}/{order.delivery_groups.max_orders}
+                </Badge>
+              )}
+            </div>
           </div>
-        )}
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-start gap-2 text-sm text-muted-foreground">
+            <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
+            <div>
+              <p>{order.address}</p>
+              {order.neighborhood && (
+                <p className="text-xs text-muted-foreground/70">{order.neighborhood}</p>
+              )}
+            </div>
+          </div>
 
-        <div className="flex gap-2 pt-2">
-          {onMarkReady && (
-            <Button
-              onClick={onMarkReady}
-              className="w-full bg-green-600 hover:bg-green-700"
-              size="lg"
-            >
-              MARCAR COMO PRONTO
-            </Button>
+          {order.customer_phone && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Phone className="h-4 w-4" />
+              <span>{order.customer_phone}</span>
+            </div>
           )}
-          {onForceDispatch && (
-            <Button
-              onClick={onForceDispatch}
-              variant="destructive"
-              className="w-full"
-              size="lg"
-            >
-              FORÇAR ENVIO
-            </Button>
+
+          {order.total_amount && (
+            <div className="flex items-center gap-2 text-sm">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              <span className="font-medium text-foreground">
+                R$ {order.total_amount.toFixed(2)}
+              </span>
+            </div>
           )}
-          {onRetryNotification && order.notification_error && (
-            <Button
-              onClick={onRetryNotification}
-              variant="outline"
-              className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
-              size="lg"
+
+          {showTimer && timeLeft !== null && (
+            <div
+              className={cn(
+                'flex items-center justify-center gap-2 rounded-lg bg-muted/50 py-3 font-mono text-2xl font-bold',
+                getTimerColor()
+              )}
             >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              REENVIAR NOTIFICAÇÃO
-            </Button>
+              {isUrgent && <AlertTriangle className="h-5 w-5" />}
+              <Clock className="h-5 w-5" />
+              <span>{formatCountdown(timeLeft)}</span>
+            </div>
           )}
-        </div>
-      </CardContent>
-    </Card>
-  );
-});
+
+          {order.notification_error && (
+            <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 border border-destructive/30">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+              <span className="text-xs text-destructive">Falha na notificação</span>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            {onMarkReady && (
+              <Button
+                onClick={onMarkReady}
+                className="w-full bg-green-600 hover:bg-green-700"
+                size="lg"
+              >
+                MARCAR COMO PRONTO
+              </Button>
+            )}
+            {onForceDispatch && (
+              <Button
+                onClick={onForceDispatch}
+                variant="destructive"
+                className="w-full"
+                size="lg"
+              >
+                FORÇAR ENVIO
+              </Button>
+            )}
+            {onRetryNotification && order.notification_error && (
+              <Button
+                onClick={onRetryNotification}
+                variant="outline"
+                className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
+                size="lg"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                REENVIAR NOTIFICAÇÃO
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+);
