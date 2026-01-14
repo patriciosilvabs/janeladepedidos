@@ -37,9 +37,10 @@ export function GroupCard({
   const hasDispatchedRef = useRef(false);
   const groupIdRef = useRef(groupId);
 
-  // Keep groupId ref updated
+  // Keep groupId ref updated and reset dispatch flag when group changes
   useEffect(() => {
     groupIdRef.current = groupId;
+    hasDispatchedRef.current = false; // Reset when group changes
   }, [groupId]);
 
   const firstOrder = orders[0];
@@ -69,10 +70,23 @@ export function GroupCard({
   }, [onDispatch, isDispatching]);
 
   useEffect(() => {
-    if (!firstOrder?.ready_at) return;
+    const readyAt = firstOrder?.ready_at;
+    
+    // Ignore temporary groups from optimistic update or missing ready_at
+    if (!readyAt || groupId.startsWith('temp-')) {
+      setTimeLeft(null);
+      return;
+    }
+
+    // Validate ready_at is a valid date
+    const readyTime = new Date(readyAt).getTime();
+    if (isNaN(readyTime)) {
+      console.warn(`[GroupCard] Invalid ready_at for group ${groupId}:`, readyAt);
+      setTimeLeft(null);
+      return;
+    }
 
     const calculateTimeLeft = () => {
-      const readyTime = new Date(firstOrder.ready_at!).getTime();
       const endTime = readyTime + timerDuration * 1000;
       const now = Date.now();
       return Math.max(0, Math.floor((endTime - now) / 1000));
@@ -90,7 +104,7 @@ export function GroupCard({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [firstOrder?.ready_at, timerDuration, handleAutoDispatch, isDispatching]);
+  }, [firstOrder?.ready_at, timerDuration, handleAutoDispatch, isDispatching, groupId]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -114,11 +128,8 @@ export function GroupCard({
   const isUrgent = timeLeft !== null && timeLeft <= 120;
   const isFull = group && group.order_count >= group.max_orders;
 
-  useEffect(() => {
-    if (isFull && !hasDispatchedRef.current && !isDispatching) {
-      handleAutoDispatch();
-    }
-  }, [isFull, handleAutoDispatch, isDispatching]);
+  // Removed: auto-dispatch on full group
+  // Timer is the only automatic dispatch trigger now
 
   return (
     <Card
