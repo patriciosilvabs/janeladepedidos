@@ -149,8 +149,8 @@ async function pollStoreOrders(
 
       // Insert new order with store_id
       const { error: insertError } = await supabase.from('orders').insert({
-        cardapioweb_order_id: cardapiowebOrderId,
-        external_id: orderDetails.code || cardapiowebOrderId,
+        cardapioweb_order_id: orderDetails.code || cardapiowebOrderId,  // Número visível do pedido (ex: 7955)
+        external_id: cardapiowebOrderId,  // ID interno para chamadas de API
         customer_name: orderDetails.customer?.name || 'Cliente',
         customer_phone: orderDetails.customer?.phone || null,
         address: fullAddress,
