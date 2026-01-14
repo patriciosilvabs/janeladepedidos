@@ -139,27 +139,49 @@ Deno.serve(async (req) => {
         // APENAS notificar o CardápioWeb que o pedido está pronto
         const cardapioResult = await notifyCardapioWebReady(supabase, order);
         
+        const now = new Date().toISOString();
+        
         if (!cardapioResult.success) {
           console.error(`CardápioWeb notification failed for order ${order.id}:`, cardapioResult.error);
           errors.push({ orderId: order.id, error: cardapioResult.error });
+          
+          // Atualizar status local para dispatched com erro de notificação
+          await supabase
+            .from('orders')
+            .update({
+              status: 'dispatched',
+              dispatched_at: now,
+              notification_error: cardapioResult.error,
+            })
+            .eq('id', order.id);
         } else {
           results.push({ orderId: order.id, notified: true });
+          
+          // Atualizar status local para dispatched e limpar erro anterior
+          await supabase
+            .from('orders')
+            .update({
+              status: 'dispatched',
+              dispatched_at: now,
+              notification_error: null,
+            })
+            .eq('id', order.id);
         }
-
-        // Atualizar status local para dispatched
-        const now = new Date().toISOString();
-        await supabase
-          .from('orders')
-          .update({
-            status: 'dispatched',
-            dispatched_at: now,
-          })
-          .eq('id', order.id);
 
       } catch (orderError) {
         console.error(`Error processing order ${order.id}:`, orderError);
         const errorMessage = orderError instanceof Error ? orderError.message : 'Unknown error';
         errors.push({ orderId: order.id, error: errorMessage });
+        
+        // Salvar erro de exceção
+        await supabase
+          .from('orders')
+          .update({
+            status: 'dispatched',
+            dispatched_at: new Date().toISOString(),
+            notification_error: errorMessage,
+          })
+          .eq('id', order.id);
       }
     }
 

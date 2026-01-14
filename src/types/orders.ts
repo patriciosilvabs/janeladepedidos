@@ -23,6 +23,7 @@ export interface Order {
   created_at: string;
   ready_at: string | null;
   dispatched_at: string | null;
+  notification_error: string | null;
 }
 
 export interface DeliveryGroup {

@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus } =
+  const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus, retryNotification } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
@@ -109,6 +109,22 @@ export function Dashboard() {
       toast({
         title: 'Erro na sincronização',
         description: 'Não foi possível sincronizar com o CardápioWeb.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleRetryNotification = async (orderId: string) => {
+    try {
+      await retryNotification.mutateAsync(orderId);
+      toast({
+        title: 'Notificação reenviada!',
+        description: 'CardápioWeb foi notificado com sucesso.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível reenviar a notificação.',
         variant: 'destructive',
       });
     }
@@ -230,7 +246,11 @@ export function Dashboard() {
           </div>
         ) : (
           dispatchedOrders.map((order) => (
-            <OrderCard key={order.id} order={order} />
+            <OrderCard
+              key={order.id}
+              order={order}
+              onRetryNotification={order.notification_error ? () => handleRetryNotification(order.id) : undefined}
+            />
           ))
         )}
       </OrderColumn>

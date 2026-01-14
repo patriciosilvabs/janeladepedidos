@@ -190,6 +190,25 @@ export function useOrders() {
     },
   });
 
+  // Retry notification for a failed order
+  const retryNotification = useMutation({
+    mutationFn: async (orderId: string) => {
+      const { data, error } = await supabase.functions.invoke('notify-order-ready', {
+        body: { orderIds: [orderId] },
+      });
+
+      if (error) throw error;
+      if (!data.success && data.errors > 0) {
+        throw new Error(data.errorDetails?.[0]?.error || 'Erro ao reenviar notificação');
+      }
+
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return {
     orders,
     isLoading,
@@ -198,5 +217,6 @@ export function useOrders() {
     dispatchGroup,
     forceDispatch,
     syncOrdersStatus,
+    retryNotification,
   };
 }
