@@ -23,10 +23,11 @@ Deno.serve(async (req) => {
     // Helper function to test a specific URL
     async function testUrl(baseUrl: string): Promise<{ success: boolean; data?: any; isHtml?: boolean; status?: number; error?: string }> {
       try {
-        const response = await fetch(`${baseUrl}/store`, {
+        const response = await fetch(`${baseUrl}/api/partner/v1/orders`, {
           method: 'GET',
           headers: {
             'X-API-KEY': token,
+            'Accept': 'application/json',
             'Content-Type': 'application/json',
           },
         });
@@ -62,10 +63,12 @@ Deno.serve(async (req) => {
     const result = await testUrl(urlToTest);
 
     if (result.success) {
+      const ordersCount = Array.isArray(result.data) ? result.data.length : 0;
       return new Response(
         JSON.stringify({ 
           success: true, 
-          store: result.data,
+          ordersCount,
+          message: `Conexão OK! ${ordersCount} pedidos encontrados.`,
           environment: useSandbox ? 'sandbox' : 'production'
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -78,10 +81,12 @@ Deno.serve(async (req) => {
       const sandboxResult = await testUrl(sandboxUrl);
       
       if (sandboxResult.success) {
+        const ordersCount = Array.isArray(sandboxResult.data) ? sandboxResult.data.length : 0;
         return new Response(
           JSON.stringify({ 
             success: true, 
-            store: sandboxResult.data,
+            ordersCount,
+            message: `Conexão OK! ${ordersCount} pedidos encontrados.`,
             environment: 'sandbox',
             note: 'Token funcionou no ambiente Sandbox. Configure a URL correta nas configurações.'
           }),
