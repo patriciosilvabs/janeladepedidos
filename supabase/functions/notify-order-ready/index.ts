@@ -132,7 +132,7 @@ Deno.serve(async (req) => {
           console.error(`CardápioWeb notification failed for order ${order.id}:`, cardapioResult.error);
           errors.push({ orderId: order.id, error: cardapioResult.error });
           
-          // Atualizar status local para dispatched com erro de notificação
+          // Manter pedido com erro para permitir reenvio
           await supabase
             .from('orders')
             .update({
@@ -144,15 +144,17 @@ Deno.serve(async (req) => {
         } else {
           results.push({ orderId: order.id, notified: true });
           
-          // Atualizar status local para dispatched e limpar erro anterior
-          await supabase
+          // DELETAR pedido do banco - não precisa mais ser exibido
+          const { error: deleteError } = await supabase
             .from('orders')
-            .update({
-              status: 'dispatched',
-              dispatched_at: now,
-              notification_error: null,
-            })
+            .delete()
             .eq('id', order.id);
+          
+          if (deleteError) {
+            console.error(`Error deleting order ${order.id}:`, deleteError);
+          } else {
+            console.log(`Order ${order.id} deleted after successful dispatch`);
+          }
         }
 
       } catch (orderError) {
