@@ -3,6 +3,7 @@ import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users 
 import { Button } from '@/components/ui/button';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
+import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -193,8 +194,11 @@ export function SettingsDialog() {
             </TabsContent>
 
             {isOwner && (
-              <TabsContent value="users" className="space-y-4 mt-4">
-                <UsersAdminPanel />
+              <TabsContent value="users" className="space-y-6 mt-4">
+                <InvitationsPanel />
+                <div className="border-t pt-6">
+                  <UsersAdminPanel />
+                </div>
               </TabsContent>
             )}
 

@@ -107,6 +107,39 @@ export type Database = {
         }
         Relationships: []
       }
+      invitations: {
+        Row: {
+          created_at: string | null
+          email: string
+          expires_at: string | null
+          id: string
+          invited_by: string | null
+          role: Database["public"]["Enums"]["app_role"]
+          token: string
+          used_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          email: string
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          token?: string
+          used_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          email?: string
+          expires_at?: string | null
+          id?: string
+          invited_by?: string | null
+          role?: Database["public"]["Enums"]["app_role"]
+          token?: string
+          used_at?: string | null
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           address: string
@@ -305,6 +338,18 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      use_invitation: {
+        Args: { invitation_token: string; new_user_id: string }
+        Returns: boolean
+      }
+      validate_invitation_token: {
+        Args: { invitation_token: string }
+        Returns: {
+          email: string
+          is_valid: boolean
+          role: Database["public"]["Enums"]["app_role"]
+        }[]
       }
     }
     Enums: {
