@@ -14,7 +14,7 @@ export interface Order {
   neighborhood: string | null;
   lat: number;
   lng: number;
-  status: 'pending' | 'waiting_buffer' | 'dispatched';
+  status: 'pending' | 'waiting_buffer' | 'ready' | 'dispatched';
   group_id: string | null;
   store_id: string | null;
   items: any;

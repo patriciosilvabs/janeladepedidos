@@ -111,28 +111,79 @@ export function useOrders() {
     },
   });
 
-  // Dispatch all buffer orders at once
-  const dispatchAllBuffer = useMutation({
+  // Move all buffer orders to ready status
+  const moveToReady = useMutation({
     mutationFn: async (orderIds: string[]) => {
       if (orderIds.length === 0) {
-        throw new Error('Nenhum pedido para despachar');
+        throw new Error('Nenhum pedido para mover');
       }
 
-      const { data, error } = await supabase.functions.invoke('notify-order-ready', {
-        body: { orderIds },
-      });
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'ready' })
+        .in('id', orderIds);
 
       if (error) throw error;
-      return data;
+      return { processed: orderIds.length };
     },
     onMutate: async (orderIds) => {
       await queryClient.cancelQueries({ queryKey: ['orders'] });
       const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
       
-      // Optimistically update all orders to dispatched
+      // Optimistically update all orders to ready
       queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
         old?.map((order) =>
           orderIds.includes(order.id)
+            ? { 
+                ...order, 
+                status: 'ready' as const,
+              }
+            : order
+        ) ?? []
+      );
+      
+      return { previousOrders };
+    },
+    onError: (_err, _orderIds, context) => {
+      if (context?.previousOrders) {
+        queryClient.setQueryData(['orders'], context.previousOrders);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
+  // Mark as collected (motoboy picked up) - calls API and dispatches
+  const markAsCollected = useMutation({
+    mutationFn: async (orderId: string) => {
+      // 1. Notify CardápioWeb
+      const { data, error: fnError } = await supabase.functions.invoke('notify-order-ready', {
+        body: { orderIds: [orderId] },
+      });
+
+      if (fnError) throw fnError;
+
+      // 2. Update status to dispatched
+      const { error } = await supabase
+        .from('orders')
+        .update({
+          status: 'dispatched',
+          dispatched_at: new Date().toISOString(),
+        })
+        .eq('id', orderId);
+
+      if (error) throw error;
+      return data;
+    },
+    onMutate: async (orderId) => {
+      await queryClient.cancelQueries({ queryKey: ['orders'] });
+      const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
+      
+      // Optimistically update order to dispatched
+      queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
+        old?.map((order) =>
+          order.id === orderId
             ? { 
                 ...order, 
                 status: 'dispatched' as const,
@@ -144,7 +195,7 @@ export function useOrders() {
       
       return { previousOrders };
     },
-    onError: (_err, _orderIds, context) => {
+    onError: (_err, _orderId, context) => {
       if (context?.previousOrders) {
         queryClient.setQueryData(['orders'], context.previousOrders);
       }
@@ -211,7 +262,8 @@ export function useOrders() {
     isFetching,
     error,
     markAsReady,
-    dispatchAllBuffer,
+    moveToReady,
+    markAsCollected,
     forceDispatch,
     syncOrdersStatus,
     retryNotification,

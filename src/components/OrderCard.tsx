@@ -10,10 +10,12 @@ interface OrderCardProps {
   order: OrderWithGroup;
   onMarkReady?: () => void;
   onForceDispatch?: () => void;
+  onMarkCollected?: () => void;
   onRetryNotification?: () => void;
   showTimer?: boolean;
   timerDuration?: number;
   isMarkingReady?: boolean;
+  isMarkingCollected?: boolean;
 }
 
 const GROUP_COLORS = [
@@ -56,10 +58,12 @@ export function OrderCard({
   order,
   onMarkReady,
   onForceDispatch,
+  onMarkCollected,
   onRetryNotification,
   showTimer = false,
   timerDuration = 600,
   isMarkingReady = false,
+  isMarkingCollected = false,
 }: OrderCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeAgo, setTimeAgo] = useState<string>('');
@@ -185,7 +189,7 @@ export function OrderCard({
         )}
 
         {/* Botões de ação */}
-        {(onMarkReady || onForceDispatch || (onRetryNotification && order.notification_error)) && (
+        {(onMarkReady || onForceDispatch || onMarkCollected || (onRetryNotification && order.notification_error)) && (
           <div className="flex gap-2 mt-3">
             {onMarkReady && (
               <Button
@@ -212,6 +216,23 @@ export function OrderCard({
                 size="default"
               >
                 FORÇAR ENVIO
+              </Button>
+            )}
+            {onMarkCollected && (
+              <Button
+                onClick={onMarkCollected}
+                disabled={isMarkingCollected}
+                className="w-full bg-purple-600 hover:bg-purple-700"
+                size="default"
+              >
+                {isMarkingCollected ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    PROCESSANDO...
+                  </>
+                ) : (
+                  'MOTOBOY COLETOU'
+                )}
               </Button>
             )}
             {onRetryNotification && order.notification_error && (
