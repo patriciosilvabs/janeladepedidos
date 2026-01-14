@@ -8,14 +8,14 @@ import { OrderCard } from './OrderCard';
 
 interface BufferPanelProps {
   orders: OrderWithGroup[];
-  onDispatchAll: (orderIds: string[]) => Promise<void>;
+  onMoveToReady: (orderIds: string[]) => Promise<void>;
   onForceDispatchOrder: (orderId: string) => void;
   timerDuration: number;
 }
 
 export function BufferPanel({
   orders,
-  onDispatchAll,
+  onMoveToReady,
   onForceDispatchOrder,
   timerDuration,
 }: BufferPanelProps) {
@@ -43,10 +43,10 @@ export function BufferPanel({
     }
   }, [oldestOrder?.id]);
 
-  // Auto-dispatch handler
-  const handleAutoDispatch = useCallback(async () => {
+  // Auto-move to ready handler
+  const handleAutoMoveToReady = useCallback(async () => {
     if (hasDispatchedRef.current || isDispatching || orders.length === 0) {
-      console.log('[BufferPanel] Dispatch skipped:', {
+      console.log('[BufferPanel] Move to ready skipped:', {
         hasDispatched: hasDispatchedRef.current,
         isDispatching,
         orderCount: orders.length,
@@ -54,20 +54,20 @@ export function BufferPanel({
       return;
     }
 
-    console.log('[BufferPanel] Auto-dispatching all orders:', orders.map(o => o.id));
+    console.log('[BufferPanel] Moving all orders to ready:', orders.map(o => o.id));
     hasDispatchedRef.current = true;
     setIsDispatching(true);
 
     try {
-      await onDispatchAll(orders.map(o => o.id));
-      console.log('[BufferPanel] Successfully dispatched all orders');
+      await onMoveToReady(orders.map(o => o.id));
+      console.log('[BufferPanel] Successfully moved all orders to ready');
     } catch (error) {
-      console.error('[BufferPanel] Failed to dispatch:', error);
+      console.error('[BufferPanel] Failed to move to ready:', error);
       hasDispatchedRef.current = false; // Allow retry
     } finally {
       setIsDispatching(false);
     }
-  }, [onDispatchAll, isDispatching, orders]);
+  }, [onMoveToReady, isDispatching, orders]);
 
   // Timer effect
   useEffect(() => {
@@ -99,12 +99,12 @@ export function BufferPanel({
       setTimeLeft(remaining);
 
       if (remaining <= 0 && !hasDispatchedRef.current && !isDispatching) {
-        handleAutoDispatch();
+        handleAutoMoveToReady();
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [oldestOrder?.ready_at, timerDuration, handleAutoDispatch, isDispatching, orders.length]);
+  }, [oldestOrder?.ready_at, timerDuration, handleAutoMoveToReady, isDispatching, orders.length]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -122,13 +122,13 @@ export function BufferPanel({
 
   const isUrgent = timeLeft !== null && timeLeft <= 120;
 
-  const handleManualDispatch = async () => {
+  const handleManualMoveToReady = async () => {
     if (isDispatching || orders.length === 0) return;
     setIsDispatching(true);
     try {
-      await onDispatchAll(orders.map(o => o.id));
+      await onMoveToReady(orders.map(o => o.id));
     } catch (error) {
-      console.error('[BufferPanel] Manual dispatch failed:', error);
+      console.error('[BufferPanel] Manual move to ready failed:', error);
     } finally {
       setIsDispatching(false);
     }
@@ -156,7 +156,7 @@ export function BufferPanel({
               <span>{formatTime(timeLeft)}</span>
             </div>
             <p className="text-center text-sm text-muted-foreground mt-2">
-              {orders.length} pedido(s) serão despachados quando o timer terminar
+              {orders.length} pedido(s) ficarão prontos quando o timer terminar
             </p>
           </CardContent>
         </Card>
@@ -172,19 +172,19 @@ export function BufferPanel({
         />
       ))}
 
-      {/* Dispatch All Button */}
+      {/* Move to Ready Button */}
       <Button
-        onClick={handleManualDispatch}
+        onClick={handleManualMoveToReady}
         disabled={isDispatching}
-        className="w-full"
+        className="w-full bg-purple-600 hover:bg-purple-700"
         size="lg"
       >
         {isDispatching ? (
           <Loader2 className="mr-2 h-5 w-5 animate-spin" />
         ) : (
-          <Truck className="mr-2 h-5 w-5" />
+          <Clock className="mr-2 h-5 w-5" />
         )}
-        {isDispatching ? 'DESPACHANDO...' : `DESPACHAR TODOS (${orders.length})`}
+        {isDispatching ? 'PROCESSANDO...' : `MARCAR TODOS PRONTOS (${orders.length})`}
       </Button>
     </div>
   );

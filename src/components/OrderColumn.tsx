@@ -6,7 +6,7 @@ interface OrderColumnProps {
   count: number;
   icon: ReactNode;
   children: ReactNode;
-  variant?: 'pending' | 'buffer' | 'dispatched';
+  variant?: 'pending' | 'buffer' | 'ready' | 'dispatched';
 }
 
 export function OrderColumn({
@@ -19,12 +19,14 @@ export function OrderColumn({
   const variantStyles = {
     pending: 'border-yellow-500/30 bg-yellow-500/5',
     buffer: 'border-blue-500/30 bg-blue-500/5',
+    ready: 'border-purple-500/30 bg-purple-500/5',
     dispatched: 'border-green-500/30 bg-green-500/5',
   };
 
   const headerStyles = {
     pending: 'bg-yellow-500/10 text-yellow-400',
     buffer: 'bg-blue-500/10 text-blue-400',
+    ready: 'bg-purple-500/10 text-purple-400',
     dispatched: 'bg-green-500/10 text-green-400',
   };
 

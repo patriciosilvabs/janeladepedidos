@@ -5,17 +5,18 @@ import { useSettings } from '@/hooks/useSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
-import { ChefHat, Clock, Truck, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, dispatchAllBuffer, forceDispatch, syncOrdersStatus, retryNotification } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+  const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -25,6 +26,11 @@ export function Dashboard() {
 
   const bufferOrders = useMemo(
     () => orders.filter((o) => o.status === 'waiting_buffer'),
+    [orders]
+  );
+
+  const readyOrders = useMemo(
+    () => orders.filter((o) => o.status === 'ready'),
     [orders]
   );
 
@@ -55,31 +61,42 @@ export function Dashboard() {
     }
   };
 
-  const handleDispatchAll = async (orderIds: string[]): Promise<void> => {
-    console.log(`[Dashboard] Dispatching ${orderIds.length} orders`);
+  const handleMoveToReady = async (orderIds: string[]): Promise<void> => {
+    console.log(`[Dashboard] Moving ${orderIds.length} orders to ready`);
     try {
-      const result = await dispatchAllBuffer.mutateAsync(orderIds);
-      console.log(`[Dashboard] Dispatch result:`, result);
-      
-      if (result.errors > 0) {
-        toast({
-          title: 'Pedidos despachados com avisos',
-          description: `${result.processed} pedido(s) despachado(s). ${result.errors} falha(s) de notificação.`,
-        });
-      } else {
-        toast({
-          title: 'Pedidos despachados!',
-          description: `${result.processed} pedido(s) despachado(s) com sucesso.`,
-        });
-      }
+      const result = await moveToReady.mutateAsync(orderIds);
+      console.log(`[Dashboard] Move result:`, result);
+      toast({
+        title: 'Pedidos prontos!',
+        description: `${result.processed} pedido(s) movido(s) para aguardando coleta.`,
+      });
     } catch (err) {
-      console.error(`[Dashboard] Failed to dispatch:`, err);
+      console.error(`[Dashboard] Failed to move to ready:`, err);
       toast({
         title: 'Erro',
-        description: 'Não foi possível despachar os pedidos.',
+        description: 'Não foi possível mover os pedidos.',
         variant: 'destructive',
       });
       throw err;
+    }
+  };
+
+  const handleMarkCollected = async (orderId: string) => {
+    setCollectingOrderId(orderId);
+    try {
+      await markAsCollected.mutateAsync(orderId);
+      toast({
+        title: 'Pedido coletado!',
+        description: 'O motoboy coletou o pedido.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível marcar o pedido como coletado.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCollectingOrderId(null);
     }
   };
 
@@ -183,7 +200,7 @@ export function Dashboard() {
         </div>
       )}
       
-      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-3 min-h-0">
+      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-4 min-h-0">
         {/* Column 1: Em Produção */}
         <OrderColumn
           title="Em Produção"
@@ -223,14 +240,38 @@ export function Dashboard() {
           ) : (
             <BufferPanel
               orders={bufferOrders}
-              onDispatchAll={handleDispatchAll}
+              onMoveToReady={handleMoveToReady}
               onForceDispatchOrder={handleForceDispatch}
               timerDuration={(settings?.buffer_timeout_minutes || 10) * 60}
             />
           )}
         </OrderColumn>
 
-        {/* Column 3: Despachados */}
+        {/* Column 3: Pedido Pronto - Aguardando Coleta */}
+        <OrderColumn
+          title="Pedido Pronto"
+          count={readyOrders.length}
+          icon={<PackageCheck className="h-5 w-5" />}
+          variant="ready"
+        >
+          {readyOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <PackageCheck className="mb-2 h-8 w-8 opacity-50" />
+              <p>Nenhum pedido pronto</p>
+            </div>
+          ) : (
+            readyOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onMarkCollected={() => handleMarkCollected(order.id)}
+                isMarkingCollected={collectingOrderId === order.id}
+              />
+            ))
+          )}
+        </OrderColumn>
+
+        {/* Column 4: Despachados */}
         <OrderColumn
           title="Despachados"
           count={dispatchedOrders.length}
