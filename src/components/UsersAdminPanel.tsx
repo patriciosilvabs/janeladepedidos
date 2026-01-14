@@ -1,0 +1,207 @@
+import { useState } from 'react';
+import { useUsers, UserWithRole } from '@/hooks/useUsers';
+import { useAuth } from '@/hooks/useAuth';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Loader2, Crown, Shield, User } from 'lucide-react';
+import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+
+type AppRole = 'owner' | 'admin' | 'user';
+
+const roleConfig: Record<AppRole, { label: string; icon: React.ReactNode; variant: 'default' | 'secondary' | 'outline' }> = {
+  owner: {
+    label: 'Proprietário',
+    icon: <Crown className="h-3 w-3" />,
+    variant: 'default',
+  },
+  admin: {
+    label: 'Administrador',
+    icon: <Shield className="h-3 w-3" />,
+    variant: 'secondary',
+  },
+  user: {
+    label: 'Usuário',
+    icon: <User className="h-3 w-3" />,
+    variant: 'outline',
+  },
+};
+
+export function UsersAdminPanel() {
+  const { users, isLoading, updateUserRole } = useUsers();
+  const { user: currentUser } = useAuth();
+  const [pendingChange, setPendingChange] = useState<{
+    user: UserWithRole;
+    newRole: 'admin' | 'user';
+  } | null>(null);
+
+  const handleRoleChange = (userRecord: UserWithRole, newRole: 'admin' | 'user') => {
+    if (userRecord.role === 'owner') return;
+    if (userRecord.user_id === currentUser?.id) {
+      toast.error('Você não pode alterar sua própria role');
+      return;
+    }
+    setPendingChange({ user: userRecord, newRole });
+  };
+
+  const confirmRoleChange = async () => {
+    if (!pendingChange) return;
+
+    try {
+      await updateUserRole.mutateAsync({
+        userId: pendingChange.user.user_id,
+        newRole: pendingChange.newRole,
+      });
+      toast.success(`Role de ${pendingChange.user.email} alterada para ${roleConfig[pendingChange.newRole].label}`);
+    } catch (error) {
+      toast.error('Erro ao alterar role do usuário');
+      console.error(error);
+    } finally {
+      setPendingChange(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!users || users.length === 0) {
+    return (
+      <div className="text-center py-8 text-muted-foreground">
+        Nenhum usuário encontrado
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="text-sm text-muted-foreground">
+        Gerencie os usuários e suas permissões. O proprietário não pode ter sua role alterada.
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Cadastrado em</TableHead>
+              <TableHead className="w-[140px]">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {users.map((userRecord) => {
+              const config = roleConfig[userRecord.role];
+              const isOwner = userRecord.role === 'owner';
+              const isSelf = userRecord.user_id === currentUser?.id;
+
+              return (
+                <TableRow key={userRecord.id}>
+                  <TableCell className="font-medium">
+                    {userRecord.email}
+                    {isSelf && (
+                      <span className="ml-2 text-xs text-muted-foreground">(você)</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={config.variant} className="gap-1">
+                      {config.icon}
+                      {config.label}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {format(new Date(userRecord.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+                  </TableCell>
+                  <TableCell>
+                    {isOwner || isSelf ? (
+                      <span className="text-xs text-muted-foreground">—</span>
+                    ) : (
+                      <Select
+                        value={userRecord.role}
+                        onValueChange={(value: 'admin' | 'user') => handleRoleChange(userRecord, value)}
+                        disabled={updateUserRole.isPending}
+                      >
+                        <SelectTrigger className="h-8 w-[120px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="admin">
+                            <div className="flex items-center gap-2">
+                              <Shield className="h-3 w-3" />
+                              Admin
+                            </div>
+                          </SelectItem>
+                          <SelectItem value="user">
+                            <div className="flex items-center gap-2">
+                              <User className="h-3 w-3" />
+                              Usuário
+                            </div>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      <AlertDialog open={!!pendingChange} onOpenChange={() => setPendingChange(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar alteração de role</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a alterar a role de{' '}
+              <strong>{pendingChange?.user.email}</strong> para{' '}
+              <strong>{pendingChange && roleConfig[pendingChange.newRole].label}</strong>.
+              <br /><br />
+              {pendingChange?.newRole === 'admin' 
+                ? 'Administradores podem acessar as configurações do sistema.'
+                : 'Usuários comuns não podem acessar as configurações do sistema.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmRoleChange} disabled={updateUserRole.isPending}>
+              {updateUserRole.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : null}
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
