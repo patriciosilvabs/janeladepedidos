@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, Phone, User, Package, AlertTriangle, Timer, RefreshCw } from 'lucide-react';
+import { Clock, MapPin, User, AlertTriangle, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
@@ -124,82 +124,47 @@ export function OrderCard({
         isUrgent && 'border-red-500/50 shadow-red-500/20 shadow-lg'
       )}
     >
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between text-xs mb-1">
-          <span className="font-mono font-bold text-primary">
+      <CardContent className="p-4">
+        {/* Linha 1: Número do pedido + Tempo */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="font-mono font-bold text-primary text-lg">
             #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
           </span>
-          <div className="flex items-center gap-2">
-            {timeAgo && (
-              <span className="flex items-center gap-1 text-muted-foreground">
-                <Timer className="h-3 w-3" />
-                {timeAgo}
-                {orderTime && (
-                  <span className="text-muted-foreground/70">
-                    ({formatTime(orderTime)})
-                  </span>
-                )}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="flex items-center justify-between text-xs mb-1">
-          {order.stores?.name && (
-            <Badge variant="secondary" className="text-xs">
-              {order.stores.name}
-            </Badge>
+          {timeAgo && (
+            <span className="text-sm text-muted-foreground">
+              {timeAgo}
+            </span>
           )}
         </div>
-        <div className="flex items-start justify-between gap-2">
+
+        {/* Linha 2: Loja */}
+        {order.stores?.name && (
+          <div className="mb-2">
+            <Badge variant="secondary" className="text-xs font-medium">
+              {order.stores.name}
+            </Badge>
+          </div>
+        )}
+
+        {/* Linha 3: Nome do cliente + Bairro */}
+        <div className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-2">
             <User className="h-4 w-4 text-muted-foreground" />
-            <span className="font-semibold text-foreground">{order.customer_name}</span>
+            <span className="font-medium text-foreground">{order.customer_name}</span>
           </div>
-          <div className="flex items-center gap-2">
-            {order.group_id && (
-              <Badge className={cn('text-white', getGroupColor())}>
-                Grupo {order.group_id.slice(0, 4).toUpperCase()}
-              </Badge>
-            )}
-            {order.delivery_groups && (
-              <Badge variant="outline">
-                {order.delivery_groups.order_count}/{order.delivery_groups.max_orders}
-              </Badge>
-            )}
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="flex items-start gap-2 text-sm text-muted-foreground">
-          <MapPin className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            <p>{order.address}</p>
-            {order.neighborhood && (
-              <p className="text-xs text-muted-foreground/70">{order.neighborhood}</p>
-            )}
-          </div>
+          {order.neighborhood && (
+            <div className="flex items-center gap-1 text-muted-foreground">
+              <MapPin className="h-3 w-3" />
+              <span className="text-xs">{order.neighborhood}</span>
+            </div>
+          )}
         </div>
 
-        {order.customer_phone && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Phone className="h-4 w-4" />
-            <span>{order.customer_phone}</span>
-          </div>
-        )}
-
-        {order.total_amount && (
-          <div className="flex items-center gap-2 text-sm">
-            <Package className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-foreground">
-              R$ {order.total_amount.toFixed(2)}
-            </span>
-          </div>
-        )}
-
+        {/* Timer (se aplicável) */}
         {showTimer && timeLeft !== null && (
           <div
             className={cn(
-              'flex items-center justify-center gap-2 rounded-lg bg-muted/50 py-3 font-mono text-2xl font-bold',
+              'flex items-center justify-center gap-2 rounded-lg bg-muted/50 py-3 font-mono text-2xl font-bold mt-3',
               getTimerColor()
             )}
           >
@@ -209,45 +174,49 @@ export function OrderCard({
           </div>
         )}
 
+        {/* Erro de notificação */}
         {order.notification_error && (
-          <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 border border-destructive/30">
+          <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 border border-destructive/30 mt-3">
             <AlertTriangle className="h-4 w-4 text-destructive" />
             <span className="text-xs text-destructive">Falha na notificação</span>
           </div>
         )}
 
-        <div className="flex gap-2 pt-2">
-          {onMarkReady && (
-            <Button
-              onClick={onMarkReady}
-              className="w-full bg-green-600 hover:bg-green-700"
-              size="lg"
-            >
-              MARCAR COMO PRONTO
-            </Button>
-          )}
-          {onForceDispatch && (
-            <Button
-              onClick={onForceDispatch}
-              variant="destructive"
-              className="w-full"
-              size="lg"
-            >
-              FORÇAR ENVIO
-            </Button>
-          )}
-          {onRetryNotification && order.notification_error && (
-            <Button
-              onClick={onRetryNotification}
-              variant="outline"
-              className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
-              size="lg"
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              REENVIAR NOTIFICAÇÃO
-            </Button>
-          )}
-        </div>
+        {/* Botões de ação */}
+        {(onMarkReady || onForceDispatch || (onRetryNotification && order.notification_error)) && (
+          <div className="flex gap-2 mt-3">
+            {onMarkReady && (
+              <Button
+                onClick={onMarkReady}
+                className="w-full bg-green-600 hover:bg-green-700"
+                size="default"
+              >
+                MARCAR COMO PRONTO
+              </Button>
+            )}
+            {onForceDispatch && (
+              <Button
+                onClick={onForceDispatch}
+                variant="destructive"
+                className="w-full"
+                size="default"
+              >
+                FORÇAR ENVIO
+              </Button>
+            )}
+            {onRetryNotification && order.notification_error && (
+              <Button
+                onClick={onRetryNotification}
+                variant="outline"
+                className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
+                size="default"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                REENVIAR
+              </Button>
+            )}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
