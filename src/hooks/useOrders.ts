@@ -32,7 +32,7 @@ export function useOrders() {
       const { data, error } = await supabase
         .from('orders')
         .select('*, delivery_groups(*), stores(*)')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: true });
       
       if (error) throw error;
       return data as OrderWithGroup[];
