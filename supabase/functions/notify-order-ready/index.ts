@@ -8,6 +8,7 @@ const corsHeaders = {
 interface OrderToDispatch {
   id: string;
   cardapioweb_order_id: string | null;
+  external_id: string | null;  // ID interno para API do CardápioWeb
   store_id: string | null;
 }
 
@@ -17,10 +18,12 @@ async function notifyCardapioWebReady(
   order: OrderToDispatch
 ): Promise<{ success: boolean; error?: string }> {
   const storeId = order.store_id;
-  const cardapiowebOrderId = order.cardapioweb_order_id;
+  // Usar external_id para a API (ID interno do CardápioWeb)
+  const cardapiowebApiId = order.external_id;
+  const displayId = order.cardapioweb_order_id; // Apenas para logs
 
-  if (!cardapiowebOrderId) {
-    console.log(`Order ${order.id} has no cardapioweb_order_id, skipping CardápioWeb notification`);
+  if (!cardapiowebApiId) {
+    console.log(`Order ${order.id} (display: ${displayId}) has no external_id, skipping CardápioWeb notification`);
     return { success: true };
   }
 
@@ -49,11 +52,11 @@ async function notifyCardapioWebReady(
   const apiUrl = store.cardapioweb_api_url || 'https://integracao.cardapioweb.com';
 
   try {
-    console.log(`Notifying CardápioWeb that order ${cardapiowebOrderId} is ready...`);
+    console.log(`Notifying CardápioWeb that order ${displayId} (API ID: ${cardapiowebApiId}) is ready...`);
     
     // Marcar como "pronto" usando POST /ready (sem body)
     const readyResponse = await fetch(
-      `${apiUrl}/api/partner/v1/orders/${cardapiowebOrderId}/ready`,
+      `${apiUrl}/api/partner/v1/orders/${cardapiowebApiId}/ready`,
       {
         method: 'POST',
         headers: {
@@ -65,16 +68,16 @@ async function notifyCardapioWebReady(
 
     if (!readyResponse.ok) {
       const errorText = await readyResponse.text();
-      console.error(`CardápioWeb /ready failed: ${readyResponse.status}`, errorText);
+      console.error(`CardápioWeb /ready failed for ${displayId} (API ID: ${cardapiowebApiId}): ${readyResponse.status}`, errorText);
       // Se erro 409 (Conflict), significa que já está pronto - consideramos sucesso
       if (readyResponse.status === 409) {
-        console.log(`Order ${cardapiowebOrderId} already ready (409)`);
+        console.log(`Order ${displayId} (API ID: ${cardapiowebApiId}) already ready (409)`);
         return { success: true };
       }
       return { success: false, error: `Ready API Error: ${readyResponse.status} - ${errorText}` };
     }
 
-    console.log(`CardápioWeb notified: Order ${cardapiowebOrderId} marked as ready`);
+    console.log(`CardápioWeb notified: Order ${displayId} (API ID: ${cardapiowebApiId}) marked as ready`);
     return { success: true };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
@@ -105,7 +108,7 @@ Deno.serve(async (req) => {
     // Buscar pedidos
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select('id, cardapioweb_order_id, store_id')
+      .select('id, cardapioweb_order_id, external_id, store_id')
       .in('id', orderIds);
 
     if (ordersError) {
