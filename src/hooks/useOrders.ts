@@ -50,7 +50,7 @@ export function useOrders() {
     }
     debounceTimeoutRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-    }, 500); // 500ms debounce
+    }, 200); // 200ms debounce for faster feedback
   }, [queryClient]);
 
   useEffect(() => {
@@ -145,11 +145,16 @@ export function useOrders() {
       // Snapshot previous value
       const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
       
-      // Optimistically update the order status
+      // Optimistically update the order status with temporary group
       queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
         old?.map((order) =>
           order.id === orderId
-            ? { ...order, status: 'waiting_buffer' as const }
+            ? { 
+                ...order, 
+                status: 'waiting_buffer' as const,
+                ready_at: new Date().toISOString(),
+                group_id: 'temp-' + orderId,
+              }
             : order
         ) ?? []
       );
@@ -190,7 +195,35 @@ export function useOrders() {
       // The orders were dispatched locally, only the notification failed
       return data;
     },
-    onSuccess: () => {
+    onMutate: async (groupId) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['orders'] });
+      
+      // Snapshot previous value
+      const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
+      
+      // Optimistically update orders in group to dispatched
+      queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
+        old?.map((order) =>
+          order.group_id === groupId
+            ? { 
+                ...order, 
+                status: 'dispatched' as const,
+                dispatched_at: new Date().toISOString(),
+              }
+            : order
+        ) ?? []
+      );
+      
+      return { previousOrders };
+    },
+    onError: (_err, _groupId, context) => {
+      // Rollback on error
+      if (context?.previousOrders) {
+        queryClient.setQueryData(['orders'], context.previousOrders);
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     },
   });
