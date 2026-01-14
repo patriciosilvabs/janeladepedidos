@@ -130,7 +130,7 @@ async function pollStoreOrders(
 
         if (detailsResponse.ok) {
           orderDetails = await detailsResponse.json();
-          console.log(`[poll-orders] Order details - id: ${orderDetails.id}, code: ${orderDetails.code}`);
+          console.log(`[poll-orders] Order details raw:`, JSON.stringify(orderDetails, null, 2));
         }
       } catch (err) {
         console.error(`[poll-orders] Error fetching order details:`, err);
