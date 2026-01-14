@@ -86,14 +86,13 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
               </TabsTrigger>
               <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio</TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
-              <TabsTrigger value="location" className="text-xs sm:text-sm">Local</TabsTrigger>
             </TabsList>
 
             <TabsContent value="stores" className="space-y-4 mt-4">
@@ -184,52 +183,6 @@ export function SettingsDialog() {
               </div>
             </TabsContent>
 
-            <TabsContent value="location" className="space-y-4 mt-4">
-              <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <p className="text-sm text-muted-foreground">
-                    Estes valores serão usados como padrão quando o pedido não informar a localização completa.
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="default-city">Cidade Padrão</Label>
-                <Input
-                  id="default-city"
-                  value={formData.default_city || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, default_city: e.target.value })
-                  }
-                  placeholder="Ex: João Pessoa"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="default-region">Estado Padrão</Label>
-                <Input
-                  id="default-region"
-                  value={formData.default_region || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, default_region: e.target.value })
-                  }
-                  placeholder="Ex: PB"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="default-country">País Padrão</Label>
-                <Input
-                  id="default-country"
-                  value={formData.default_country || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, default_country: e.target.value })
-                  }
-                  placeholder="Ex: BR"
-                />
-              </div>
-            </TabsContent>
           </Tabs>
         )}
 

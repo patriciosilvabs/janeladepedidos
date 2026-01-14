@@ -3,13 +3,14 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, Phone, User, Package, AlertTriangle, Timer } from 'lucide-react';
+import { Clock, MapPin, Phone, User, Package, AlertTriangle, Timer, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
   order: OrderWithGroup;
   onMarkReady?: () => void;
   onForceDispatch?: () => void;
+  onRetryNotification?: () => void;
   showTimer?: boolean;
   timerDuration?: number; // in seconds
 }
@@ -54,6 +55,7 @@ export function OrderCard({
   order,
   onMarkReady,
   onForceDispatch,
+  onRetryNotification,
   showTimer = false,
   timerDuration = 600, // 10 minutes default
 }: OrderCardProps) {
@@ -208,6 +210,14 @@ export function OrderCard({
           </div>
         )}
 
+        {/* Notification Error Indicator */}
+        {order.notification_error && (
+          <div className="flex items-center gap-2 p-2 rounded bg-destructive/10 border border-destructive/30">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <span className="text-xs text-destructive">Falha na notificação</span>
+          </div>
+        )}
+
         <div className="flex gap-2 pt-2">
           {onMarkReady && (
             <Button
@@ -226,6 +236,17 @@ export function OrderCard({
               size="lg"
             >
               FORÇAR ENVIO
+            </Button>
+          )}
+          {onRetryNotification && order.notification_error && (
+            <Button
+              onClick={onRetryNotification}
+              variant="outline"
+              className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
+              size="lg"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              REENVIAR NOTIFICAÇÃO
             </Button>
           )}
         </div>

@@ -131,6 +131,7 @@ export type Database = {
           lng: number
           neighborhood: string | null
           notes: string | null
+          notification_error: string | null
           payment_method: string | null
           postal_code: string | null
           ready_at: string | null
@@ -163,6 +164,7 @@ export type Database = {
           lng: number
           neighborhood?: string | null
           notes?: string | null
+          notification_error?: string | null
           payment_method?: string | null
           postal_code?: string | null
           ready_at?: string | null
@@ -195,6 +197,7 @@ export type Database = {
           lng?: number
           neighborhood?: string | null
           notes?: string | null
+          notification_error?: string | null
           payment_method?: string | null
           postal_code?: string | null
           ready_at?: string | null
