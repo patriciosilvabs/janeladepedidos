@@ -31,7 +31,7 @@ export function OrderColumn({
   return (
     <div
       className={cn(
-        'flex h-full flex-col rounded-xl border',
+        'flex h-full min-h-0 flex-col rounded-xl border',
         variantStyles[variant]
       )}
     >
