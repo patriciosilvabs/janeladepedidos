@@ -7,7 +7,8 @@ const corsHeaders = {
 
 interface CardapioWebOrder {
   id: number;
-  code: string;
+  code?: string;
+  display_id?: number;  // Número visível do pedido (ex: 7955)
   status: string;
   order_type: string;
   customer: {
@@ -136,8 +137,8 @@ async function pollStoreOrders(
         console.error(`[poll-orders] Error fetching order details:`, err);
       }
 
-      // Use code from list if details didn't have it
-      const orderCode = orderDetails.code || order.code || String(order.id);
+      // Use display_id from details, fallback to code or order id
+      const orderCode = orderDetails.display_id?.toString() || orderDetails.code || order.display_id?.toString() || String(order.id);
       console.log(`[poll-orders] Final order code to save: ${orderCode}`);
 
       // Extract address info
