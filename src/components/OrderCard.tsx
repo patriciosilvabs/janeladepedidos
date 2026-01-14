@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, Phone, User, Package, AlertTriangle } from 'lucide-react';
+import { Clock, MapPin, Phone, User, Package, AlertTriangle, Timer } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
@@ -25,6 +25,31 @@ const GROUP_COLORS = [
   'bg-red-500',
 ];
 
+function formatTimeAgo(dateString: string | null): string {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return 'Agora';
+  if (diffMins < 60) return `Há ${diffMins} min`;
+  
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `Há ${diffHours}h ${diffMins % 60}min`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `Há ${diffDays}d ${diffHours % 24}h`;
+}
+
+function formatTime(dateString: string | null): string {
+  if (!dateString) return '';
+  
+  const date = new Date(dateString);
+  return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 export function OrderCard({
   order,
   onMarkReady,
@@ -33,6 +58,19 @@ export function OrderCard({
   timerDuration = 600, // 10 minutes default
 }: OrderCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [timeAgo, setTimeAgo] = useState<string>('');
+
+  // Update time ago every minute
+  useEffect(() => {
+    const orderTime = order.cardapioweb_created_at || order.created_at;
+    setTimeAgo(formatTimeAgo(orderTime));
+
+    const interval = setInterval(() => {
+      setTimeAgo(formatTimeAgo(orderTime));
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, [order.cardapioweb_created_at, order.created_at]);
 
   useEffect(() => {
     if (!showTimer || !order.ready_at) return;
@@ -55,7 +93,7 @@ export function OrderCard({
     return () => clearInterval(interval);
   }, [showTimer, order.ready_at, timerDuration]);
 
-  const formatTime = (seconds: number) => {
+  const formatCountdown = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
@@ -76,6 +114,7 @@ export function OrderCard({
   };
 
   const isUrgent = timeLeft !== null && timeLeft <= 120;
+  const orderTime = order.cardapioweb_created_at || order.created_at;
 
   return (
     <Card
@@ -89,6 +128,21 @@ export function OrderCard({
           <span className="font-mono font-bold text-primary">
             #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
           </span>
+          <div className="flex items-center gap-2">
+            {timeAgo && (
+              <span className="flex items-center gap-1 text-muted-foreground">
+                <Timer className="h-3 w-3" />
+                {timeAgo}
+                {orderTime && (
+                  <span className="text-muted-foreground/70">
+                    ({formatTime(orderTime)})
+                  </span>
+                )}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-xs mb-1">
           {order.stores?.name && (
             <Badge variant="secondary" className="text-xs">
               {order.stores.name}
@@ -150,7 +204,7 @@ export function OrderCard({
           >
             {isUrgent && <AlertTriangle className="h-5 w-5" />}
             <Clock className="h-5 w-5" />
-            <span>{formatTime(timeLeft)}</span>
+            <span>{formatCountdown(timeLeft)}</span>
           </div>
         )}
 

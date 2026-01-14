@@ -7,6 +7,7 @@ export interface Order {
   id: string;
   external_id: string | null;
   cardapioweb_order_id: string | null;
+  cardapioweb_created_at: string | null;
   customer_name: string;
   customer_phone: string | null;
   address: string;

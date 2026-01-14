@@ -170,6 +170,7 @@ async function pollStoreOrders(
         notes: orderDetails.notes || address.complement || null,
         status: 'pending',
         store_id: store.id,
+        cardapioweb_created_at: orderDetails.createdAt || null,
       });
 
       if (insertError) {
