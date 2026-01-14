@@ -30,27 +30,50 @@ Deno.serve(async (req) => {
     });
 
     console.log('Cardápio Web API response status:', response.status);
+    
+    const responseText = await response.text();
+    console.log('Cardápio Web API response preview:', responseText.substring(0, 200));
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Cardápio Web API error:', errorText);
+    // Check if response is HTML (invalid token usually returns login page)
+    if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
       return new Response(
         JSON.stringify({ 
           success: false, 
-          error: `Erro na API: ${response.status}`,
-          details: errorText 
+          error: 'Token inválido - API retornou página HTML em vez de JSON',
+          details: 'Verifique se o token da API está correto'
         }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const data = await response.json();
-    console.log('Cardápio Web API response:', JSON.stringify(data).substring(0, 200));
+    if (!response.ok) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Erro na API: ${response.status}`,
+          details: responseText.substring(0, 500)
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    return new Response(
-      JSON.stringify({ success: true, store: data }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    // Try to parse as JSON
+    try {
+      const data = JSON.parse(responseText);
+      return new Response(
+        JSON.stringify({ success: true, store: data }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } catch {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: 'Resposta da API não é JSON válido',
+          details: responseText.substring(0, 200)
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
   } catch (error) {
     console.error('Error testing Cardápio Web connection:', error);
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
