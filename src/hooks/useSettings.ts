@@ -61,7 +61,20 @@ export function useSettings() {
         body: { token },
       });
 
-      if (error) throw error;
+      if (error) {
+        // Attach the response data to the error for better error handling
+        const enhancedError = new Error(error.message);
+        (enhancedError as any).context = { data };
+        throw enhancedError;
+      }
+      
+      // Check if the response indicates failure
+      if (data && data.success === false) {
+        const enhancedError = new Error(data.error || 'Connection failed');
+        (enhancedError as any).context = { data };
+        throw enhancedError;
+      }
+      
       return data;
     },
   });
