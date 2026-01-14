@@ -2,10 +2,25 @@ import { useState, useEffect } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
+type AppRole = 'owner' | 'admin' | 'user';
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
+  const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const fetchUserRole = async (userId: string) => {
+    const { data, error } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId)
+      .single();
+    
+    if (data && !error) {
+      setRole(data.role as AppRole);
+    }
+  };
 
   useEffect(() => {
     // Set up auth state listener FIRST
@@ -14,6 +29,15 @@ export function useAuth() {
         setSession(session);
         setUser(session?.user ?? null);
         setLoading(false);
+        
+        // Fetch role after auth state change (deferred to avoid deadlock)
+        if (session?.user) {
+          setTimeout(() => {
+            fetchUserRole(session.user.id);
+          }, 0);
+        } else {
+          setRole(null);
+        }
       }
     );
 
@@ -22,6 +46,10 @@ export function useAuth() {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
+      
+      if (session?.user) {
+        fetchUserRole(session.user.id);
+      }
     });
 
     return () => subscription.unsubscribe();
@@ -56,6 +84,9 @@ export function useAuth() {
   return {
     user,
     session,
+    role,
+    isOwner: role === 'owner',
+    isAdmin: role === 'admin' || role === 'owner',
     loading,
     signUp,
     signIn,
