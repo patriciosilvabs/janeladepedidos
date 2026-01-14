@@ -49,9 +49,9 @@ async function notifyCardapioWebReady(
   const apiUrl = store.cardapioweb_api_url || 'https://integracao.cardapioweb.com';
 
   try {
-    console.log(`Notifying CardápioWeb that order ${cardapiowebOrderId} is ready and dispatching...`);
+    console.log(`Notifying CardápioWeb that order ${cardapiowebOrderId} is ready...`);
     
-    // Primeiro, marcar como "pronto" usando POST /ready (sem body)
+    // Marcar como "pronto" usando POST /ready (sem body)
     const readyResponse = await fetch(
       `${apiUrl}/api/partner/v1/orders/${cardapiowebOrderId}/ready`,
       {
@@ -66,34 +66,15 @@ async function notifyCardapioWebReady(
     if (!readyResponse.ok) {
       const errorText = await readyResponse.text();
       console.error(`CardápioWeb /ready failed: ${readyResponse.status}`, errorText);
-      // Se erro 409 (Conflict), pode significar que já está pronto - continuar para dispatch
-      if (readyResponse.status !== 409) {
-        return { success: false, error: `Ready API Error: ${readyResponse.status} - ${errorText}` };
+      // Se erro 409 (Conflict), significa que já está pronto - consideramos sucesso
+      if (readyResponse.status === 409) {
+        console.log(`Order ${cardapiowebOrderId} already ready (409)`);
+        return { success: true };
       }
-      console.log(`Order ${cardapiowebOrderId} already ready (409), continuing to dispatch...`);
-    } else {
-      console.log(`Order ${cardapiowebOrderId} marked as ready`);
+      return { success: false, error: `Ready API Error: ${readyResponse.status} - ${errorText}` };
     }
 
-    // Depois, marcar como "saiu para entrega" usando POST /dispatch (sem body)
-    const dispatchResponse = await fetch(
-      `${apiUrl}/api/partner/v1/orders/${cardapiowebOrderId}/dispatch`,
-      {
-        method: 'POST',
-        headers: {
-          'X-API-KEY': store.cardapioweb_api_token,
-          'Accept': 'application/json',
-        },
-      }
-    );
-
-    if (!dispatchResponse.ok) {
-      const errorText = await dispatchResponse.text();
-      console.error(`CardápioWeb /dispatch failed: ${dispatchResponse.status}`, errorText);
-      return { success: false, error: `Dispatch API Error: ${dispatchResponse.status} - ${errorText}` };
-    }
-
-    console.log(`CardápioWeb notified successfully: Order ${cardapiowebOrderId} dispatched`);
+    console.log(`CardápioWeb notified: Order ${cardapiowebOrderId} marked as ready`);
     return { success: true };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
