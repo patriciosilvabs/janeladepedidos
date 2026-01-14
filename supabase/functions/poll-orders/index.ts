@@ -110,7 +110,7 @@ async function pollStoreOrders(
       }
 
       // Fetch order details
-      console.log(`[poll-orders] Fetching details for order: ${order.id}`);
+      console.log(`[poll-orders] Fetching details for order: ${order.id}, code from list: ${order.code}`);
       let orderDetails = order;
       
       try {
@@ -125,10 +125,15 @@ async function pollStoreOrders(
 
         if (detailsResponse.ok) {
           orderDetails = await detailsResponse.json();
+          console.log(`[poll-orders] Order details - id: ${orderDetails.id}, code: ${orderDetails.code}`);
         }
       } catch (err) {
         console.error(`[poll-orders] Error fetching order details:`, err);
       }
+
+      // Use code from list if details didn't have it
+      const orderCode = orderDetails.code || order.code || String(order.id);
+      console.log(`[poll-orders] Final order code to save: ${orderCode}`);
 
       // Extract address info
       const delivery = orderDetails.delivery || {};
@@ -149,7 +154,7 @@ async function pollStoreOrders(
 
       // Insert new order with store_id
       const { error: insertError } = await supabase.from('orders').insert({
-        cardapioweb_order_id: orderDetails.code || cardapiowebOrderId,  // Número visível do pedido (ex: 7955)
+        cardapioweb_order_id: orderCode,  // Número visível do pedido (ex: 7955)
         external_id: cardapiowebOrderId,  // ID interno para chamadas de API
         customer_name: orderDetails.customer?.name || 'Cliente',
         customer_phone: orderDetails.customer?.phone || null,
