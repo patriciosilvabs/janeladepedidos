@@ -1,1 +1,16 @@
 project_id = "wmrsekgxueceaeobxuss"
+
+[functions.dispatch-to-foody]
+verify_jwt = false
+
+[functions.test-cardapioweb-connection]
+verify_jwt = false
+
+[functions.test-foody-connection]
+verify_jwt = false
+
+[functions.webhook-orders]
+verify_jwt = false
+
+[functions.poll-orders]
+verify_jwt = false

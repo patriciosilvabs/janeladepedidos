@@ -1,16 +1,19 @@
 import { useMemo } from 'react';
 import { useOrders } from '@/hooks/useOrders';
+import { usePolling } from '@/hooks/usePolling';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { GroupCard } from './GroupCard';
-import { ChefHat, Clock, Truck, Loader2, AlertCircle } from 'lucide-react';
+import { ChefHat, Clock, Truck, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
 import { OrderWithGroup } from '@/types/orders';
 import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
 
 export function Dashboard() {
   const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch } =
     useOrders();
   const { toast } = useToast();
+  const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -113,7 +116,29 @@ export function Dashboard() {
   }
 
   return (
-    <div className="grid h-[calc(100vh-5rem)] grid-cols-1 gap-4 p-4 md:grid-cols-3">
+    <div className="flex flex-col h-[calc(100vh-5rem)]">
+      {/* Polling Status Bar */}
+      {pollingEnabled && (
+        <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <RefreshCw className={cn("h-4 w-4", isPolling && "animate-spin")} />
+            <span>
+              {isPolling ? 'Sincronizando...' : lastSync 
+                ? `Última sincronização: ${lastSync.toLocaleTimeString('pt-BR')}`
+                : 'Aguardando sincronização...'}
+            </span>
+          </div>
+          <button 
+            onClick={manualPoll}
+            disabled={isPolling}
+            className="text-sm text-primary hover:underline disabled:opacity-50"
+          >
+            Sincronizar agora
+          </button>
+        </div>
+      )}
+      
+      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-3 overflow-hidden">
       {/* Column 1: Em Produção */}
       <OrderColumn
         title="Em Produção"
@@ -180,6 +205,7 @@ export function Dashboard() {
           ))
         )}
       </OrderColumn>
+      </div>
     </div>
   );
 }

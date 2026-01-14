@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, Loader2, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, CheckCircle, XCircle, AlertCircle, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,6 +25,19 @@ export function SettingsDialog() {
   const [showFoodyToken, setShowFoodyToken] = useState(false);
   const [cardapioStatus, setCardapioStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyStatus, setFoodyStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [webhookCopied, setWebhookCopied] = useState(false);
+
+  const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
+
+  const handleCopyWebhook = async () => {
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      setWebhookCopied(true);
+      setTimeout(() => setWebhookCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   useEffect(() => {
     if (settings) {
@@ -259,6 +272,33 @@ export function SettingsDialog() {
                   Testar Conexão
                 </Button>
                 {getStatusIcon(cardapioStatus)}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-border/50">
+                <Label>URL do Webhook</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Configure esta URL no painel do Cardápio Web para receber pedidos automaticamente
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={webhookUrl}
+                    readOnly
+                    className="font-mono text-xs bg-muted"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopyWebhook}
+                    className="shrink-0"
+                  >
+                    {webhookCopied ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
             </TabsContent>
 
