@@ -182,63 +182,6 @@ export function SettingsDialog() {
                   }
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="grouping-radius">Raio de Agrupamento (km)</Label>
-                <p className="text-sm text-muted-foreground">
-                  Distância máxima para agrupar pedidos
-                </p>
-                <Input
-                  id="grouping-radius"
-                  type="number"
-                  min={0.5}
-                  max={10}
-                  step={0.5}
-                  value={formData.grouping_radius_km || 2}
-                  onChange={(e) =>
-                    setFormData({ ...formData, grouping_radius_km: parseFloat(e.target.value) || 2 })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="max-orders">Máximo de Pedidos por Grupo</Label>
-                <p className="text-sm text-muted-foreground">
-                  Limite de pedidos em um mesmo grupo de entrega
-                </p>
-                <Input
-                  id="max-orders"
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={formData.max_orders_per_group || 3}
-                  onChange={(e) =>
-                    setFormData({ ...formData, max_orders_per_group: parseInt(e.target.value) || 3 })
-                  }
-                />
-              </div>
-
-              <div className="pt-4 border-t border-border/50">
-                <div className="space-y-2">
-                  <Label htmlFor="max-order-age">Tempo Máximo de Pedido (horas)</Label>
-                  <p className="text-sm text-muted-foreground">
-                    Pedidos mais antigos que este tempo serão removidos automaticamente
-                  </p>
-                  <Input
-                    id="max-order-age"
-                    type="number"
-                    min={1}
-                    max={168}
-                    value={formData.max_order_age_hours || 24}
-                    onChange={(e) =>
-                      setFormData({ ...formData, max_order_age_hours: parseInt(e.target.value) || 24 })
-                    }
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    A limpeza automática é executada a cada hora via cron job
-                  </p>
-                </div>
-              </div>
             </TabsContent>
 
             <TabsContent value="location" className="space-y-4 mt-4">
