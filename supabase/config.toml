@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.sync-orders-status]
 verify_jwt = false
+
+[functions.cleanup-old-orders]
+verify_jwt = false
