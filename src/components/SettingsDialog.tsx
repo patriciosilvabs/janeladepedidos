@@ -50,7 +50,10 @@ export function SettingsDialog() {
     }
     setCardapioStatus('testing');
     try {
-      const result = await testCardapioWebConnection.mutateAsync(formData.cardapioweb_api_token);
+      const result = await testCardapioWebConnection.mutateAsync({
+        token: formData.cardapioweb_api_token,
+        url: formData.cardapioweb_api_url
+      });
       if (result?.note) {
         setCardapioStatus('success');
         toast.success(`Conexão OK! ${result.note}`);
