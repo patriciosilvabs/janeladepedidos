@@ -11,6 +11,12 @@ export interface UserWithRole {
   created_at: string;
 }
 
+export interface CreateUserParams {
+  email: string;
+  password: string;
+  role: 'admin' | 'user';
+}
+
 export function useUsers() {
   const queryClient = useQueryClient();
 
@@ -42,10 +48,26 @@ export function useUsers() {
     },
   });
 
+  const createUser = useMutation({
+    mutationFn: async (params: CreateUserParams) => {
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: params,
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+    },
+  });
+
   return {
     users,
     isLoading,
     error,
     updateUserRole,
+    createUser,
   };
 }
