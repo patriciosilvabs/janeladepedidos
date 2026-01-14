@@ -50,12 +50,25 @@ export function SettingsDialog() {
     }
     setCardapioStatus('testing');
     try {
-      await testCardapioWebConnection.mutateAsync(formData.cardapioweb_api_token);
-      setCardapioStatus('success');
-      toast.success('Conexão com Cardápio Web OK!');
-    } catch (error) {
+      const result = await testCardapioWebConnection.mutateAsync(formData.cardapioweb_api_token);
+      if (result?.note) {
+        setCardapioStatus('success');
+        toast.success(`Conexão OK! ${result.note}`);
+      } else {
+        setCardapioStatus('success');
+        toast.success('Conexão com Cardápio Web OK!');
+      }
+    } catch (error: any) {
       setCardapioStatus('error');
-      toast.error('Falha na conexão com Cardápio Web');
+      // Try to extract the detailed error message from the response
+      const errorData = error?.context?.data;
+      if (errorData?.details) {
+        toast.error(errorData.details);
+      } else if (errorData?.error) {
+        toast.error(errorData.error);
+      } else {
+        toast.error('Falha na conexão com Cardápio Web');
+      }
       console.error(error);
     }
   };
