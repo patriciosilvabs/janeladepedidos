@@ -169,24 +169,42 @@ export function SettingsDialog() {
 
               <div className="space-y-2">
                 <Label htmlFor="cardapio-token">Token API (X-API-KEY)</Label>
-                <div className="relative">
-                  <Input
-                    id="cardapio-token"
-                    type={showCardapioToken ? 'text' : 'password'}
-                    value={formData.cardapioweb_api_token || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, cardapioweb_api_token: e.target.value })
-                    }
-                    placeholder="Digite o token da API"
-                  />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="cardapio-token"
+                      type={showCardapioToken ? 'text' : 'password'}
+                      value={formData.cardapioweb_api_token || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, cardapioweb_api_token: e.target.value })
+                      }
+                      placeholder="Digite o token da API"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="absolute right-0 top-0 h-full"
+                      onClick={() => setShowCardapioToken(!showCardapioToken)}
+                    >
+                      {showCardapioToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full"
-                    onClick={() => setShowCardapioToken(!showCardapioToken)}
+                    variant="secondary"
+                    size="sm"
+                    className="whitespace-nowrap text-xs"
+                    onClick={() => {
+                      setFormData({ 
+                        ...formData, 
+                        cardapioweb_api_token: '7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNMNJwckvE',
+                        cardapioweb_api_url: 'https://integracao.sandbox.cardapioweb.com'
+                      });
+                      toast.info('Token Sandbox inserido. Clique em "Testar Conexão"');
+                    }}
                   >
-                    {showCardapioToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    Usar Sandbox
                   </Button>
                 </div>
               </div>
