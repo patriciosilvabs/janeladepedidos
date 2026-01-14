@@ -164,6 +164,9 @@ export function GroupCard({
           <div key={order.id} className="rounded-lg border border-border/50 bg-background/50 p-3">
             <div className="flex items-start justify-between gap-2">
               <div className="flex-1">
+                <p className="font-mono font-bold text-primary text-sm mb-1">
+                  #{order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)}
+                </p>
                 <p className="font-medium">{order.customer_name}</p>
                 <p className="text-sm text-muted-foreground">{order.address}</p>
                 {order.neighborhood && (
