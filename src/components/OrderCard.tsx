@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, User, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Clock, MapPin, User, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
@@ -13,6 +13,7 @@ interface OrderCardProps {
   onRetryNotification?: () => void;
   showTimer?: boolean;
   timerDuration?: number;
+  isMarkingReady?: boolean;
 }
 
 const GROUP_COLORS = [
@@ -58,6 +59,7 @@ export function OrderCard({
   onRetryNotification,
   showTimer = false,
   timerDuration = 600,
+  isMarkingReady = false,
 }: OrderCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeAgo, setTimeAgo] = useState<string>('');
@@ -188,10 +190,18 @@ export function OrderCard({
             {onMarkReady && (
               <Button
                 onClick={onMarkReady}
+                disabled={isMarkingReady}
                 className="w-full bg-green-600 hover:bg-green-700"
                 size="default"
               >
-                MARCAR COMO PRONTO
+                {isMarkingReady ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    PROCESSANDO...
+                  </>
+                ) : (
+                  'MARCAR COMO PRONTO'
+                )}
               </Button>
             )}
             {onForceDispatch && (

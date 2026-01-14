@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useOrders } from '@/hooks/useOrders';
 import { usePolling } from '@/hooks/usePolling';
 import { useSettings } from '@/hooks/useSettings';
@@ -16,6 +16,7 @@ export function Dashboard() {
   const { settings } = useSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
+  const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -51,6 +52,7 @@ export function Dashboard() {
   }, [bufferOrders]);
 
   const handleMarkReady = async (orderId: string) => {
+    setProcessingOrderId(orderId);
     try {
       await markAsReady.mutateAsync(orderId);
       toast({
@@ -63,6 +65,8 @@ export function Dashboard() {
         description: 'Não foi possível marcar o pedido como pronto.',
         variant: 'destructive',
       });
+    } finally {
+      setProcessingOrderId(null);
     }
   };
 
@@ -216,6 +220,7 @@ export function Dashboard() {
               key={order.id}
               order={order}
               onMarkReady={() => handleMarkReady(order.id)}
+              isMarkingReady={processingOrderId === order.id}
             />
           ))
         )}
