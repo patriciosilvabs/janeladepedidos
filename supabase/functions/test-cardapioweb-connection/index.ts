@@ -1,5 +1,3 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -11,7 +9,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { token, useSandbox } = await req.json();
+    const { token, url } = await req.json();
 
     if (!token) {
       return new Response(
@@ -20,94 +18,75 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Helper function to test a specific URL
-    async function testUrl(baseUrl: string): Promise<{ success: boolean; data?: any; isHtml?: boolean; status?: number; error?: string }> {
-      try {
-        const response = await fetch(`${baseUrl}/api/partner/v1/orders`, {
-          method: 'GET',
-          headers: {
-            'X-API-KEY': token,
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-          },
-        });
+    // Use custom URL if provided, otherwise default to production
+    const baseUrl = url || 'https://integracao.cardapioweb.com';
+    
+    console.log(`Testing connection to: ${baseUrl}`);
 
-        const responseText = await response.text();
-        console.log(`Testing ${baseUrl} - Status: ${response.status}, Response preview: ${responseText.substring(0, 100)}`);
+    try {
+      const response = await fetch(`${baseUrl}/api/partner/v1/orders`, {
+        method: 'GET',
+        headers: {
+          'X-API-KEY': token,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      });
 
-        // Check if response is HTML
-        if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
-          return { success: false, isHtml: true, status: response.status };
-        }
+      const responseText = await response.text();
+      console.log(`Status: ${response.status}, Response preview: ${responseText.substring(0, 100)}`);
 
-        if (!response.ok) {
-          return { success: false, status: response.status, error: responseText.substring(0, 200) };
-        }
-
-        try {
-          const data = JSON.parse(responseText);
-          return { success: true, data };
-        } catch {
-          return { success: false, error: 'Resposta não é JSON válido' };
-        }
-      } catch (err) {
-        return { success: false, error: err instanceof Error ? err.message : 'Erro de conexão' };
+      // Check if response is HTML (invalid token or wrong URL)
+      if (responseText.trim().startsWith('<!') || responseText.trim().startsWith('<html')) {
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: 'Token inválido - API retornou página HTML',
+            details: 'Verifique se o token e a URL estão corretos.'
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
-    }
 
-    const productionUrl = 'https://integracao.cardapioweb.com';
-    const sandboxUrl = 'https://integracao.sandbox.cardapioweb.com';
+      if (!response.ok) {
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            error: `Erro na API: ${response.status}`,
+            details: responseText.substring(0, 200)
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
-    // Test the appropriate environment
-    const urlToTest = useSandbox ? sandboxUrl : productionUrl;
-    const result = await testUrl(urlToTest);
-
-    if (result.success) {
-      const ordersCount = Array.isArray(result.data) ? result.data.length : 0;
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          ordersCount,
-          message: `Conexão OK! ${ordersCount} pedidos encontrados.`,
-          environment: useSandbox ? 'sandbox' : 'production'
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // If production fails with HTML, try sandbox automatically
-    if (!useSandbox && result.isHtml) {
-      console.log('Production returned HTML, trying sandbox...');
-      const sandboxResult = await testUrl(sandboxUrl);
-      
-      if (sandboxResult.success) {
-        const ordersCount = Array.isArray(sandboxResult.data) ? sandboxResult.data.length : 0;
+      try {
+        const data = JSON.parse(responseText);
+        const ordersCount = Array.isArray(data) ? data.length : 0;
+        
         return new Response(
           JSON.stringify({ 
             success: true, 
             ordersCount,
             message: `Conexão OK! ${ordersCount} pedidos encontrados.`,
-            environment: 'sandbox',
-            note: 'Token funcionou no ambiente Sandbox. Configure a URL correta nas configurações.'
+            url: baseUrl
           }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
+      } catch {
+        return new Response(
+          JSON.stringify({ success: false, error: 'Resposta não é JSON válido' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
       }
+    } catch (err) {
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: err instanceof Error ? err.message : 'Erro de conexão'
+        }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
-
-    // Return error with helpful message
-    return new Response(
-      JSON.stringify({ 
-        success: false, 
-        error: result.isHtml 
-          ? 'Token inválido - API retornou página HTML' 
-          : `Erro na API: ${result.status || result.error}`,
-        details: result.isHtml 
-          ? 'Verifique se o token está correto. Para testes, use o token Sandbox: 7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNMNJwckvE'
-          : result.error
-      }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
   } catch (error) {
     console.error('Error testing Cardápio Web connection:', error);
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
