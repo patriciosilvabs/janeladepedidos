@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useOrders } from '@/hooks/useOrders';
 import { usePolling } from '@/hooks/usePolling';
+import { useSettings } from '@/hooks/useSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { GroupCard } from './GroupCard';
@@ -12,6 +13,7 @@ import { cn } from '@/lib/utils';
 export function Dashboard() {
   const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus } =
     useOrders();
+  const { settings } = useSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
 
@@ -208,6 +210,7 @@ export function Dashboard() {
               orders={groupOrders}
               onDispatch={() => handleDispatchGroup(groupId)}
               onForceDispatchOrder={handleForceDispatch}
+              timerDuration={(settings?.buffer_timeout_minutes || 10) * 60}
             />
           ))
         )}
