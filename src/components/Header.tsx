@@ -1,5 +1,6 @@
-import { Truck, RefreshCw, LogOut } from 'lucide-react';
+import { Truck, RefreshCw, LogOut, Crown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { useAuth } from '@/hooks/useAuth';
@@ -7,7 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export function Header() {
   const queryClient = useQueryClient();
-  const { user, signOut } = useAuth();
+  const { user, isOwner, signOut } = useAuth();
   const { toast } = useToast();
 
   const handleRefresh = () => {
@@ -40,9 +41,17 @@ export function Header() {
       </div>
       <div className="flex items-center gap-3">
         {user && (
-          <span className="text-sm text-muted-foreground hidden sm:inline">
-            {user.email}
-          </span>
+          <div className="flex items-center gap-2">
+            {isOwner && (
+              <Badge variant="default" className="gap-1">
+                <Crown className="h-3 w-3" />
+                Proprietário
+              </Badge>
+            )}
+            <span className="text-sm text-muted-foreground hidden sm:inline">
+              {user.email}
+            </span>
+          </div>
         )}
         <SettingsDialog />
         <Button variant="outline" size="icon" onClick={handleRefresh}>
