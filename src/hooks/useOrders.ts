@@ -31,7 +31,7 @@ export function useOrders() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('orders')
-        .select('*, delivery_groups(*)')
+        .select('*, delivery_groups(*), stores(*)')
         .order('created_at', { ascending: false });
       
       if (error) throw error;
