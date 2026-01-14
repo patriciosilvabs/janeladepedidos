@@ -9,6 +9,7 @@ interface CardapioWebOrder {
   id: number;
   code: string;
   status: string;
+  order_type: string;
   customer: {
     name: string;
     phone?: string;
@@ -107,12 +108,15 @@ Deno.serve(async (req) => {
     }
 
     const ordersData: CardapioWebOrder[] = await ordersResponse.json();
-    console.log('[poll-orders] Found', ordersData.length, 'orders');
+    
+    // Filter only delivery orders
+    const deliveryOrders = ordersData.filter(order => order.order_type === 'delivery');
+    console.log('[poll-orders] Found', ordersData.length, 'total orders,', deliveryOrders.length, 'delivery orders');
 
     let newOrdersCount = 0;
     let processedCount = 0;
 
-    for (const order of ordersData) {
+    for (const order of deliveryOrders) {
       processedCount++;
       const cardapiowebOrderId = String(order.id);
 
@@ -198,16 +202,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log('[poll-orders] Completed. New orders:', newOrdersCount, 'Processed:', processedCount);
+    console.log('[poll-orders] Completed. New orders:', newOrdersCount, 'Processed:', processedCount, 'of', deliveryOrders.length, 'delivery orders');
 
     return new Response(
       JSON.stringify({
         success: true,
         newOrders: newOrdersCount,
         processed: processedCount,
+        totalFromApi: ordersData.length,
+        deliveryOnly: deliveryOrders.length,
         message: newOrdersCount > 0 
-          ? `${newOrdersCount} novo(s) pedido(s) importado(s)` 
-          : 'Nenhum pedido novo encontrado',
+          ? `${newOrdersCount} novo(s) pedido(s) de delivery importado(s)` 
+          : 'Nenhum pedido novo de delivery encontrado',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
