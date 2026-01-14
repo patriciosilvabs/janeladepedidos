@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -51,14 +51,18 @@ function formatTime(dateString: string | null): string {
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-export function OrderCard({
-  order,
-  onMarkReady,
-  onForceDispatch,
-  onRetryNotification,
-  showTimer = false,
-  timerDuration = 600, // 10 minutes default
-}: OrderCardProps) {
+export const OrderCard = forwardRef<HTMLDivElement, OrderCardProps>(
+  function OrderCard(
+    {
+      order,
+      onMarkReady,
+      onForceDispatch,
+      onRetryNotification,
+      showTimer = false,
+      timerDuration = 600, // 10 minutes default
+    },
+    ref
+  ) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeAgo, setTimeAgo] = useState<string>('');
 
@@ -120,6 +124,7 @@ export function OrderCard({
 
   return (
     <Card
+      ref={ref}
       className={cn(
         'border-border/50 bg-card/80 backdrop-blur transition-all duration-300',
         isUrgent && 'border-red-500/50 shadow-red-500/20 shadow-lg'
@@ -253,4 +258,4 @@ export function OrderCard({
       </CardContent>
     </Card>
   );
-}
+});

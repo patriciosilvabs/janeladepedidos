@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, forwardRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -26,13 +26,17 @@ const GROUP_COLORS = [
   'border-red-500 bg-red-500/10',
 ];
 
-export function GroupCard({
-  groupId,
-  orders,
-  onDispatch,
-  onForceDispatchOrder,
-  timerDuration = 600,
-}: GroupCardProps) {
+export const GroupCard = forwardRef<HTMLDivElement, GroupCardProps>(
+  function GroupCard(
+    {
+      groupId,
+      orders,
+      onDispatch,
+      onForceDispatchOrder,
+      timerDuration = 600,
+    },
+    ref
+  ) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const hasDispatchedRef = useRef(false);
 
@@ -97,6 +101,7 @@ export function GroupCard({
 
   return (
     <Card
+      ref={ref}
       className={cn(
         'border-2 transition-all duration-300',
         getGroupColor(),
@@ -168,4 +173,4 @@ export function GroupCard({
       </CardContent>
     </Card>
   );
-}
+});
