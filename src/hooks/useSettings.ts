@@ -13,6 +13,7 @@ export interface AppSettings {
   buffer_timeout_minutes: number;
   grouping_radius_km: number;
   max_orders_per_group: number;
+  max_order_age_hours: number;
   default_city: string;
   default_region: string;
   default_country: string;

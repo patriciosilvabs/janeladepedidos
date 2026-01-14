@@ -324,6 +324,28 @@ export function SettingsDialog() {
                   }
                 />
               </div>
+
+              <div className="pt-4 border-t border-border/50">
+                <div className="space-y-2">
+                  <Label htmlFor="max-order-age">Tempo Máximo de Pedido (horas)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Pedidos mais antigos que este tempo serão removidos automaticamente
+                  </p>
+                  <Input
+                    id="max-order-age"
+                    type="number"
+                    min={1}
+                    max={168}
+                    value={formData.max_order_age_hours || 24}
+                    onChange={(e) =>
+                      setFormData({ ...formData, max_order_age_hours: parseInt(e.target.value) || 24 })
+                    }
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A limpeza automática é executada a cada hora via cron job
+                  </p>
+                </div>
+              </div>
             </TabsContent>
 
             <TabsContent value="location" className="space-y-4 mt-4">
