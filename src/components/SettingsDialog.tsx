@@ -18,13 +18,11 @@ import { useSettings, AppSettings } from '@/hooks/useSettings';
 import { toast } from 'sonner';
 
 export function SettingsDialog() {
-  const { settings, isLoading, saveSettings, testCardapioWebConnection, testFoodyConnection } = useSettings();
+  const { settings, isLoading, saveSettings, testFoodyConnection } = useSettings();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
-  const [showCardapioToken, setShowCardapioToken] = useState(false);
   const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
   const [showFoodyToken, setShowFoodyToken] = useState(false);
-  const [cardapioStatus, setCardapioStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyStatus, setFoodyStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [webhookCopied, setWebhookCopied] = useState(false);
 
@@ -53,39 +51,6 @@ export function SettingsDialog() {
       setOpen(false);
     } catch (error) {
       toast.error('Erro ao salvar configurações');
-      console.error(error);
-    }
-  };
-
-  const handleTestCardapio = async () => {
-    if (!formData.cardapioweb_api_token) {
-      toast.error('Insira o token da API primeiro');
-      return;
-    }
-    setCardapioStatus('testing');
-    try {
-      const result = await testCardapioWebConnection.mutateAsync({
-        token: formData.cardapioweb_api_token,
-        url: formData.cardapioweb_api_url
-      });
-      if (result?.note) {
-        setCardapioStatus('success');
-        toast.success(`Conexão OK! ${result.note}`);
-      } else {
-        setCardapioStatus('success');
-        toast.success('Conexão com Cardápio Web OK!');
-      }
-    } catch (error: any) {
-      setCardapioStatus('error');
-      // Try to extract the detailed error message from the response
-      const errorData = error?.context?.data;
-      if (errorData?.details) {
-        toast.error(errorData.details);
-      } else if (errorData?.error) {
-        toast.error(errorData.error);
-      } else {
-        toast.error('Falha na conexão com Cardápio Web');
-      }
       console.error(error);
     }
   };
@@ -176,66 +141,20 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="cardapio" className="space-y-4 mt-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label htmlFor="cardapio-enabled">Integração Ativa</Label>
+              <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
                   <p className="text-sm text-muted-foreground">
-                    Habilitar recebimento de pedidos
+                    Configure os tokens API de cada loja na aba <strong>Lojas</strong>. Aqui ficam apenas as configurações globais de webhook.
                   </p>
-                </div>
-                <Switch
-                  id="cardapio-enabled"
-                  checked={formData.cardapioweb_enabled || false}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, cardapioweb_enabled: checked })
-                  }
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cardapio-token">Token API (X-API-KEY)</Label>
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Input
-                      id="cardapio-token"
-                      type={showCardapioToken ? 'text' : 'password'}
-                      value={formData.cardapioweb_api_token || ''}
-                      onChange={(e) =>
-                        setFormData({ ...formData, cardapioweb_api_token: e.target.value })
-                      }
-                      placeholder="Digite o token da API"
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="absolute right-0 top-0 h-full"
-                      onClick={() => setShowCardapioToken(!showCardapioToken)}
-                    >
-                      {showCardapioToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    className="whitespace-nowrap text-xs"
-                    onClick={() => {
-                      setFormData({ 
-                        ...formData, 
-                        cardapioweb_api_token: '7nSyGq49NVXuyZfgEQNPg3TdUqLNXTMNMNJwckvE',
-                        cardapioweb_api_url: 'https://integracao.sandbox.cardapioweb.com'
-                      });
-                      toast.info('Token Sandbox inserido. Clique em "Testar Conexão"');
-                    }}
-                  >
-                    Usar Sandbox
-                  </Button>
                 </div>
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="cardapio-webhook">Token Webhook (X-Webhook-Token)</Label>
+                <p className="text-sm text-muted-foreground">
+                  Token global para validar webhooks recebidos do Cardápio Web
+                </p>
                 <div className="relative">
                   <Input
                     id="cardapio-webhook"
@@ -258,32 +177,7 @@ export function SettingsDialog() {
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="cardapio-url">URL da API</Label>
-                <Input
-                  id="cardapio-url"
-                  value={formData.cardapioweb_api_url || ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, cardapioweb_api_url: e.target.value })
-                  }
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleTestCardapio}
-                  disabled={testCardapioWebConnection.isPending}
-                >
-                  {testCardapioWebConnection.isPending && (
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  )}
-                  Testar Conexão
-                </Button>
-                {getStatusIcon(cardapioStatus)}
-              </div>
-
-              <div className="mt-6 pt-4 border-t border-border/50">
+              <div className="pt-4 border-t border-border/50">
                 <Label>URL do Webhook</Label>
                 <p className="text-sm text-muted-foreground mb-2">
                   Configure esta URL no painel do Cardápio Web para receber pedidos automaticamente
