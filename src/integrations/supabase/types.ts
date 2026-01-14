@@ -110,6 +110,7 @@ export type Database = {
       orders: {
         Row: {
           address: string
+          cardapioweb_created_at: string | null
           cardapioweb_order_id: string | null
           city: string | null
           country: string | null
@@ -141,6 +142,7 @@ export type Database = {
         }
         Insert: {
           address: string
+          cardapioweb_created_at?: string | null
           cardapioweb_order_id?: string | null
           city?: string | null
           country?: string | null
@@ -172,6 +174,7 @@ export type Database = {
         }
         Update: {
           address?: string
+          cardapioweb_created_at?: string | null
           cardapioweb_order_id?: string | null
           city?: string | null
           country?: string | null
