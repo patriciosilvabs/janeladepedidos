@@ -86,6 +86,11 @@ async function pollStoreOrders(
 
     const ordersData: CardapioWebOrder[] = await ordersResponse.json();
     
+    // Log first order to debug structure
+    if (ordersData.length > 0) {
+      console.log(`[poll-orders] First order raw data:`, JSON.stringify(ordersData[0], null, 2));
+    }
+    
     // Filter only delivery orders
     const deliveryOrders = ordersData.filter(order => order.order_type === 'delivery');
     result.totalFromApi = ordersData.length;
