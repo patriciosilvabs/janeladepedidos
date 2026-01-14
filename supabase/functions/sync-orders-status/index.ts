@@ -116,9 +116,19 @@ async function syncStoreOrders(
 
       console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} status in CardápioWeb: ${cardapiowebStatus}`);
 
+      // Status que indicam que o pedido foi concluído e deve ser removido
+      const completedStatuses = [
+        'closed',      // Fechado
+        'cancelled',   // Cancelado
+        'delivered',   // Entregue
+        'dispatched',  // Despachado/em entrega
+        'on_the_way',  // Em rota
+        'finished',    // Finalizado
+      ];
+
       // Check if order should be deleted
-      if (['closed', 'cancelled'].includes(cardapiowebStatus)) {
-        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus}, deleting`);
+      if (completedStatuses.includes(cardapiowebStatus)) {
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} (completed), deleting`);
         const { error: deleteError } = await supabase
           .from('orders')
           .delete()
