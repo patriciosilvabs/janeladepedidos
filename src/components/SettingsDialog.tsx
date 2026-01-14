@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, Loader2, CheckCircle, XCircle, AlertCircle, Copy, Check } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, CheckCircle, XCircle, AlertCircle, Copy, Check, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { StoresManager } from '@/components/StoresManager';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -158,13 +159,21 @@ export function SettingsDialog() {
             <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          <Tabs defaultValue="cardapio" className="w-full">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio Web</TabsTrigger>
+          <Tabs defaultValue="stores" className="w-full">
+            <TabsList className="grid w-full grid-cols-5">
+              <TabsTrigger value="stores" className="text-xs sm:text-sm">
+                <Store className="h-3 w-3 mr-1 hidden sm:inline" />
+                Lojas
+              </TabsTrigger>
+              <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio</TabsTrigger>
               <TabsTrigger value="foody" className="text-xs sm:text-sm">Foody</TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
               <TabsTrigger value="location" className="text-xs sm:text-sm">Local</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="stores" className="space-y-4 mt-4">
+              <StoresManager />
+            </TabsContent>
 
             <TabsContent value="cardapio" className="space-y-4 mt-4">
               <div className="flex items-center justify-between">
