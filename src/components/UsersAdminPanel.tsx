@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useUsers, UserWithRole } from '@/hooks/useUsers';
+import { useUsers, UserWithRole, CreateUserParams } from '@/hooks/useUsers';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Table,
@@ -27,10 +27,12 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Crown, Shield, User } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Loader2, Crown, Shield, User, UserPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CreateUserDialog } from './CreateUserDialog';
 
 type AppRole = 'owner' | 'admin' | 'user';
 
@@ -53,12 +55,17 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ReactNode; varian
 };
 
 export function UsersAdminPanel() {
-  const { users, isLoading, updateUserRole } = useUsers();
+  const { users, isLoading, updateUserRole, createUser } = useUsers();
   const { user: currentUser } = useAuth();
   const [pendingChange, setPendingChange] = useState<{
     user: UserWithRole;
     newRole: 'admin' | 'user';
   } | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+
+  const handleCreateUser = async (params: CreateUserParams) => {
+    await createUser.mutateAsync(params);
+  };
 
   const handleRoleChange = (userRecord: UserWithRole, newRole: 'admin' | 'user') => {
     if (userRecord.role === 'owner') return;
@@ -104,8 +111,14 @@ export function UsersAdminPanel() {
 
   return (
     <div className="space-y-4">
-      <div className="text-sm text-muted-foreground">
-        Gerencie os usuários e suas permissões. O proprietário não pode ter sua role alterada.
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-muted-foreground">
+          Gerencie os usuários e suas permissões. O proprietário não pode ter sua role alterada.
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)} size="sm">
+          <UserPlus className="h-4 w-4 mr-2" />
+          Criar Usuário
+        </Button>
       </div>
 
       <div className="rounded-md border">
@@ -202,6 +215,13 @@ export function UsersAdminPanel() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CreateUserDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        onSubmit={handleCreateUser}
+        isLoading={createUser.isPending}
+      />
     </div>
   );
 }
