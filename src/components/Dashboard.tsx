@@ -11,7 +11,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus, retryNotification } =
+  const { orders, isLoading, isFetching, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus, retryNotification } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
@@ -144,7 +144,8 @@ export function Dashboard() {
     }
   };
 
-  if (isLoading) {
+  // Only show full loading on initial load (no data yet)
+  if (isLoading && orders.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
