@@ -145,11 +145,46 @@ async function syncStoreOrders(
       // Check if order should be moved to buffer
       if (['ready', 'waiting_to_catch'].includes(cardapiowebStatus) && order.status === 'pending') {
         console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ready, moving to buffer`);
+        
+        // First, get order lat/lng for creating group
+        const { data: orderData, error: orderFetchError } = await supabase
+          .from('orders')
+          .select('lat, lng')
+          .eq('id', order.id)
+          .single();
+
+        if (orderFetchError) {
+          console.error(`[sync-orders-status] Error fetching order coords:`, orderFetchError);
+          result.errors.push(`Erro ao buscar coordenadas do pedido ${order.cardapioweb_order_id}`);
+          continue;
+        }
+
+        // Create a new delivery group for this order
+        const { data: newGroup, error: groupError } = await supabase
+          .from('delivery_groups')
+          .insert({
+            center_lat: orderData.lat,
+            center_lng: orderData.lng,
+            order_count: 1,
+            status: 'waiting',
+          })
+          .select('id')
+          .single();
+
+        if (groupError) {
+          console.error(`[sync-orders-status] Error creating group:`, groupError);
+          result.errors.push(`Erro ao criar grupo para pedido ${order.cardapioweb_order_id}: ${groupError.message}`);
+          continue;
+        }
+
+        console.log(`[sync-orders-status] Created group ${newGroup.id} for order ${order.cardapioweb_order_id}`);
+
         const { error: updateError } = await supabase
           .from('orders')
           .update({
             status: 'waiting_buffer',
             ready_at: new Date().toISOString(),
+            group_id: newGroup.id,
           })
           .eq('id', order.id);
 
