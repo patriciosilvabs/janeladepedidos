@@ -56,9 +56,12 @@ export function useSettings() {
   });
 
   const testCardapioWebConnection = useMutation({
-    mutationFn: async (token: string) => {
+    mutationFn: async ({ token, url }: { token: string; url?: string }) => {
+      // Determine if we should use sandbox based on the URL
+      const useSandbox = url?.includes('sandbox') || false;
+      
       const { data, error } = await supabase.functions.invoke('test-cardapioweb-connection', {
-        body: { token },
+        body: { token, useSandbox },
       });
 
       if (error) {
