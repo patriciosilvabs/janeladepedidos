@@ -177,6 +177,19 @@ export function useOrders() {
     },
   });
 
+  // Sync orders status with CardápioWeb
+  const syncOrdersStatus = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('sync-orders-status');
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return {
     orders,
     isLoading,
@@ -184,5 +197,6 @@ export function useOrders() {
     markAsReady,
     dispatchGroup,
     forceDispatch,
+    syncOrdersStatus,
   };
 }

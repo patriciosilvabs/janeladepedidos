@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.poll-orders]
 verify_jwt = false
+
+[functions.sync-orders-status]
+verify_jwt = false

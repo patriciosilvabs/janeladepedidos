@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch } =
+  const { orders, isLoading, error, markAsReady, dispatchGroup, forceDispatch, syncOrdersStatus } =
     useOrders();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
@@ -96,6 +96,22 @@ export function Dashboard() {
     }
   };
 
+  const handleSyncStatus = async () => {
+    try {
+      const result = await syncOrdersStatus.mutateAsync();
+      toast({
+        title: 'Sincronização concluída!',
+        description: result.message || 'Status dos pedidos sincronizado.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro na sincronização',
+        description: 'Não foi possível sincronizar com o CardápioWeb.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -128,13 +144,23 @@ export function Dashboard() {
                 : 'Aguardando sincronização...'}
             </span>
           </div>
-          <button 
-            onClick={manualPoll}
-            disabled={isPolling}
-            className="text-sm text-primary hover:underline disabled:opacity-50"
-          >
-            Sincronizar agora
-          </button>
+          <div className="flex items-center gap-4">
+            <button 
+              onClick={handleSyncStatus}
+              disabled={syncOrdersStatus.isPending}
+              className="text-sm text-orange-600 hover:underline disabled:opacity-50 flex items-center gap-1"
+            >
+              <RefreshCw className={cn("h-3 w-3", syncOrdersStatus.isPending && "animate-spin")} />
+              Sincronizar Status
+            </button>
+            <button 
+              onClick={manualPoll}
+              disabled={isPolling}
+              className="text-sm text-primary hover:underline disabled:opacity-50"
+            >
+              Buscar novos pedidos
+            </button>
+          </div>
         </div>
       )}
       
