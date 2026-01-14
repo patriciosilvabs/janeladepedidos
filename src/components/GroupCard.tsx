@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -34,6 +34,7 @@ export function GroupCard({
   timerDuration = 600,
 }: GroupCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const hasDispatchedRef = useRef(false);
 
   const firstOrder = orders[0];
   const group = firstOrder?.delivery_groups;
@@ -55,7 +56,8 @@ export function GroupCard({
       setTimeLeft(remaining);
       
       // Auto-dispatch when timer reaches 0
-      if (remaining <= 0) {
+      if (remaining <= 0 && !hasDispatchedRef.current) {
+        hasDispatchedRef.current = true;
         onDispatch();
       }
     }, 1000);
@@ -85,9 +87,10 @@ export function GroupCard({
   const isUrgent = timeLeft !== null && timeLeft <= 120;
   const isFull = group && group.order_count >= group.max_orders;
 
-  // Auto-dispatch when group is full
+  // Auto-dispatch when group is full (only once)
   useEffect(() => {
-    if (isFull) {
+    if (isFull && !hasDispatchedRef.current) {
+      hasDispatchedRef.current = true;
       onDispatch();
     }
   }, [isFull, onDispatch]);
