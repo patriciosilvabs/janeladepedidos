@@ -107,10 +107,31 @@ Deno.serve(async (req) => {
         // 409 Conflict = already dispatched, 404 = order doesn't exist - both are OK
         if (response.ok || response.status === 409 || response.status === 404) {
           console.log(`Dispatch notification successful for order ${order.external_id}`);
+          
+          // Mark as notified
+          await supabase
+            .from('orders')
+            .update({
+              cardapioweb_notified: true,
+              cardapioweb_notified_at: new Date().toISOString(),
+              notification_error: null,
+            })
+            .eq('id', orderId);
+          
           results.push({ orderId, success: true });
           successCount++;
         } else {
           console.error(`Dispatch failed for order ${order.external_id}:`, response.status, responseText);
+          
+          // Mark notification error
+          await supabase
+            .from('orders')
+            .update({
+              cardapioweb_notified: false,
+              notification_error: `HTTP ${response.status}: ${responseText}`,
+            })
+            .eq('id', orderId);
+          
           results.push({ orderId, success: false, error: `HTTP ${response.status}: ${responseText}` });
           errorCount++;
         }

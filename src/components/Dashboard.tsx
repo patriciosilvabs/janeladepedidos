@@ -10,7 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody, cleanupErrors } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody, cleanupErrors, forceCloseOrder } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
@@ -18,6 +18,7 @@ export function Dashboard() {
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [retryingFoodyOrderId, setRetryingFoodyOrderId] = useState<string | null>(null);
+  const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -190,6 +191,25 @@ export function Dashboard() {
     }
   };
 
+  const handleForceClose = async (orderId: string) => {
+    setForceClosingOrderId(orderId);
+    try {
+      await forceCloseOrder.mutateAsync(orderId);
+      toast({
+        title: 'Pedido fechado!',
+        description: 'O pedido foi fechado no CardápioWeb e removido do sistema.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: err instanceof Error ? err.message : 'Não foi possível fechar o pedido no CardápioWeb.',
+        variant: 'destructive',
+      });
+    } finally {
+      setForceClosingOrderId(null);
+    }
+  };
+
   if (isLoading && orders.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -345,6 +365,8 @@ export function Dashboard() {
                 onRetryNotification={order.notification_error ? () => handleRetryNotification(order.id) : undefined}
                 onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
                 isRetryingFoody={retryingFoodyOrderId === order.id}
+                onForceClose={() => handleForceClose(order.id)}
+                isForceClosing={forceClosingOrderId === order.id}
               />
             ))
           )}

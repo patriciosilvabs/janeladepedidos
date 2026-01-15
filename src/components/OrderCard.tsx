@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, User, AlertTriangle, RefreshCw, Loader2, Bike } from 'lucide-react';
+import { Clock, MapPin, User, AlertTriangle, RefreshCw, Loader2, Bike, Cloud, CheckCircle, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
@@ -13,11 +13,13 @@ interface OrderCardProps {
   onMarkCollected?: () => void;
   onRetryNotification?: () => void;
   onRetryFoody?: () => void;
+  onForceClose?: () => void;
   showTimer?: boolean;
   timerDuration?: number;
   isMarkingReady?: boolean;
   isMarkingCollected?: boolean;
   isRetryingFoody?: boolean;
+  isForceClosing?: boolean;
 }
 
 const GROUP_COLORS = [
@@ -82,11 +84,13 @@ export function OrderCard({
   onMarkCollected,
   onRetryNotification,
   onRetryFoody,
+  onForceClose,
   showTimer = false,
   timerDuration = 600,
   isMarkingReady = false,
   isMarkingCollected = false,
   isRetryingFoody = false,
+  isForceClosing = false,
 }: OrderCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeAgo, setTimeAgo] = useState<string>('');
@@ -167,14 +171,43 @@ export function OrderCard({
           )}
         </div>
 
-        {/* Linha 2: Loja */}
-        {order.stores?.name && (
-          <div className="mb-2">
+        {/* Linha 2: Loja + Indicador CardápioWeb */}
+        <div className="flex items-center justify-between mb-2">
+          {order.stores?.name && (
             <Badge variant="secondary" className="text-xs font-medium">
               {order.stores.name}
             </Badge>
-          </div>
-        )}
+          )}
+          
+          {/* Indicador de status CardápioWeb */}
+          {order.external_id && (
+            <div className={cn(
+              'flex items-center gap-1 px-2 py-0.5 rounded text-xs',
+              order.cardapioweb_notified 
+                ? 'text-green-600 bg-green-500/10' 
+                : order.notification_error
+                  ? 'text-red-500 bg-red-500/10'
+                  : 'text-muted-foreground bg-muted/50'
+            )}>
+              {order.cardapioweb_notified ? (
+                <>
+                  <CheckCircle className="h-3 w-3" />
+                  <span>Notificado</span>
+                </>
+              ) : order.notification_error ? (
+                <>
+                  <XCircle className="h-3 w-3" />
+                  <span>Erro</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="h-3 w-3" />
+                  <span>Pendente</span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Linha 3: Nome do cliente + Bairro */}
         <div className="flex items-center justify-between text-sm">
@@ -249,61 +282,83 @@ export function OrderCard({
         )}
 
         {/* Botões de ação */}
-        {(onMarkReady || onForceDispatch || onMarkCollected || (onRetryNotification && order.notification_error)) && (
-          <div className="flex gap-2 mt-3">
-            {onMarkReady && (
+        {(onMarkReady || onForceDispatch || onMarkCollected || (onRetryNotification && order.notification_error) || onForceClose) && (
+          <div className="flex flex-col gap-2 mt-3">
+            <div className="flex gap-2">
+              {onMarkReady && (
+                <Button
+                  onClick={onMarkReady}
+                  disabled={isMarkingReady}
+                  className="w-full bg-green-600 hover:bg-green-700"
+                  size="default"
+                >
+                  {isMarkingReady ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      PROCESSANDO...
+                    </>
+                  ) : (
+                    'MARCAR COMO PRONTO'
+                  )}
+                </Button>
+              )}
+              {onForceDispatch && (
+                <Button
+                  onClick={onForceDispatch}
+                  variant="destructive"
+                  className="w-full"
+                  size="default"
+                >
+                  FORÇAR ENVIO
+                </Button>
+              )}
+              {onMarkCollected && (
+                <Button
+                  onClick={onMarkCollected}
+                  disabled={isMarkingCollected}
+                  className="w-full bg-purple-600 hover:bg-purple-700"
+                  size="default"
+                >
+                  {isMarkingCollected ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      PROCESSANDO...
+                    </>
+                  ) : (
+                    'MOTOBOY COLETOU'
+                  )}
+                </Button>
+              )}
+              {onRetryNotification && order.notification_error && (
+                <Button
+                  onClick={onRetryNotification}
+                  variant="outline"
+                  className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
+                  size="default"
+                >
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  REENVIAR
+                </Button>
+              )}
+            </div>
+            
+            {/* Botão Forçar Fechamento - linha separada */}
+            {onForceClose && (
               <Button
-                onClick={onMarkReady}
-                disabled={isMarkingReady}
-                className="w-full bg-green-600 hover:bg-green-700"
-                size="default"
-              >
-                {isMarkingReady ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    PROCESSANDO...
-                  </>
-                ) : (
-                  'MARCAR COMO PRONTO'
-                )}
-              </Button>
-            )}
-            {onForceDispatch && (
-              <Button
-                onClick={onForceDispatch}
-                variant="destructive"
-                className="w-full"
-                size="default"
-              >
-                FORÇAR ENVIO
-              </Button>
-            )}
-            {onMarkCollected && (
-              <Button
-                onClick={onMarkCollected}
-                disabled={isMarkingCollected}
-                className="w-full bg-purple-600 hover:bg-purple-700"
-                size="default"
-              >
-                {isMarkingCollected ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    PROCESSANDO...
-                  </>
-                ) : (
-                  'MOTOBOY COLETOU'
-                )}
-              </Button>
-            )}
-            {onRetryNotification && order.notification_error && (
-              <Button
-                onClick={onRetryNotification}
+                onClick={onForceClose}
+                disabled={isForceClosing}
                 variant="outline"
-                className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10"
-                size="default"
+                className="w-full border-red-500 text-red-500 hover:bg-red-500/10"
+                size="sm"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                REENVIAR
+                {isForceClosing ? (
+                  <>
+                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                    FECHANDO...
+                  </>
+                ) : (
+                  'FORÇAR FECHAMENTO'
+                )}
               </Button>
             )}
           </div>

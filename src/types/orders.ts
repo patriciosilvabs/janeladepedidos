@@ -27,6 +27,8 @@ export interface Order {
   foody_uid: string | null;
   foody_status: string | null;
   foody_error: string | null;
+  cardapioweb_notified: boolean | null;
+  cardapioweb_notified_at: string | null;
 }
 
 export interface DeliveryGroup {
