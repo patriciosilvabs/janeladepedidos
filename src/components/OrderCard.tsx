@@ -45,32 +45,32 @@ export function OrderCard({
 
   return (
     <Card className="bg-slate-900/80 border-slate-700/50 backdrop-blur">
-      <CardContent className="p-6 text-center">
+      <CardContent className="p-4 text-center">
         {/* Order Number */}
-        <div className="text-amber-400 text-5xl font-bold mb-4">
+        <div className="text-amber-400 text-5xl font-bold mb-2">
           #{orderNumber}
         </div>
         
         {/* Store Name */}
-        <div className="text-white/90 text-lg font-medium mb-1">
+        <div className="text-white/90 text-lg font-medium mb-0.5">
           {storeName}
         </div>
         
         {/* Customer Name */}
-        <div className="text-white/60 mb-6">
+        <div className="text-white/60 mb-3">
           {customerName}
         </div>
 
         {/* Neighborhood */}
         {order.neighborhood && (
-          <div className="text-white/40 text-sm mb-4">
+          <div className="text-white/40 text-sm mb-2">
             {order.neighborhood}
           </div>
         )}
 
         {/* Error indicator */}
         {order.notification_error && (
-          <div className="text-red-400 text-sm mb-4 bg-red-500/10 px-3 py-2 rounded-lg">
+          <div className="text-red-400 text-sm mb-2 bg-red-500/10 px-3 py-2 rounded-lg">
             Erro na notificação
           </div>
         )}
@@ -81,7 +81,7 @@ export function OrderCard({
           <Button
             onClick={onMarkReady}
             disabled={isMarkingReady}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-full text-lg shadow-lg shadow-green-500/20 h-auto whitespace-normal min-h-[56px]"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-full text-sm shadow-lg shadow-green-500/20 h-auto whitespace-normal min-h-[28px]"
           >
               {isMarkingReady ? (
                 <>
