@@ -52,11 +52,11 @@ async function handleStatusEvent(
 
   console.log(`Processing status event: ${event_type} - Order ${order_id} -> ${order_status}`);
 
-  // Buscar pedido pelo cardapioweb_order_id
+  // Buscar pedido pelo external_id (ID real da API, não o display_id)
   const { data: existingOrder, error: findError } = await supabase
     .from('orders')
     .select('id, status')
-    .eq('cardapioweb_order_id', order_id.toString())
+    .eq('external_id', order_id.toString())
     .maybeSingle();
 
   if (findError) {
