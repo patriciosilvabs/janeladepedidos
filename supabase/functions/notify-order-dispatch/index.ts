@@ -8,7 +8,6 @@ const corsHeaders = {
 interface OrderResult {
   orderId: string;
   success: boolean;
-  readyNotified?: boolean;
   dispatchNotified?: boolean;
   error?: string;
 }
@@ -24,48 +23,6 @@ interface StoreData {
   cardapioweb_api_url: string | null;
   cardapioweb_api_token: string | null;
   cardapioweb_enabled: boolean | null;
-}
-
-// Notifica CardápioWeb que o pedido está PRONTO
-// Nota: O CardápioWeb tem integração nativa com Foody - ao chamar /ready,
-// ele automaticamente envia o pedido para o Foody Delivery
-async function notifyCardapioWebReady(
-  store: StoreData,
-  externalId: string
-): Promise<{ success: boolean; error?: string }> {
-  if (!store.cardapioweb_enabled || !store.cardapioweb_api_url || !store.cardapioweb_api_token) {
-    console.log(`CardápioWeb not enabled or configured, skipping ready notification`);
-    return { success: true };
-  }
-
-  const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
-  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/ready`;
-
-  console.log(`Calling CardápioWeb READY for order ${externalId}: ${endpoint}`);
-
-  try {
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'X-API-KEY': store.cardapioweb_api_token,
-        'Accept': 'application/json',
-      },
-    });
-
-    const responseText = await response.text();
-    console.log(`CardápioWeb READY response for ${externalId}:`, response.status, responseText);
-
-    // 409 = already ready, which is fine
-    if (response.ok || response.status === 409) {
-      return { success: true };
-    }
-
-    return { success: false, error: `HTTP ${response.status}: ${responseText}` };
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`Error calling CardápioWeb READY for ${externalId}:`, errorMsg);
-    return { success: false, error: errorMsg };
-  }
 }
 
 // Notifica CardápioWeb que o pedido saiu para ENTREGA
@@ -93,14 +50,15 @@ async function notifyCardapioWebDispatch(
     });
 
     const responseText = await response.text();
-    console.log(`CardápioWeb DISPATCH response for ${externalId}:`, response.status, responseText);
+    console.log(`CardápioWeb DISPATCH response for ${externalId}:`, response.status, responseText.substring(0, 200));
 
-    // 409 = already dispatched, 404 = order doesn't exist - both are OK
-    if (response.ok || response.status === 409 || response.status === 404) {
+    // 204 = success, 409 = already dispatched, 404 = order doesn't exist - all are OK
+    // (404 means the order was already processed/closed on CardápioWeb side)
+    if (response.ok || response.status === 204 || response.status === 409 || response.status === 404) {
       return { success: true };
     }
 
-    return { success: false, error: `HTTP ${response.status}: ${responseText}` };
+    return { success: false, error: `HTTP ${response.status}: ${responseText.substring(0, 100)}` };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
     console.error(`Error calling CardápioWeb DISPATCH for ${externalId}:`, errorMsg);
@@ -127,8 +85,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing dispatch for ${orderIds.length} orders`);
-    console.log(`Note: CardápioWeb handles Foody integration natively - no direct Foody calls needed`);
+    console.log(`Processing dispatch (motoboy collection) for ${orderIds.length} orders`);
 
     const results: OrderResult[] = [];
     let successCount = 0;
@@ -153,8 +110,8 @@ Deno.serve(async (req) => {
         const typedOrder = order as OrderData;
 
         if (!typedOrder.external_id) {
-          console.log(`Order ${orderId} has no external_id, skipping CardápioWeb notification`);
-          results.push({ orderId, success: true, readyNotified: false, dispatchNotified: false });
+          console.log(`Order ${orderId} has no external_id, skipping CardápioWeb dispatch notification`);
+          results.push({ orderId, success: true, dispatchNotified: false });
           successCount++;
           continue;
         }
@@ -174,39 +131,20 @@ Deno.serve(async (req) => {
         }
 
         const typedStore = store as StoreData;
-        let readyNotified = false;
-        let dispatchNotified = false;
 
-        // PASSO 1: Chamar /ready no CardápioWeb (marcar como PRONTO)
-        // O CardápioWeb irá automaticamente enviar o pedido ao Foody Delivery
-        console.log(`Step 1: Marking order ${typedOrder.external_id} as READY on CardápioWeb (triggers Foody)`);
-        const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id);
-        
-        if (readyResult.success) {
-          readyNotified = true;
-          console.log(`Order ${typedOrder.external_id} marked as READY successfully (Foody notified by CardápioWeb)`);
-        } else {
-          console.error(`Failed to mark order ${typedOrder.external_id} as READY:`, readyResult.error);
-          // Continuar mesmo se falhar - tentar dispatch mesmo assim
-        }
-
-        // PASSO 2: Chamar /dispatch no CardápioWeb (marcar como SAIU PARA ENTREGA)
-        console.log(`Step 2: Marking order ${typedOrder.external_id} as DISPATCHED on CardápioWeb`);
+        // Chamar /dispatch no CardápioWeb (marcar como SAIU PARA ENTREGA)
+        console.log(`Marking order ${typedOrder.external_id} as DISPATCHED on CardápioWeb`);
         const dispatchResult = await notifyCardapioWebDispatch(typedStore, typedOrder.external_id);
 
         if (dispatchResult.success) {
-          dispatchNotified = true;
           console.log(`Order ${typedOrder.external_id} marked as DISPATCHED successfully`);
           
-          // Atualizar pedido como notificado com sucesso
-          await supabase
-            .from('orders')
-            .update({
-              cardapioweb_notified: true,
-              cardapioweb_notified_at: new Date().toISOString(),
-              notification_error: null,
-            })
-            .eq('id', orderId);
+          results.push({ 
+            orderId, 
+            success: true, 
+            dispatchNotified: true 
+          });
+          successCount++;
         } else {
           console.error(`Failed to dispatch order ${typedOrder.external_id}:`, dispatchResult.error);
           
@@ -214,23 +152,13 @@ Deno.serve(async (req) => {
           await supabase
             .from('orders')
             .update({
-              cardapioweb_notified: false,
               notification_error: dispatchResult.error,
             })
             .eq('id', orderId);
           
           results.push({ orderId, success: false, error: dispatchResult.error });
           errorCount++;
-          continue;
         }
-
-        results.push({ 
-          orderId, 
-          success: true, 
-          readyNotified,
-          dispatchNotified 
-        });
-        successCount++;
 
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
