@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
@@ -18,11 +18,13 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useSettings, AppSettings } from '@/hooks/useSettings';
+import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export function SettingsDialog() {
   const { settings, isLoading, saveSettings, testFoodyConnection } = useSettings();
+  const { bufferSettings, updateBufferSetting, getDayName, isLoading: isLoadingBuffer } = useBufferSettings();
   const { isOwner, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
@@ -400,10 +402,10 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="buffer" className="space-y-4 mt-4">
-              <div className="space-y-2">
-                <Label htmlFor="buffer-timeout">Tempo de Espera (minutos)</Label>
+              <div className="space-y-2 mb-6">
+                <Label htmlFor="buffer-timeout">Tempo Padrão (minutos)</Label>
                 <p className="text-sm text-muted-foreground">
-                  Quanto tempo esperar antes de despachar automaticamente
+                  Usado como fallback quando o dia não tem configuração específica
                 </p>
                 <Input
                   id="buffer-timeout"
@@ -415,6 +417,65 @@ export function SettingsDialog() {
                     setFormData({ ...formData, buffer_timeout_minutes: parseInt(e.target.value) || 10 })
                   }
                 />
+              </div>
+
+              <div className="border-t border-border/50 pt-4">
+                <div className="flex items-center gap-2 mb-4">
+                  <Calendar className="h-4 w-4 text-muted-foreground" />
+                  <Label className="text-base font-medium">Configuração por Dia da Semana</Label>
+                </div>
+                
+                {isLoadingBuffer ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {bufferSettings.map((setting) => (
+                      <div 
+                        key={setting.id}
+                        className="flex items-center gap-4 p-3 rounded-lg border border-border/50 bg-muted/30"
+                      >
+                        <div className="w-24">
+                          <span className="font-medium">{getDayName(setting.day_of_week)}</span>
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            type="number"
+                            min={1}
+                            max={60}
+                            value={setting.buffer_timeout_minutes}
+                            onChange={(e) => {
+                              const value = parseInt(e.target.value) || 10;
+                              updateBufferSetting.mutate({
+                                dayOfWeek: setting.day_of_week,
+                                bufferTimeoutMinutes: value,
+                              });
+                            }}
+                            className="w-20"
+                          />
+                        </div>
+                        <span className="text-sm text-muted-foreground">min</span>
+                        <Switch
+                          checked={setting.enabled}
+                          onCheckedChange={(checked) => {
+                            updateBufferSetting.mutate({
+                              dayOfWeek: setting.day_of_week,
+                              enabled: checked,
+                            });
+                          }}
+                        />
+                        <span className="text-sm text-muted-foreground w-16">
+                          {setting.enabled ? 'Ativo' : 'Inativo'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                
+                <p className="text-xs text-muted-foreground mt-4">
+                  Quando um dia está inativo, será usado o tempo padrão configurado acima.
+                </p>
               </div>
             </TabsContent>
 

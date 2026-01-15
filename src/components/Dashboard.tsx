@@ -2,12 +2,14 @@ import { useMemo, useState } from 'react';
 import { useOrders } from '@/hooks/useOrders';
 import { usePolling } from '@/hooks/usePolling';
 import { useSettings } from '@/hooks/useSettings';
+import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
 import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,15 +22,22 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, cleanupErrors, forceCloseOrder } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, cleanupErrors, manualCleanup, forceCloseOrder } =
     useOrders();
   const { settings } = useSettings();
+  const { getTodayBufferTimeout } = useBufferSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
   const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
+
+  // Get buffer timeout for today (dynamic per day of week)
+  const bufferTimeoutSeconds = useMemo(() => {
+    const minutes = getTodayBufferTimeout(settings?.buffer_timeout_minutes || 10);
+    return minutes * 60;
+  }, [getTodayBufferTimeout, settings?.buffer_timeout_minutes]);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -166,14 +175,28 @@ export function Dashboard() {
     }
   };
 
-  // Removed handleRetryFoody - CardápioWeb handles Foody integration natively
-
   const handleCleanupErrors = async () => {
     try {
       const result = await cleanupErrors.mutateAsync();
       toast({
         title: 'Limpeza concluída!',
         description: result.message || 'Pedidos com erros foram removidos.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro na limpeza',
+        description: 'Não foi possível limpar os pedidos.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleManualCleanup = async () => {
+    try {
+      const result = await manualCleanup.mutateAsync();
+      toast({
+        title: 'Limpeza concluída!',
+        description: result.message || 'Pedidos antigos foram removidos.',
       });
     } catch (err) {
       toast({
@@ -235,32 +258,50 @@ export function Dashboard() {
                 : 'Aguardando sincronização...'}
             </span>
           </div>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            {/* Manual Cleanup Button */}
+            <Button
+              onClick={handleManualCleanup}
+              disabled={manualCleanup.isPending}
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <Trash2 className={cn("h-4 w-4 mr-1", manualCleanup.isPending && "animate-pulse")} />
+              {manualCleanup.isPending ? 'Limpando...' : 'Limpar Pedidos'}
+            </Button>
+
             {ordersWithErrors.length > 0 && (
-              <button 
+              <Button 
                 onClick={handleCleanupErrors}
                 disabled={cleanupErrors.isPending}
-                className="text-sm text-destructive hover:underline disabled:opacity-50 flex items-center gap-1"
+                variant="ghost"
+                size="sm"
+                className="text-destructive hover:text-destructive"
               >
-                <Trash2 className={cn("h-3 w-3", cleanupErrors.isPending && "animate-pulse")} />
+                <Trash2 className={cn("h-4 w-4 mr-1", cleanupErrors.isPending && "animate-pulse")} />
                 Limpar {ordersWithErrors.length} com erro
-              </button>
+              </Button>
             )}
-            <button 
+            <Button 
               onClick={handleSyncStatus}
               disabled={syncOrdersStatus.isPending}
-              className="text-sm text-orange-600 hover:underline disabled:opacity-50 flex items-center gap-1"
+              variant="ghost"
+              size="sm"
+              className="text-orange-600 hover:text-orange-500"
             >
-              <RefreshCw className={cn("h-3 w-3", syncOrdersStatus.isPending && "animate-spin")} />
+              <RefreshCw className={cn("h-4 w-4 mr-1", syncOrdersStatus.isPending && "animate-spin")} />
               Sincronizar Status
-            </button>
-            <button 
+            </Button>
+            <Button 
               onClick={manualPoll}
               disabled={isPolling}
-              className="text-sm text-primary hover:underline disabled:opacity-50"
+              variant="ghost"
+              size="sm"
+              className="text-primary hover:text-primary/80"
             >
               Buscar novos pedidos
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -307,7 +348,7 @@ export function Dashboard() {
               orders={bufferOrders}
               onMoveToReady={handleMoveToReady}
               onForceDispatchOrder={handleForceDispatch}
-              timerDuration={(settings?.buffer_timeout_minutes || 10) * 60}
+              timerDuration={bufferTimeoutSeconds}
             />
           )}
         </OrderColumn>
