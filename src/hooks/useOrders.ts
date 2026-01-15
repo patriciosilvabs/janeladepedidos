@@ -296,7 +296,7 @@ export function useOrders() {
   const manualCleanup = useMutation({
     mutationFn: async () => {
       const { data, error } = await supabase.functions.invoke('cleanup-old-orders', {
-        body: {},
+        body: { cleanup_dispatched: true },
       });
 
       if (error) throw error;
