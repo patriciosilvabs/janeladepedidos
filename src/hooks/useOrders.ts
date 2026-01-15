@@ -111,20 +111,36 @@ export function useOrders() {
     },
   });
 
-  // Move all buffer orders to ready status
+  // Move all buffer orders to ready status AND notify CardápioWeb
   const moveToReady = useMutation({
     mutationFn: async (orderIds: string[]) => {
       if (orderIds.length === 0) {
         throw new Error('Nenhum pedido para mover');
       }
 
-      const { error } = await supabase
+      // 1. Atualizar status para 'ready' no banco
+      const { error: updateError } = await supabase
         .from('orders')
         .update({ status: 'ready' })
         .in('id', orderIds);
 
-      if (error) throw error;
-      return { processed: orderIds.length };
+      if (updateError) throw updateError;
+
+      // 2. Notificar CardápioWeb que os pedidos estão prontos
+      const { data, error: fnError } = await supabase.functions.invoke('notify-order-ready', {
+        body: { orderIds },
+      });
+
+      if (fnError) {
+        console.error('Error notifying CardápioWeb:', fnError);
+        // Não lançar erro - o status já foi atualizado
+        // O usuário pode retentar a notificação depois se necessário
+      }
+
+      return { 
+        processed: orderIds.length,
+        notificationResult: data 
+      };
     },
     onMutate: async (orderIds) => {
       await queryClient.cancelQueries({ queryKey: ['orders'] });
