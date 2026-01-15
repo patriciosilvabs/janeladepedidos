@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
+import { FoodyStatsPanel } from '@/components/FoodyStatsPanel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -154,6 +155,24 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="cardapio" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label htmlFor="cardapio-enabled" className="text-base font-medium">
+                    Habilitar integração CardápioWeb
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Quando desabilitado, não busca pedidos nem envia notificações
+                  </p>
+                </div>
+                <Switch
+                  id="cardapio-enabled"
+                  checked={formData.cardapioweb_enabled || false}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, cardapioweb_enabled: checked })
+                  }
+                />
+              </div>
+
               <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
@@ -219,6 +238,8 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="foody" className="space-y-4 mt-4">
+              <FoodyStatsPanel />
+
               <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
                 <div className="space-y-0.5">
                   <Label htmlFor="foody-enabled" className="text-base font-medium">
