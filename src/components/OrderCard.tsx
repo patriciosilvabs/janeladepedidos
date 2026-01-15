@@ -89,7 +89,7 @@ export function OrderCard({
                   PROCESSANDO...
                 </>
               ) : (
-                'MARCAR COMO PRONTO'
+                'PRONTO'
               )}
             </Button>
           )}
