@@ -112,6 +112,31 @@ async function handleStatusEvent(
       console.log(`Order ${order_id} already processed (current status: ${order.status})`);
       return { action: 'ignored', reason: 'already_processed' };
 
+    case 'released':
+    case 'dispatched':
+    case 'on_the_way':
+      // Motoboy coletou o pedido - marcar como despachado
+      if (['pending', 'waiting_buffer', 'ready'].includes(order.status)) {
+        const { error: dispatchError } = await supabase
+          .from('orders')
+          .update({
+            status: 'dispatched',
+            dispatched_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+
+        if (dispatchError) {
+          console.error('Error dispatching order:', dispatchError);
+          return { action: 'error', reason: dispatchError.message };
+        }
+
+        console.log(`Order ${order_id} marked as dispatched (released by delivery)`);
+        return { action: 'dispatched', order_id };
+      }
+
+      console.log(`Order ${order_id} already dispatched (current status: ${order.status})`);
+      return { action: 'ignored', reason: 'already_dispatched' };
+
     case 'pending_online_payment':
     case 'waiting_confirmation':
     case 'confirmed':

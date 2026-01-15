@@ -118,17 +118,22 @@ async function syncStoreOrders(
 
       console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} status in CardápioWeb: ${cardapiowebStatus}`);
 
-      // Status que indicam que o pedido foi concluído e deve ser removido
+      // Status que indicam que o pedido foi CONCLUÍDO (deletar)
       const completedStatuses = [
         'closed',      // Fechado
         'cancelled',   // Cancelado
         'delivered',   // Entregue
-        'dispatched',  // Despachado/em entrega
-        'on_the_way',  // Em rota
         'finished',    // Finalizado
       ];
 
-      // Check if order should be deleted
+      // Status que indicam que o motoboy COLETOU (marcar como dispatched)
+      const dispatchedStatuses = [
+        'released',    // Saiu para entrega
+        'dispatched',  // Despachado
+        'on_the_way',  // Em rota
+      ];
+
+      // Check if order should be deleted (completed/cancelled)
       if (completedStatuses.includes(cardapiowebStatus)) {
         console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} (completed), deleting`);
         const { error: deleteError } = await supabase
@@ -140,6 +145,25 @@ async function syncStoreOrders(
           result.errors.push(`Erro ao deletar pedido ${order.cardapioweb_order_id}: ${deleteError.message}`);
         } else {
           result.deleted++;
+        }
+        continue;
+      }
+
+      // Check if order was collected by driver (mark as dispatched)
+      if (dispatchedStatuses.includes(cardapiowebStatus) && order.status !== 'dispatched') {
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} collected by driver (${cardapiowebStatus}), marking as dispatched`);
+        const { error: dispatchError } = await supabase
+          .from('orders')
+          .update({
+            status: 'dispatched',
+            dispatched_at: new Date().toISOString(),
+          })
+          .eq('id', order.id);
+
+        if (dispatchError) {
+          result.errors.push(`Erro ao despachar pedido ${order.cardapioweb_order_id}: ${dispatchError.message}`);
+        } else {
+          result.updated++;
         }
         continue;
       }
