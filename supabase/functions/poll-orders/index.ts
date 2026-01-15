@@ -11,25 +11,26 @@ interface CardapioWebOrder {
   display_id?: number;  // Número visível do pedido (ex: 7955)
   status: string;
   order_type: string;
+  created_at?: string;  // Data de criação (snake_case da API)
+  updated_at?: string;  // Data de atualização
   customer: {
     name: string;
     phone?: string;
   };
-  delivery?: {
-    address?: {
-      street?: string;
-      number?: string;
-      neighborhood?: string;
-      city?: string;
-      state?: string;
-      country?: string;
-      zipCode?: string;
-      complement?: string;
-      latitude?: number;
-      longitude?: number;
-    };
-    fee?: number;
+  // Estrutura correta da API: delivery_address (não delivery.address)
+  delivery_address?: {
+    street?: string;
+    number?: string;
+    neighborhood?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    zipCode?: string;
+    complement?: string;
+    latitude?: number;
+    longitude?: number;
   };
+  delivery_fee?: number;  // Taxa de entrega no root (não em delivery.fee)
   total?: number;
   payments?: Array<{ method?: string }>;
   items?: Array<{
@@ -39,7 +40,6 @@ interface CardapioWebOrder {
     notes?: string;
   }>;
   notes?: string;
-  createdAt?: string;
 }
 
 interface Store {
@@ -141,9 +141,8 @@ async function pollStoreOrders(
       const orderCode = orderDetails.display_id?.toString() || orderDetails.code || order.display_id?.toString() || String(order.id);
       console.log(`[poll-orders] Final order code to save: ${orderCode}`);
 
-      // Extract address info
-      const delivery = orderDetails.delivery || {};
-      const address = delivery.address || {};
+      // Extract address info - API usa delivery_address direto (não delivery.address)
+      const address = orderDetails.delivery_address || {};
       
       const lat = address.latitude || -7.1195;
       const lng = address.longitude || -34.8450;
@@ -175,13 +174,13 @@ async function pollStoreOrders(
         lat,
         lng,
         total_amount: orderDetails.total || 0,
-        delivery_fee: delivery.fee || 0,
+        delivery_fee: orderDetails.delivery_fee || 0,  // Corrigido: delivery_fee no root
         payment_method: orderDetails.payments?.[0]?.method || null,
         items: orderDetails.items || [],
         notes: orderDetails.notes || address.complement || null,
         status: 'pending',
         store_id: store.id,
-        cardapioweb_created_at: orderDetails.createdAt || null,
+        cardapioweb_created_at: orderDetails.created_at || null,  // Corrigido: created_at (snake_case)
       });
 
       if (insertError) {
