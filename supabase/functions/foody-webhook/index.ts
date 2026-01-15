@@ -105,7 +105,6 @@ Deno.serve(async (req) => {
 
       case 'collected':
       case 'picked_up':
-      case 'on_the_way':
         // Motoboy coletou o pedido
         await supabase
           .from('orders')
@@ -117,6 +116,20 @@ Deno.serve(async (req) => {
           .eq('id', existingOrder.id);
         
         console.log(`Order ${existingOrder.id} - collected by driver, marked as dispatched`);
+        break;
+
+      case 'on_the_way':
+        // Motoboy em rota de entrega
+        await supabase
+          .from('orders')
+          .update({ 
+            foody_status: 'on_the_way',
+            status: 'dispatched',
+            dispatched_at: existingOrder.status !== 'dispatched' ? new Date().toISOString() : undefined,
+          })
+          .eq('id', existingOrder.id);
+        
+        console.log(`Order ${existingOrder.id} - driver on the way`);
         break;
 
       case 'delivered':

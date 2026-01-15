@@ -272,6 +272,21 @@ export function useOrders() {
     },
   });
 
+  // Retry sending order to Foody
+  const retryFoody = useMutation({
+    mutationFn: async (orderId: string) => {
+      const { data, error } = await supabase.functions.invoke('send-to-foody', {
+        body: { orderIds: [orderId] },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return {
     orders,
     isLoading,
@@ -283,5 +298,6 @@ export function useOrders() {
     forceDispatch,
     syncOrdersStatus,
     retryNotification,
+    retryFoody,
   };
 }

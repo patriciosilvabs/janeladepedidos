@@ -28,8 +28,21 @@ export function SettingsDialog() {
   const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
   const [showFoodyToken, setShowFoodyToken] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
+  const [foodyWebhookCopied, setFoodyWebhookCopied] = useState(false);
   const [foodyTestStatus, setFoodyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyTestError, setFoodyTestError] = useState('');
+
+  const foodyWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/foody-webhook`;
+
+  const handleCopyFoodyWebhook = async () => {
+    try {
+      await navigator.clipboard.writeText(foodyWebhookUrl);
+      setFoodyWebhookCopied(true);
+      setTimeout(() => setFoodyWebhookCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
 
@@ -290,6 +303,33 @@ export function SettingsDialog() {
                     <span className="text-sm">{foodyTestError || 'Erro na conexão'}</span>
                   </div>
                 )}
+              </div>
+
+              <div className="pt-4 border-t border-border/50">
+                <Label>URL do Webhook (configurar no Foody)</Label>
+                <p className="text-sm text-muted-foreground mb-2">
+                  Configure esta URL no painel do Foody para receber atualizações de status dos entregadores
+                </p>
+                <div className="flex gap-2">
+                  <Input
+                    value={foodyWebhookUrl}
+                    readOnly
+                    className="font-mono text-xs bg-muted"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={handleCopyFoodyWebhook}
+                    className="shrink-0"
+                  >
+                    {foodyWebhookCopied ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
               </div>
 
               <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
