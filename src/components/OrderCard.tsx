@@ -46,8 +46,8 @@ export function OrderCard({
   return (
     <Card className="bg-slate-900/80 border-slate-700/50 backdrop-blur">
       <CardContent className="p-6 text-center">
-        {/* Order Number - Large with glow */}
-        <div className="order-number-glow text-5xl font-bold mb-4">
+        {/* Order Number */}
+        <div className="text-amber-400 text-5xl font-bold mb-4">
           #{orderNumber}
         </div>
         
@@ -81,7 +81,7 @@ export function OrderCard({
           <Button
             onClick={onMarkReady}
             disabled={isMarkingReady}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-full text-lg shadow-lg shadow-green-500/20 h-auto"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-6 rounded-full text-lg shadow-lg shadow-green-500/20 h-auto whitespace-normal min-h-[56px]"
           >
               {isMarkingReady ? (
                 <>
@@ -98,7 +98,7 @@ export function OrderCard({
             <Button
               onClick={onForceDispatch}
               variant="outline"
-              className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10 font-bold py-3 px-6 rounded-full h-auto"
+              className="w-full border-orange-500 text-orange-500 hover:bg-orange-500/10 font-bold py-3 px-6 rounded-full h-auto whitespace-normal min-h-[48px]"
             >
               FORÇAR ENVIO
             </Button>
@@ -108,7 +108,7 @@ export function OrderCard({
             <Button
               onClick={onMarkCollected}
               disabled={isMarkingCollected}
-              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-full text-lg shadow-lg shadow-purple-500/20 h-auto"
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-full text-lg shadow-lg shadow-purple-500/20 h-auto whitespace-normal min-h-[56px]"
             >
               {isMarkingCollected ? (
                 <>
