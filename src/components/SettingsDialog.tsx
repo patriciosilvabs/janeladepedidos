@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Dialog,
@@ -20,12 +21,15 @@ import { useAuth } from '@/hooks/useAuth';
 import { toast } from 'sonner';
 
 export function SettingsDialog() {
-  const { settings, isLoading, saveSettings } = useSettings();
+  const { settings, isLoading, saveSettings, testFoodyConnection } = useSettings();
   const { isOwner, isAdmin } = useAuth();
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
   const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
+  const [showFoodyToken, setShowFoodyToken] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
+  const [foodyTestStatus, setFoodyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [foodyTestError, setFoodyTestError] = useState('');
 
   const webhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
 
@@ -56,6 +60,29 @@ export function SettingsDialog() {
     }
   };
 
+  const handleTestFoodyConnection = async () => {
+    if (!formData.foody_api_token) {
+      toast.error('Informe o token da API do Foody');
+      return;
+    }
+
+    setFoodyTestStatus('testing');
+    setFoodyTestError('');
+
+    try {
+      await testFoodyConnection.mutateAsync({
+        token: formData.foody_api_token,
+        url: formData.foody_api_url || 'https://app.foodydelivery.com/rest/1.2',
+      });
+      setFoodyTestStatus('success');
+      toast.success('Conexão com Foody estabelecida!');
+    } catch (error: any) {
+      setFoodyTestStatus('error');
+      setFoodyTestError(error.message || 'Erro ao conectar');
+      toast.error('Erro ao conectar com Foody');
+    }
+  };
+
   const getApiStatus = () => {
     const cardapioConfigured = settings?.cardapioweb_enabled && settings?.cardapioweb_api_token;
 
@@ -80,7 +107,7 @@ export function SettingsDialog() {
         <DialogHeader>
           <DialogTitle>Configurações do Sistema</DialogTitle>
           <DialogDescription>
-            Configure as integrações com Cardápio Web
+            Configure as integrações com Cardápio Web e Foody Delivery
           </DialogDescription>
         </DialogHeader>
 
@@ -90,12 +117,16 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4' : 'grid-cols-3'}`}>
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-5' : 'grid-cols-4'}`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
               </TabsTrigger>
               <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio</TabsTrigger>
+              <TabsTrigger value="foody" className="text-xs sm:text-sm">
+                <Truck className="h-3 w-3 mr-1 hidden sm:inline" />
+                Foody
+              </TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
               {isOwner && (
                 <TabsTrigger value="users" className="text-xs sm:text-sm">
@@ -171,6 +202,101 @@ export function SettingsDialog() {
                     )}
                   </Button>
                 </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="foody" className="space-y-4 mt-4">
+              <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
+                <div className="space-y-0.5">
+                  <Label htmlFor="foody-enabled" className="text-base font-medium">
+                    Habilitar integração com Foody
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    Envia pedidos automaticamente para o Foody Delivery quando saem do buffer
+                  </p>
+                </div>
+                <Switch
+                  id="foody-enabled"
+                  checked={formData.foody_enabled || false}
+                  onCheckedChange={(checked) =>
+                    setFormData({ ...formData, foody_enabled: checked })
+                  }
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="foody-url">URL da API</Label>
+                <Input
+                  id="foody-url"
+                  value={formData.foody_api_url || 'https://app.foodydelivery.com/rest/1.2'}
+                  onChange={(e) =>
+                    setFormData({ ...formData, foody_api_url: e.target.value })
+                  }
+                  placeholder="https://app.foodydelivery.com/rest/1.2"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="foody-token">Token de Autenticação</Label>
+                <div className="relative">
+                  <Input
+                    id="foody-token"
+                    type={showFoodyToken ? 'text' : 'password'}
+                    value={formData.foody_api_token || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, foody_api_token: e.target.value })
+                    }
+                    placeholder="Seu token da API Foody"
+                    className="pr-10"
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-0 top-0 h-full"
+                    onClick={() => setShowFoodyToken(!showFoodyToken)}
+                  >
+                    {showFoodyToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  onClick={handleTestFoodyConnection}
+                  disabled={foodyTestStatus === 'testing' || !formData.foody_api_token}
+                >
+                  {foodyTestStatus === 'testing' ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Testando...
+                    </>
+                  ) : (
+                    'Testar Conexão'
+                  )}
+                </Button>
+
+                {foodyTestStatus === 'success' && (
+                  <div className="flex items-center gap-2 text-green-500">
+                    <CheckCircle className="h-4 w-4" />
+                    <span className="text-sm font-medium">Conectado</span>
+                  </div>
+                )}
+
+                {foodyTestStatus === 'error' && (
+                  <div className="flex items-center gap-2 text-destructive">
+                    <XCircle className="h-4 w-4" />
+                    <span className="text-sm">{foodyTestError || 'Erro na conexão'}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
+                <p className="text-sm text-muted-foreground">
+                  <strong>Nota:</strong> Os pedidos serão enviados automaticamente ao Foody 
+                  quando saírem do buffer de espera e forem marcados como "prontos para entrega".
+                </p>
               </div>
             </TabsContent>
 

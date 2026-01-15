@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, MapPin, User, AlertTriangle, RefreshCw, Loader2 } from 'lucide-react';
+import { Clock, MapPin, User, AlertTriangle, RefreshCw, Loader2, Bike } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface OrderCardProps {
@@ -52,6 +52,25 @@ function formatTime(dateString: string | null): string {
   
   const date = new Date(dateString);
   return date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getFoodyStatusInfo(status: string | null) {
+  switch (status) {
+    case 'open':
+      return { label: 'Aguardando Motoboy', colorClass: 'text-blue-500 bg-blue-500/10 border-blue-500/30' };
+    case 'assigned':
+      return { label: 'Motoboy Atribuído', colorClass: 'text-purple-500 bg-purple-500/10 border-purple-500/30' };
+    case 'collected':
+      return { label: 'Coletado', colorClass: 'text-orange-500 bg-orange-500/10 border-orange-500/30' };
+    case 'on_the_way':
+      return { label: 'Em Rota', colorClass: 'text-yellow-600 bg-yellow-500/10 border-yellow-500/30' };
+    case 'delivered':
+      return { label: 'Entregue', colorClass: 'text-green-500 bg-green-500/10 border-green-500/30' };
+    case 'cancelled':
+      return { label: 'Cancelado', colorClass: 'text-red-500 bg-red-500/10 border-red-500/30' };
+    default:
+      return null;
+  }
 }
 
 export function OrderCard({
@@ -122,6 +141,7 @@ export function OrderCard({
 
   const isUrgent = timeLeft !== null && timeLeft <= 120;
   const orderTime = order.cardapioweb_created_at || order.created_at;
+  const foodyStatus = getFoodyStatusInfo(order.foody_status);
 
   return (
     <Card
@@ -165,6 +185,27 @@ export function OrderCard({
             </div>
           )}
         </div>
+
+        {/* Status do Foody */}
+        {order.foody_uid && foodyStatus && (
+          <div className={cn(
+            'flex items-center gap-2 p-2 rounded border mt-3',
+            foodyStatus.colorClass
+          )}>
+            <Bike className="h-4 w-4" />
+            <span className="text-xs font-medium">{foodyStatus.label}</span>
+          </div>
+        )}
+
+        {/* Erro do Foody */}
+        {order.foody_error && (
+          <div className="flex items-center gap-2 p-2 rounded bg-orange-500/10 border border-orange-500/30 mt-3">
+            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            <span className="text-xs text-orange-600 flex-1 truncate" title={order.foody_error}>
+              Erro Foody: {order.foody_error}
+            </span>
+          </div>
+        )}
 
         {/* Timer (se aplicável) */}
         {showTimer && timeLeft !== null && (
