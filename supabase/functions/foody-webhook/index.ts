@@ -16,6 +16,98 @@ interface FoodyStatusEvent {
   timestamp?: string;
 }
 
+interface NotifyResult {
+  success: boolean;
+  error?: string;
+}
+
+async function notifyCardapioWeb(
+  supabase: any,
+  orderId: string,
+  action: 'dispatch' | 'close'
+): Promise<NotifyResult> {
+  try {
+    // Buscar dados do pedido incluindo store_id
+    const { data: order, error: orderError } = await supabase
+      .from('orders')
+      .select('external_id, store_id')
+      .eq('id', orderId)
+      .single();
+
+    if (orderError || !order) {
+      console.error('Order not found for CardapioWeb notification:', orderError);
+      return { success: false, error: 'Order not found' };
+    }
+
+    const orderData = order as { external_id: string; store_id: string };
+
+    if (!orderData.external_id) {
+      console.log('Order has no external_id, skipping CardapioWeb notification');
+      return { success: true };
+    }
+
+    // Buscar configuração da loja
+    const { data: store, error: storeError } = await supabase
+      .from('stores')
+      .select('cardapioweb_api_url, cardapioweb_api_token, cardapioweb_enabled')
+      .eq('id', orderData.store_id)
+      .single();
+
+    if (storeError || !store) {
+      console.error('Store not found for CardapioWeb notification:', storeError);
+      return { success: false, error: 'Store not found' };
+    }
+
+    const storeData = store as { 
+      cardapioweb_api_url?: string; 
+      cardapioweb_api_token?: string; 
+      cardapioweb_enabled?: boolean;
+    };
+
+    if (!storeData.cardapioweb_enabled) {
+      console.log('CardapioWeb is disabled for this store, skipping notification');
+      return { success: true };
+    }
+
+    if (!storeData.cardapioweb_api_url || !storeData.cardapioweb_api_token) {
+      console.error('CardapioWeb API URL or token not configured for store');
+      return { success: false, error: 'CardapioWeb not configured' };
+    }
+
+    // Montar URL do endpoint
+    const baseUrl = storeData.cardapioweb_api_url.replace(/\/$/, '');
+    const endpoint = `${baseUrl}/api/partner/v1/orders/${orderData.external_id}/${action}`;
+
+    console.log(`Notifying CardapioWeb: ${action} for order ${orderData.external_id}`);
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': storeData.cardapioweb_api_token,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const responseText = await response.text();
+    console.log(`CardapioWeb ${action} response:`, response.status, responseText);
+
+    // 409 Conflict significa que o status já foi atualizado - consideramos sucesso
+    // 404 significa que o pedido não existe mais lá - continuamos com operação local
+    if (response.ok || response.status === 409 || response.status === 404) {
+      console.log(`CardapioWeb ${action} notification successful for order ${orderData.external_id}`);
+      return { success: true };
+    }
+
+    console.error(`CardapioWeb ${action} failed:`, response.status, responseText);
+    return { success: false, error: `HTTP ${response.status}: ${responseText}` };
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`Error notifying CardapioWeb ${action}:`, errorMessage);
+    return { success: false, error: errorMessage };
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -116,6 +208,14 @@ Deno.serve(async (req) => {
           .eq('id', existingOrder.id);
         
         console.log(`Order ${existingOrder.id} - collected by driver, marked as dispatched`);
+
+        // Notificar CardapioWeb que o pedido saiu para entrega
+        const dispatchResult = await notifyCardapioWeb(supabase, existingOrder.id, 'dispatch');
+        if (!dispatchResult.success) {
+          console.error(`Failed to notify CardapioWeb dispatch for order ${existingOrder.id}:`, dispatchResult.error);
+        } else {
+          console.log(`CardapioWeb notified: order ${existingOrder.id} dispatched`);
+        }
         break;
 
       case 'on_the_way':
@@ -134,6 +234,14 @@ Deno.serve(async (req) => {
 
       case 'delivered':
       case 'completed':
+        // Notificar CardapioWeb que o pedido foi entregue ANTES de deletar
+        const closeResult = await notifyCardapioWeb(supabase, existingOrder.id, 'close');
+        if (!closeResult.success) {
+          console.error(`Failed to notify CardapioWeb close for order ${existingOrder.id}:`, closeResult.error);
+        } else {
+          console.log(`CardapioWeb notified: order ${existingOrder.id} closed/delivered`);
+        }
+
         // Entrega concluída - remover pedido do sistema
         const { error: deleteError } = await supabase
           .from('orders')
