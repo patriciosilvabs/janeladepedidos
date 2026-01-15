@@ -170,15 +170,18 @@ export function useOrders() {
     },
   });
 
-  // Mark as collected (motoboy picked up) - calls API and dispatches
+  // Mark as collected (motoboy picked up) - calls dispatch API and updates status
   const markAsCollected = useMutation({
     mutationFn: async (orderId: string) => {
-      // 1. Notify CardápioWeb
-      const { data, error: fnError } = await supabase.functions.invoke('notify-order-ready', {
+      // 1. Notify CardápioWeb that order is being dispatched (saiu para entrega)
+      const { data, error: fnError } = await supabase.functions.invoke('notify-order-dispatch', {
         body: { orderIds: [orderId] },
       });
 
-      if (fnError) throw fnError;
+      if (fnError) {
+        console.error('Error notifying CardápioWeb dispatch:', fnError);
+        // Continue with local update even if notification fails
+      }
 
       // 2. Update status to dispatched
       const { error } = await supabase
