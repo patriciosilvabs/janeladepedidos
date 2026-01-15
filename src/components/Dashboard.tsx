@@ -10,13 +10,14 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
+  const [retryingFoodyOrderId, setRetryingFoodyOrderId] = useState<string | null>(null);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -148,6 +149,25 @@ export function Dashboard() {
     }
   };
 
+  const handleRetryFoody = async (orderId: string) => {
+    setRetryingFoodyOrderId(orderId);
+    try {
+      await retryFoody.mutateAsync(orderId);
+      toast({
+        title: 'Pedido reenviado ao Foody!',
+        description: 'O pedido foi enviado novamente para o Foody Delivery.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível reenviar o pedido ao Foody.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRetryingFoodyOrderId(null);
+    }
+  };
+
   if (isLoading && orders.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -266,6 +286,8 @@ export function Dashboard() {
                 order={order}
                 onMarkCollected={() => handleMarkCollected(order.id)}
                 isMarkingCollected={collectingOrderId === order.id}
+                onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
+                isRetryingFoody={retryingFoodyOrderId === order.id}
               />
             ))
           )}
@@ -289,6 +311,8 @@ export function Dashboard() {
                 key={order.id}
                 order={order}
                 onRetryNotification={order.notification_error ? () => handleRetryNotification(order.id) : undefined}
+                onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
+                isRetryingFoody={retryingFoodyOrderId === order.id}
               />
             ))
           )}

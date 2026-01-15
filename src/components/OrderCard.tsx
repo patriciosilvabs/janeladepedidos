@@ -12,10 +12,12 @@ interface OrderCardProps {
   onForceDispatch?: () => void;
   onMarkCollected?: () => void;
   onRetryNotification?: () => void;
+  onRetryFoody?: () => void;
   showTimer?: boolean;
   timerDuration?: number;
   isMarkingReady?: boolean;
   isMarkingCollected?: boolean;
+  isRetryingFoody?: boolean;
 }
 
 const GROUP_COLORS = [
@@ -79,10 +81,12 @@ export function OrderCard({
   onForceDispatch,
   onMarkCollected,
   onRetryNotification,
+  onRetryFoody,
   showTimer = false,
   timerDuration = 600,
   isMarkingReady = false,
   isMarkingCollected = false,
+  isRetryingFoody = false,
 }: OrderCardProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [timeAgo, setTimeAgo] = useState<string>('');
@@ -200,10 +204,25 @@ export function OrderCard({
         {/* Erro do Foody */}
         {order.foody_error && (
           <div className="flex items-center gap-2 p-2 rounded bg-orange-500/10 border border-orange-500/30 mt-3">
-            <AlertTriangle className="h-4 w-4 text-orange-500" />
+            <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
             <span className="text-xs text-orange-600 flex-1 truncate" title={order.foody_error}>
               Erro Foody: {order.foody_error}
             </span>
+            {onRetryFoody && (
+              <Button
+                onClick={onRetryFoody}
+                variant="ghost"
+                size="sm"
+                disabled={isRetryingFoody}
+                className="shrink-0 h-6 px-2 text-orange-600 hover:text-orange-700 hover:bg-orange-500/20"
+              >
+                {isRetryingFoody ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3 w-3" />
+                )}
+              </Button>
+            )}
           </div>
         )}
 
