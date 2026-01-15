@@ -8,9 +8,8 @@ const corsHeaders = {
 interface OrderResult {
   orderId: string;
   success: boolean;
-  cardapioweb_ready?: boolean;
-  cardapioweb_dispatched?: boolean;
-  foody_sent?: boolean;
+  readyNotified?: boolean;
+  dispatchNotified?: boolean;
   error?: string;
 }
 
@@ -18,7 +17,6 @@ interface OrderData {
   id: string;
   external_id: string | null;
   store_id: string | null;
-  foody_uid: string | null;
   cardapioweb_notified: boolean | null;
 }
 
@@ -29,6 +27,8 @@ interface StoreData {
 }
 
 // Notifica CardápioWeb que o pedido está PRONTO
+// Nota: O CardápioWeb tem integração nativa com Foody - ao chamar /ready,
+// ele automaticamente envia o pedido para o Foody Delivery
 async function notifyCardapioWebReady(
   store: StoreData,
   externalId: string
@@ -128,28 +128,18 @@ Deno.serve(async (req) => {
     }
 
     console.log(`Processing dispatch for ${orderIds.length} orders`);
-
-    // Buscar configurações do Foody
-    const { data: appSettings } = await supabase
-      .from('app_settings')
-      .select('foody_enabled')
-      .eq('id', 'default')
-      .single();
-
-    const foodyEnabled = (appSettings as { foody_enabled?: boolean } | null)?.foody_enabled || false;
-    console.log(`Foody enabled: ${foodyEnabled}`);
+    console.log(`Note: CardápioWeb handles Foody integration natively - no direct Foody calls needed`);
 
     const results: OrderResult[] = [];
     let successCount = 0;
     let errorCount = 0;
-    const ordersToSendToFoody: string[] = [];
 
     for (const orderId of orderIds) {
       try {
         // Fetch order data
         const { data: order, error: orderError } = await supabase
           .from('orders')
-          .select('id, external_id, store_id, foody_uid, cardapioweb_notified')
+          .select('id, external_id, store_id, cardapioweb_notified')
           .eq('id', orderId)
           .single();
 
@@ -164,13 +154,7 @@ Deno.serve(async (req) => {
 
         if (!typedOrder.external_id) {
           console.log(`Order ${orderId} has no external_id, skipping CardápioWeb notification`);
-          
-          // Mesmo sem external_id, podemos enviar ao Foody se habilitado
-          if (foodyEnabled && !typedOrder.foody_uid) {
-            ordersToSendToFoody.push(orderId);
-          }
-          
-          results.push({ orderId, success: true, cardapioweb_ready: false, cardapioweb_dispatched: false });
+          results.push({ orderId, success: true, readyNotified: false, dispatchNotified: false });
           successCount++;
           continue;
         }
@@ -190,16 +174,17 @@ Deno.serve(async (req) => {
         }
 
         const typedStore = store as StoreData;
-        let cardapiowebReady = false;
-        let cardapiowebDispatched = false;
+        let readyNotified = false;
+        let dispatchNotified = false;
 
         // PASSO 1: Chamar /ready no CardápioWeb (marcar como PRONTO)
-        console.log(`Step 1: Marking order ${typedOrder.external_id} as READY on CardápioWeb`);
+        // O CardápioWeb irá automaticamente enviar o pedido ao Foody Delivery
+        console.log(`Step 1: Marking order ${typedOrder.external_id} as READY on CardápioWeb (triggers Foody)`);
         const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id);
         
         if (readyResult.success) {
-          cardapiowebReady = true;
-          console.log(`Order ${typedOrder.external_id} marked as READY successfully`);
+          readyNotified = true;
+          console.log(`Order ${typedOrder.external_id} marked as READY successfully (Foody notified by CardápioWeb)`);
         } else {
           console.error(`Failed to mark order ${typedOrder.external_id} as READY:`, readyResult.error);
           // Continuar mesmo se falhar - tentar dispatch mesmo assim
@@ -210,7 +195,7 @@ Deno.serve(async (req) => {
         const dispatchResult = await notifyCardapioWebDispatch(typedStore, typedOrder.external_id);
 
         if (dispatchResult.success) {
-          cardapiowebDispatched = true;
+          dispatchNotified = true;
           console.log(`Order ${typedOrder.external_id} marked as DISPATCHED successfully`);
           
           // Atualizar pedido como notificado com sucesso
@@ -239,16 +224,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Adicionar à lista de envio ao Foody se habilitado e ainda não enviado
-        if (foodyEnabled && !typedOrder.foody_uid) {
-          ordersToSendToFoody.push(orderId);
-        }
-
         results.push({ 
           orderId, 
           success: true, 
-          cardapioweb_ready: cardapiowebReady,
-          cardapioweb_dispatched: cardapiowebDispatched 
+          readyNotified,
+          dispatchNotified 
         });
         successCount++;
 
@@ -260,42 +240,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Enviar pedidos ao Foody em lote (se houver)
-    if (ordersToSendToFoody.length > 0) {
-      console.log(`Sending ${ordersToSendToFoody.length} orders to Foody after dispatch...`);
-      
-      try {
-        const foodyResponse = await fetch(`${supabaseUrl}/functions/v1/send-to-foody`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({ orderIds: ordersToSendToFoody }),
-        });
-
-        const foodyResult = await foodyResponse.json();
-        console.log('Foody send result:', foodyResult);
-
-        // Atualizar resultados com informação do Foody
-        for (const result of results) {
-          if (ordersToSendToFoody.includes(result.orderId)) {
-            result.foody_sent = foodyResult.success || false;
-          }
-        }
-      } catch (foodyError) {
-        console.error('Error sending to Foody:', foodyError);
-        // Não falhar a operação principal por causa do Foody
-      }
-    }
-
     return new Response(
       JSON.stringify({
         success: errorCount === 0,
         processed: orderIds.length,
         successCount,
         errors: errorCount,
-        foody_sent_count: ordersToSendToFoody.length,
         results,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
