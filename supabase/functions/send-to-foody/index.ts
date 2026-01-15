@@ -154,7 +154,7 @@ async function sendOrderToFoody(
   console.log(`Sending order ${order.id} to Foody:`, JSON.stringify(payload));
 
   try {
-    const response = await fetch(`${foodyApiUrl}/rest/1.2/orders`, {
+    const response = await fetch(`${foodyApiUrl}/orders`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
