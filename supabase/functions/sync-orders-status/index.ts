@@ -16,6 +16,7 @@ interface Store {
 interface Order {
   id: string;
   cardapioweb_order_id: string | null;
+  external_id: string | null;  // ID real para chamadas de API
   status: string;
   store_id: string | null;
 }
@@ -47,10 +48,10 @@ async function syncStoreOrders(
   // Fetch active orders for this store
   const { data: orders, error: ordersError } = await supabase
     .from('orders')
-    .select('id, cardapioweb_order_id, status, store_id')
+    .select('id, cardapioweb_order_id, external_id, status, store_id')
     .eq('store_id', store.id)
-    .in('status', ['pending', 'waiting_buffer'])
-    .not('cardapioweb_order_id', 'is', null);
+    .in('status', ['pending', 'waiting_buffer', 'ready'])  // Incluir 'ready' também
+    .not('external_id', 'is', null);  // Usar external_id (ID real da API)
 
   if (ordersError) {
     console.error(`[sync-orders-status] Error fetching orders for store ${store.name}:`, ordersError);
@@ -78,8 +79,9 @@ async function syncStoreOrders(
   // Check each order status in CardápioWeb
   for (const order of orders) {
     try {
-      const orderUrl = `${apiUrl}/api/partner/v1/orders/${order.cardapioweb_order_id}`;
-      console.log(`[sync-orders-status] Checking order ${order.cardapioweb_order_id} at ${orderUrl}`);
+      // Usar external_id para chamadas de API (cardapioweb_order_id é apenas display_id)
+      const orderUrl = `${apiUrl}/api/partner/v1/orders/${order.external_id}`;
+      console.log(`[sync-orders-status] Checking order #${order.cardapioweb_order_id} (API ID: ${order.external_id}) at ${orderUrl}`);
 
       const response = await fetch(orderUrl, {
         method: 'GET',
