@@ -213,8 +213,23 @@ Deno.serve(async (req) => {
         const dispatchResult = await notifyCardapioWeb(supabase, existingOrder.id, 'dispatch');
         if (!dispatchResult.success) {
           console.error(`Failed to notify CardapioWeb dispatch for order ${existingOrder.id}:`, dispatchResult.error);
+          await supabase
+            .from('orders')
+            .update({ 
+              cardapioweb_notified: false,
+              notification_error: dispatchResult.error,
+            })
+            .eq('id', existingOrder.id);
         } else {
           console.log(`CardapioWeb notified: order ${existingOrder.id} dispatched`);
+          await supabase
+            .from('orders')
+            .update({ 
+              cardapioweb_notified: true,
+              cardapioweb_notified_at: new Date().toISOString(),
+              notification_error: null,
+            })
+            .eq('id', existingOrder.id);
         }
         break;
 

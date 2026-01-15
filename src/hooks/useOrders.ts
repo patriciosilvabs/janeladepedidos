@@ -305,6 +305,24 @@ export function useOrders() {
     },
   });
 
+  // Force close order on CardápioWeb and delete from system
+  const forceCloseOrder = useMutation({
+    mutationFn: async (orderId: string) => {
+      const { data, error } = await supabase.functions.invoke('force-close-order', {
+        body: { orderId },
+      });
+
+      if (error) throw error;
+      if (!data.success) {
+        throw new Error(data.error || 'Erro ao fechar pedido');
+      }
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return {
     orders,
     isLoading,
@@ -318,5 +336,6 @@ export function useOrders() {
     retryNotification,
     retryFoody,
     cleanupErrors,
+    forceCloseOrder,
   };
 }

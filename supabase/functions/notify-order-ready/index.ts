@@ -151,16 +151,19 @@ Deno.serve(async (req) => {
             .from('orders')
             .update({
               notification_error: cardapioResult.error,
+              cardapioweb_notified: false,
             })
             .eq('id', order.id);
         } else {
           results.push({ orderId: order.id, notified: true });
           
-          // Limpar qualquer erro de notificação anterior
+          // Limpar qualquer erro de notificação anterior e marcar como notificado
           await supabase
             .from('orders')
             .update({
               notification_error: null,
+              cardapioweb_notified: true,
+              cardapioweb_notified_at: new Date().toISOString(),
             })
             .eq('id', order.id);
           

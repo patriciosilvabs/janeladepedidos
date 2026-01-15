@@ -144,6 +144,8 @@ export type Database = {
         Row: {
           address: string
           cardapioweb_created_at: string | null
+          cardapioweb_notified: boolean | null
+          cardapioweb_notified_at: string | null
           cardapioweb_order_id: string | null
           city: string | null
           country: string | null
@@ -177,6 +179,8 @@ export type Database = {
         Insert: {
           address: string
           cardapioweb_created_at?: string | null
+          cardapioweb_notified?: boolean | null
+          cardapioweb_notified_at?: string | null
           cardapioweb_order_id?: string | null
           city?: string | null
           country?: string | null
@@ -210,6 +214,8 @@ export type Database = {
         Update: {
           address?: string
           cardapioweb_created_at?: string | null
+          cardapioweb_notified?: boolean | null
+          cardapioweb_notified_at?: string | null
           cardapioweb_order_id?: string | null
           city?: string | null
           country?: string | null
