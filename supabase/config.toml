@@ -3,6 +3,9 @@ project_id = "wmrsekgxueceaeobxuss"
 [functions.notify-order-ready]
 verify_jwt = false
 
+[functions.notify-order-dispatch]
+verify_jwt = false
+
 [functions.test-cardapioweb-connection]
 verify_jwt = false
 
