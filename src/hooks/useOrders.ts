@@ -292,6 +292,21 @@ export function useOrders() {
     },
   });
 
+  // Manual cleanup (standard cleanup without forcing error cleanup)
+  const manualCleanup = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('cleanup-old-orders', {
+        body: {},
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   // Force close order on CardápioWeb and delete from system
   const forceCloseOrder = useMutation({
     mutationFn: async (orderId: string) => {
@@ -322,6 +337,7 @@ export function useOrders() {
     syncOrdersStatus,
     retryNotification,
     cleanupErrors,
+    manualCleanup,
     forceCloseOrder,
   };
 }
