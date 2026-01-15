@@ -287,6 +287,21 @@ export function useOrders() {
     },
   });
 
+  // Cleanup orders with errors
+  const cleanupErrors = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('cleanup-old-orders', {
+        body: { force_cleanup_errors: true },
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return {
     orders,
     isLoading,
@@ -299,5 +314,6 @@ export function useOrders() {
     syncOrdersStatus,
     retryNotification,
     retryFoody,
+    cleanupErrors,
   };
 }

@@ -39,9 +39,13 @@ Deno.serve(async (req) => {
     const cutoffISO = cutoffDate.toISOString();
     console.log(`Cutoff date: ${cutoffISO}`);
 
+    // Check if force cleanup of error orders was requested
+    const body = await req.json().catch(() => ({}));
+    const forceCleanupErrors = body?.force_cleanup_errors === true;
+    console.log(`Force cleanup errors: ${forceCleanupErrors}`);
+
     // 3. Delete old orders that are still pending or waiting_buffer
-    // We don't delete dispatched orders as they may be needed for history
-    const { data: deletedOrders, error: deleteError } = await supabase
+    const { data: deletedPendingOrders, error: deleteError } = await supabase
       .from('orders')
       .delete()
       .lt('created_at', cutoffISO)
@@ -49,24 +53,76 @@ Deno.serve(async (req) => {
       .select('id, customer_name, status, created_at');
 
     if (deleteError) {
-      console.error('Error deleting old orders:', deleteError);
-      throw new Error('Failed to delete old orders');
+      console.error('Error deleting old pending orders:', deleteError);
+      throw new Error('Failed to delete old pending orders');
     }
 
-    const deletedCount = deletedOrders?.length || 0;
-    console.log(`Deleted ${deletedCount} old orders`);
+    const deletedPendingCount = deletedPendingOrders?.length || 0;
+    console.log(`Deleted ${deletedPendingCount} old pending/buffer orders`);
 
-    // Log details of deleted orders for audit
-    if (deletedOrders && deletedOrders.length > 0) {
-      console.log('Deleted orders:', deletedOrders.map(o => ({
-        id: o.id,
-        customer: o.customer_name,
-        status: o.status,
-        created_at: o.created_at
-      })));
+    // 4. Delete old dispatched orders (older than max age)
+    const { data: deletedDispatchedOrders, error: deleteDispatchedError } = await supabase
+      .from('orders')
+      .delete()
+      .lt('created_at', cutoffISO)
+      .eq('status', 'dispatched')
+      .select('id, customer_name, status, created_at');
+
+    if (deleteDispatchedError) {
+      console.error('Error deleting old dispatched orders:', deleteDispatchedError);
     }
 
-    // 4. Also cleanup orphaned delivery groups (groups with no orders)
+    const deletedDispatchedCount = deletedDispatchedOrders?.length || 0;
+    console.log(`Deleted ${deletedDispatchedCount} old dispatched orders`);
+
+    // 5. Delete orders with errors (either immediately if forced, or if older than 48h)
+    let deletedErrorsCount = 0;
+    if (forceCleanupErrors) {
+      // Force delete all orders with errors
+      const { data: deletedErrorOrders, error: deleteErrorsError } = await supabase
+        .from('orders')
+        .delete()
+        .or('foody_error.not.is.null,notification_error.not.is.null')
+        .select('id, customer_name, status, foody_error, notification_error');
+
+      if (deleteErrorsError) {
+        console.error('Error deleting error orders:', deleteErrorsError);
+      } else {
+        deletedErrorsCount = deletedErrorOrders?.length || 0;
+        console.log(`Force deleted ${deletedErrorsCount} orders with errors`);
+      }
+    } else {
+      // Delete error orders older than 48 hours
+      const errorCutoffDate = new Date();
+      errorCutoffDate.setHours(errorCutoffDate.getHours() - 48);
+      const errorCutoffISO = errorCutoffDate.toISOString();
+
+      const { data: deletedErrorOrders, error: deleteErrorsError } = await supabase
+        .from('orders')
+        .delete()
+        .lt('created_at', errorCutoffISO)
+        .or('foody_error.not.is.null,notification_error.not.is.null')
+        .select('id, customer_name, status, foody_error, notification_error');
+
+      if (deleteErrorsError) {
+        console.error('Error deleting old error orders:', deleteErrorsError);
+      } else {
+        deletedErrorsCount = deletedErrorOrders?.length || 0;
+        console.log(`Deleted ${deletedErrorsCount} old orders with errors`);
+      }
+    }
+
+    const totalDeletedCount = deletedPendingCount + deletedDispatchedCount + deletedErrorsCount;
+
+    // Log summary
+    console.log('Cleanup summary:', {
+      pending: deletedPendingCount,
+      dispatched: deletedDispatchedCount,
+      errors: deletedErrorsCount,
+      total: totalDeletedCount,
+    });
+
+    // 6. Also cleanup orphaned delivery groups (groups with no orders)
     const { data: orphanedGroups, error: groupError } = await supabase
       .from('delivery_groups')
       .delete()
@@ -80,13 +136,16 @@ Deno.serve(async (req) => {
 
     const response = {
       success: true,
-      deleted: deletedCount,
+      deleted: totalDeletedCount,
+      deletedPending: deletedPendingCount,
+      deletedDispatched: deletedDispatchedCount,
+      deletedErrors: deletedErrorsCount,
       orphanedGroupsCleaned: orphanedGroupsCount,
       maxAgeHours,
       cutoffDate: cutoffISO,
-      message: deletedCount > 0 
-        ? `${deletedCount} pedido${deletedCount > 1 ? 's' : ''} antigo${deletedCount > 1 ? 's' : ''} removido${deletedCount > 1 ? 's' : ''}`
-        : 'Nenhum pedido antigo encontrado'
+      message: totalDeletedCount > 0 
+        ? `${totalDeletedCount} pedido${totalDeletedCount > 1 ? 's' : ''} removido${totalDeletedCount > 1 ? 's' : ''}`
+        : 'Nenhum pedido para limpar'
     };
 
     console.log('Cleanup completed:', response);
