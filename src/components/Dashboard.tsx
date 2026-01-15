@@ -8,6 +8,16 @@ import { BufferPanel } from './BufferPanel';
 import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 export function Dashboard() {
   const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody, cleanupErrors, forceCloseOrder } =
@@ -19,6 +29,7 @@ export function Dashboard() {
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [retryingFoodyOrderId, setRetryingFoodyOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
+  const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -365,13 +376,55 @@ export function Dashboard() {
                 onRetryNotification={order.notification_error ? () => handleRetryNotification(order.id) : undefined}
                 onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
                 isRetryingFoody={retryingFoodyOrderId === order.id}
-                onForceClose={() => handleForceClose(order.id)}
+                onForceClose={() => setOrderToForceClose({
+                  id: order.id,
+                  orderId: order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)
+                })}
                 isForceClosing={forceClosingOrderId === order.id}
               />
             ))
           )}
         </OrderColumn>
       </div>
+
+      {/* Confirmation Dialog for Force Close */}
+      <AlertDialog 
+        open={!!orderToForceClose} 
+        onOpenChange={(open) => !open && setOrderToForceClose(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar fechamento forçado</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div>
+                <p>
+                  Tem certeza que deseja forçar o fechamento do pedido <strong>#{orderToForceClose?.orderId}</strong>?
+                </p>
+                <p className="mt-3">Esta ação irá:</p>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  <li>Notificar o CardápioWeb que o pedido foi entregue</li>
+                  <li>Remover o pedido do sistema</li>
+                </ul>
+                <p className="mt-3 font-medium text-destructive">Esta ação não pode ser desfeita.</p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (orderToForceClose) {
+                  handleForceClose(orderToForceClose.id);
+                  setOrderToForceClose(null);
+                }
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Sim, forçar fechamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
