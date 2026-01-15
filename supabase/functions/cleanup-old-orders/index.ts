@@ -42,7 +42,8 @@ Deno.serve(async (req) => {
     // Check if force cleanup of error orders was requested
     const body = await req.json().catch(() => ({}));
     const forceCleanupErrors = body?.force_cleanup_errors === true;
-    console.log(`Force cleanup errors: ${forceCleanupErrors}`);
+    const cleanupDispatched = body?.cleanup_dispatched === true;
+    console.log(`Force cleanup errors: ${forceCleanupErrors}, Cleanup all dispatched: ${cleanupDispatched}`);
 
     // 3. Delete old orders that are still pending or waiting_buffer
     const { data: deletedPendingOrders, error: deleteError } = await supabase
@@ -60,20 +61,38 @@ Deno.serve(async (req) => {
     const deletedPendingCount = deletedPendingOrders?.length || 0;
     console.log(`Deleted ${deletedPendingCount} old pending/buffer orders`);
 
-    // 4. Delete old dispatched orders (older than max age)
-    const { data: deletedDispatchedOrders, error: deleteDispatchedError } = await supabase
-      .from('orders')
-      .delete()
-      .lt('created_at', cutoffISO)
-      .eq('status', 'dispatched')
-      .select('id, customer_name, status, created_at');
+    // 4. Delete dispatched orders (all if cleanup_dispatched=true, or only old ones)
+    let deletedDispatchedCount = 0;
+    if (cleanupDispatched) {
+      // Force delete ALL dispatched orders
+      const { data: deletedDispatchedOrders, error: deleteDispatchedError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('status', 'dispatched')
+        .select('id, customer_name, status, created_at');
 
-    if (deleteDispatchedError) {
-      console.error('Error deleting old dispatched orders:', deleteDispatchedError);
+      if (deleteDispatchedError) {
+        console.error('Error deleting all dispatched orders:', deleteDispatchedError);
+      } else {
+        deletedDispatchedCount = deletedDispatchedOrders?.length || 0;
+        console.log(`Force deleted ${deletedDispatchedCount} dispatched orders`);
+      }
+    } else {
+      // Original behavior: only delete old dispatched orders
+      const { data: deletedDispatchedOrders, error: deleteDispatchedError } = await supabase
+        .from('orders')
+        .delete()
+        .lt('created_at', cutoffISO)
+        .eq('status', 'dispatched')
+        .select('id, customer_name, status, created_at');
+
+      if (deleteDispatchedError) {
+        console.error('Error deleting old dispatched orders:', deleteDispatchedError);
+      } else {
+        deletedDispatchedCount = deletedDispatchedOrders?.length || 0;
+        console.log(`Deleted ${deletedDispatchedCount} old dispatched orders`);
+      }
     }
-
-    const deletedDispatchedCount = deletedDispatchedOrders?.length || 0;
-    console.log(`Deleted ${deletedDispatchedCount} old dispatched orders`);
 
     // 5. Delete orders with errors (either immediately if forced, or if older than 48h)
     let deletedErrorsCount = 0;
