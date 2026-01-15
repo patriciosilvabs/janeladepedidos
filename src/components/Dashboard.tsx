@@ -20,14 +20,13 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody, cleanupErrors, forceCloseOrder } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, cleanupErrors, forceCloseOrder } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
-  const [retryingFoodyOrderId, setRetryingFoodyOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
   const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
 
@@ -55,9 +54,9 @@ export function Dashboard() {
     [orders]
   );
 
-  // Count orders with errors
+  // Count orders with errors (notification errors only - Foody handled by CardápioWeb)
   const ordersWithErrors = useMemo(
-    () => orders.filter((o) => o.foody_error || o.notification_error),
+    () => orders.filter((o) => o.notification_error),
     [orders]
   );
 
@@ -167,24 +166,7 @@ export function Dashboard() {
     }
   };
 
-  const handleRetryFoody = async (orderId: string) => {
-    setRetryingFoodyOrderId(orderId);
-    try {
-      await retryFoody.mutateAsync(orderId);
-      toast({
-        title: 'Pedido reenviado ao Foody!',
-        description: 'O pedido foi enviado novamente para o Foody Delivery.',
-      });
-    } catch (err) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível reenviar o pedido ao Foody.',
-        variant: 'destructive',
-      });
-    } finally {
-      setRetryingFoodyOrderId(null);
-    }
-  };
+  // Removed handleRetryFoody - CardápioWeb handles Foody integration natively
 
   const handleCleanupErrors = async () => {
     try {
@@ -349,8 +331,6 @@ export function Dashboard() {
                 order={order}
                 onMarkCollected={() => handleMarkCollected(order.id)}
                 isMarkingCollected={collectingOrderId === order.id}
-                onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
-                isRetryingFoody={retryingFoodyOrderId === order.id}
               />
             ))
           )}
@@ -374,8 +354,6 @@ export function Dashboard() {
                 key={order.id}
                 order={order}
                 onRetryNotification={order.notification_error ? () => handleRetryNotification(order.id) : undefined}
-                onRetryFoody={order.foody_error ? () => handleRetryFoody(order.id) : undefined}
-                isRetryingFoody={retryingFoodyOrderId === order.id}
                 onForceClose={() => setOrderToForceClose({
                   id: order.id,
                   orderId: order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8)
