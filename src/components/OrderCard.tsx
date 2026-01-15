@@ -45,38 +45,38 @@ export function OrderCard({
 
   return (
     <Card className="bg-slate-900/80 border-slate-700/50 backdrop-blur">
-      <CardContent className="p-4 text-center">
+      <CardContent className="p-3 text-center">
         {/* Order Number */}
-        <div className="text-amber-400 text-5xl font-bold mb-2">
+        <div className="text-amber-400 text-3xl font-bold mb-1">
           #{orderNumber}
         </div>
         
         {/* Store Name */}
-        <div className="text-white/90 text-lg font-medium mb-0.5">
+        <div className="text-white/90 text-sm font-medium mb-0.5">
           {storeName}
         </div>
         
         {/* Customer Name */}
-        <div className="text-white/60 mb-3">
+        <div className="text-white/60 text-xs mb-2">
           {customerName}
         </div>
 
         {/* Neighborhood */}
         {order.neighborhood && (
-          <div className="text-white/40 text-sm mb-2">
+          <div className="text-white/40 text-xs mb-1">
             {order.neighborhood}
           </div>
         )}
 
         {/* Error indicator */}
         {order.notification_error && (
-          <div className="text-red-400 text-sm mb-2 bg-red-500/10 px-3 py-2 rounded-lg">
+          <div className="text-red-400 text-xs mb-1 bg-red-500/10 px-2 py-1 rounded-lg">
             Erro na notificação
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1">
           {showMarkReady && (
           <Button
             onClick={onMarkReady}
