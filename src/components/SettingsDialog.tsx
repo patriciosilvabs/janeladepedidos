@@ -32,6 +32,22 @@ export function SettingsDialog() {
   const [foodyWebhookCopied, setFoodyWebhookCopied] = useState(false);
   const [foodyTestStatus, setFoodyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyTestError, setFoodyTestError] = useState('');
+  const [foodyUrlWarning, setFoodyUrlWarning] = useState('');
+
+  const validateFoodyUrl = (url: string): string => {
+    if (!url) return '';
+    if (url.endsWith('/')) {
+      return 'A URL não deve terminar com barra (/)';
+    }
+    if (!url.includes('/rest/')) {
+      return 'A URL deve conter o caminho da API (ex: /rest/1.2)';
+    }
+    const matches = url.match(/\/rest\//g);
+    if (matches && matches.length > 1) {
+      return 'URL contém caminho duplicado (/rest/)';
+    }
+    return '';
+  };
 
   const foodyWebhookUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/foody-webhook`;
 
@@ -65,7 +81,18 @@ export function SettingsDialog() {
 
   const handleSave = async () => {
     try {
-      await saveSettings.mutateAsync(formData);
+      // Normalizar URL do Foody
+      let normalizedFoodyUrl = formData.foody_api_url?.trim();
+      if (normalizedFoodyUrl) {
+        normalizedFoodyUrl = normalizedFoodyUrl.replace(/\/+$/, '');
+      }
+
+      const dataToSave = {
+        ...formData,
+        foody_api_url: normalizedFoodyUrl,
+      };
+
+      await saveSettings.mutateAsync(dataToSave);
       toast.success('Configurações salvas com sucesso!');
       setOpen(false);
     } catch (error) {
@@ -263,11 +290,22 @@ export function SettingsDialog() {
                 <Input
                   id="foody-url"
                   value={formData.foody_api_url || 'https://app.foodydelivery.com/rest/1.2'}
-                  onChange={(e) =>
-                    setFormData({ ...formData, foody_api_url: e.target.value })
-                  }
+                  onChange={(e) => {
+                    const url = e.target.value;
+                    setFormData({ ...formData, foody_api_url: url });
+                    setFoodyUrlWarning(validateFoodyUrl(url));
+                  }}
                   placeholder="https://app.foodydelivery.com/rest/1.2"
                 />
+                {foodyUrlWarning && (
+                  <div className="flex items-center gap-2 text-amber-500 text-sm">
+                    <AlertCircle className="h-4 w-4 shrink-0" />
+                    <span>{foodyUrlWarning}</span>
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Formato esperado: https://app.foodydelivery.com/rest/1.2
+                </p>
               </div>
 
               <div className="space-y-2">
