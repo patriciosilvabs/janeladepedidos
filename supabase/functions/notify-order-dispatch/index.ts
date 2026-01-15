@@ -8,6 +8,7 @@ const corsHeaders = {
 interface OrderResult {
   orderId: string;
   success: boolean;
+  cardapioweb_ready?: boolean;
   cardapioweb_dispatched?: boolean;
   foody_sent?: boolean;
   error?: string;
@@ -18,6 +19,93 @@ interface OrderData {
   external_id: string | null;
   store_id: string | null;
   foody_uid: string | null;
+  cardapioweb_notified: boolean | null;
+}
+
+interface StoreData {
+  cardapioweb_api_url: string | null;
+  cardapioweb_api_token: string | null;
+  cardapioweb_enabled: boolean | null;
+}
+
+// Notifica CardápioWeb que o pedido está PRONTO
+async function notifyCardapioWebReady(
+  store: StoreData,
+  externalId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!store.cardapioweb_enabled || !store.cardapioweb_api_url || !store.cardapioweb_api_token) {
+    console.log(`CardápioWeb not enabled or configured, skipping ready notification`);
+    return { success: true };
+  }
+
+  const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
+  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/ready`;
+
+  console.log(`Calling CardápioWeb READY for order ${externalId}: ${endpoint}`);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': store.cardapioweb_api_token,
+        'Accept': 'application/json',
+      },
+    });
+
+    const responseText = await response.text();
+    console.log(`CardápioWeb READY response for ${externalId}:`, response.status, responseText);
+
+    // 409 = already ready, which is fine
+    if (response.ok || response.status === 409) {
+      return { success: true };
+    }
+
+    return { success: false, error: `HTTP ${response.status}: ${responseText}` };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`Error calling CardápioWeb READY for ${externalId}:`, errorMsg);
+    return { success: false, error: errorMsg };
+  }
+}
+
+// Notifica CardápioWeb que o pedido saiu para ENTREGA
+async function notifyCardapioWebDispatch(
+  store: StoreData,
+  externalId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!store.cardapioweb_enabled || !store.cardapioweb_api_url || !store.cardapioweb_api_token) {
+    console.log(`CardápioWeb not enabled or configured, skipping dispatch notification`);
+    return { success: true };
+  }
+
+  const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
+  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/dispatch`;
+
+  console.log(`Calling CardápioWeb DISPATCH for order ${externalId}: ${endpoint}`);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'X-API-KEY': store.cardapioweb_api_token,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    const responseText = await response.text();
+    console.log(`CardápioWeb DISPATCH response for ${externalId}:`, response.status, responseText);
+
+    // 409 = already dispatched, 404 = order doesn't exist - both are OK
+    if (response.ok || response.status === 409 || response.status === 404) {
+      return { success: true };
+    }
+
+    return { success: false, error: `HTTP ${response.status}: ${responseText}` };
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : 'Unknown error';
+    console.error(`Error calling CardápioWeb DISPATCH for ${externalId}:`, errorMsg);
+    return { success: false, error: errorMsg };
+  }
 }
 
 Deno.serve(async (req) => {
@@ -39,7 +127,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing dispatch notifications for ${orderIds.length} orders`);
+    console.log(`Processing dispatch for ${orderIds.length} orders`);
 
     // Buscar configurações do Foody
     const { data: appSettings } = await supabase
@@ -61,7 +149,7 @@ Deno.serve(async (req) => {
         // Fetch order data
         const { data: order, error: orderError } = await supabase
           .from('orders')
-          .select('id, external_id, store_id, foody_uid')
+          .select('id, external_id, store_id, foody_uid, cardapioweb_notified')
           .eq('id', orderId)
           .single();
 
@@ -82,7 +170,7 @@ Deno.serve(async (req) => {
             ordersToSendToFoody.push(orderId);
           }
           
-          results.push({ orderId, success: true, cardapioweb_dispatched: false });
+          results.push({ orderId, success: true, cardapioweb_ready: false, cardapioweb_dispatched: false });
           successCount++;
           continue;
         }
@@ -101,59 +189,54 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        const typedStore = store as StoreData;
+        let cardapiowebReady = false;
         let cardapiowebDispatched = false;
 
-        if (store.cardapioweb_enabled && store.cardapioweb_api_url && store.cardapioweb_api_token) {
-          // Call CardápioWeb dispatch endpoint
-          const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
-          const endpoint = `${baseUrl}/api/partner/v1/orders/${typedOrder.external_id}/dispatch`;
-
-          console.log(`Calling CardápioWeb dispatch for order ${typedOrder.external_id}: ${endpoint}`);
-
-          const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: {
-              'X-API-KEY': store.cardapioweb_api_token,
-              'Content-Type': 'application/json',
-            },
-          });
-
-          const responseText = await response.text();
-          console.log(`CardápioWeb dispatch response for ${typedOrder.external_id}:`, response.status, responseText);
-
-          // 409 Conflict = already dispatched, 404 = order doesn't exist - both are OK
-          if (response.ok || response.status === 409 || response.status === 404) {
-            console.log(`Dispatch notification successful for order ${typedOrder.external_id}`);
-            cardapiowebDispatched = true;
-            
-            // Mark as notified
-            await supabase
-              .from('orders')
-              .update({
-                cardapioweb_notified: true,
-                cardapioweb_notified_at: new Date().toISOString(),
-                notification_error: null,
-              })
-              .eq('id', orderId);
-          } else {
-            console.error(`Dispatch failed for order ${typedOrder.external_id}:`, response.status, responseText);
-            
-            // Mark notification error
-            await supabase
-              .from('orders')
-              .update({
-                cardapioweb_notified: false,
-                notification_error: `HTTP ${response.status}: ${responseText}`,
-              })
-              .eq('id', orderId);
-            
-            results.push({ orderId, success: false, error: `HTTP ${response.status}: ${responseText}` });
-            errorCount++;
-            continue;
-          }
+        // PASSO 1: Chamar /ready no CardápioWeb (marcar como PRONTO)
+        console.log(`Step 1: Marking order ${typedOrder.external_id} as READY on CardápioWeb`);
+        const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id);
+        
+        if (readyResult.success) {
+          cardapiowebReady = true;
+          console.log(`Order ${typedOrder.external_id} marked as READY successfully`);
         } else {
-          console.log(`CardápioWeb disabled or not configured for store ${typedOrder.store_id}, skipping`);
-          cardapiowebDispatched = false;
+          console.error(`Failed to mark order ${typedOrder.external_id} as READY:`, readyResult.error);
+          // Continuar mesmo se falhar - tentar dispatch mesmo assim
+        }
+
+        // PASSO 2: Chamar /dispatch no CardápioWeb (marcar como SAIU PARA ENTREGA)
+        console.log(`Step 2: Marking order ${typedOrder.external_id} as DISPATCHED on CardápioWeb`);
+        const dispatchResult = await notifyCardapioWebDispatch(typedStore, typedOrder.external_id);
+
+        if (dispatchResult.success) {
+          cardapiowebDispatched = true;
+          console.log(`Order ${typedOrder.external_id} marked as DISPATCHED successfully`);
+          
+          // Atualizar pedido como notificado com sucesso
+          await supabase
+            .from('orders')
+            .update({
+              cardapioweb_notified: true,
+              cardapioweb_notified_at: new Date().toISOString(),
+              notification_error: null,
+            })
+            .eq('id', orderId);
+        } else {
+          console.error(`Failed to dispatch order ${typedOrder.external_id}:`, dispatchResult.error);
+          
+          // Marcar erro de notificação
+          await supabase
+            .from('orders')
+            .update({
+              cardapioweb_notified: false,
+              notification_error: dispatchResult.error,
+            })
+            .eq('id', orderId);
+          
+          results.push({ orderId, success: false, error: dispatchResult.error });
+          errorCount++;
+          continue;
         }
 
         // Adicionar à lista de envio ao Foody se habilitado e ainda não enviado
@@ -161,7 +244,12 @@ Deno.serve(async (req) => {
           ordersToSendToFoody.push(orderId);
         }
 
-        results.push({ orderId, success: true, cardapioweb_dispatched: cardapiowebDispatched });
+        results.push({ 
+          orderId, 
+          success: true, 
+          cardapioweb_ready: cardapiowebReady,
+          cardapioweb_dispatched: cardapiowebDispatched 
+        });
         successCount++;
 
       } catch (error) {
