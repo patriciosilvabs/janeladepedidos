@@ -126,38 +126,33 @@ Deno.serve(async (req) => {
 
     for (const order of orders as OrderToDispatch[]) {
       try {
-        // APENAS notificar o CardápioWeb que o pedido está pronto
+        // Notificar o CardápioWeb que o pedido está pronto
         const cardapioResult = await notifyCardapioWebReady(supabase, order);
-        
-        const now = new Date().toISOString();
         
         if (!cardapioResult.success) {
           console.error(`CardápioWeb notification failed for order ${order.id}:`, cardapioResult.error);
           errors.push({ orderId: order.id, error: cardapioResult.error });
           
-          // Manter pedido com erro para permitir reenvio
+          // Marcar erro de notificação para permitir reenvio
           await supabase
             .from('orders')
             .update({
-              status: 'dispatched',
-              dispatched_at: now,
               notification_error: cardapioResult.error,
             })
             .eq('id', order.id);
         } else {
           results.push({ orderId: order.id, notified: true });
           
-          // DELETAR pedido do banco - não precisa mais ser exibido
-          const { error: deleteError } = await supabase
+          // Limpar qualquer erro de notificação anterior
+          // NÃO deletar - aguardar webhook 'released' do motoboy
+          await supabase
             .from('orders')
-            .delete()
+            .update({
+              notification_error: null,
+            })
             .eq('id', order.id);
           
-          if (deleteError) {
-            console.error(`Error deleting order ${order.id}:`, deleteError);
-          } else {
-            console.log(`Order ${order.id} deleted after successful dispatch`);
-          }
+          console.log(`Order ${order.id} notified - waiting for driver pickup via webhook`);
         }
 
       } catch (orderError) {
@@ -169,8 +164,6 @@ Deno.serve(async (req) => {
         await supabase
           .from('orders')
           .update({
-            status: 'dispatched',
-            dispatched_at: new Date().toISOString(),
             notification_error: errorMessage,
           })
           .eq('id', order.id);
