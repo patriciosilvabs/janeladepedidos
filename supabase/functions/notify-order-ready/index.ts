@@ -10,10 +10,9 @@ interface OrderToDispatch {
   cardapioweb_order_id: string | null;
   external_id: string | null;  // ID interno para API do CardápioWeb
   store_id: string | null;
-  foody_uid: string | null;
 }
 
-// Função para notificar o CardápioWeb que o pedido está pronto e despachar
+// Função para notificar o CardápioWeb que o pedido está pronto
 async function notifyCardapioWebReady(
   supabase: any,
   order: OrderToDispatch
@@ -109,7 +108,7 @@ Deno.serve(async (req) => {
     // Buscar pedidos
     const { data: orders, error: ordersError } = await supabase
       .from('orders')
-      .select('id, cardapioweb_order_id, external_id, store_id, foody_uid')
+      .select('id, cardapioweb_order_id, external_id, store_id')
       .in('id', orderIds);
 
     if (ordersError) {
@@ -120,22 +119,10 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Buscar configurações do Foody
-    const { data: foodySettings } = await supabase
-      .from('app_settings')
-      .select('foody_enabled')
-      .eq('id', 'default')
-      .single();
+    console.log(`Processing ${orders.length} orders - notifying CardápioWeb (Foody will be sent on dispatch)`);
 
-    const foodyEnabled = (foodySettings as { foody_enabled?: boolean } | null)?.foody_enabled || false;
-
-    console.log(`Processing ${orders.length} orders - notifying CardápioWeb${foodyEnabled ? ' and Foody' : ''}`);
-
-    const results: { orderId: string; notified: boolean; foody_sent?: boolean }[] = [];
+    const results: { orderId: string; notified: boolean }[] = [];
     const errors: { orderId: string; error: string | undefined }[] = [];
-
-    // Coletar IDs de pedidos para enviar ao Foody (apenas os que não foram enviados ainda)
-    const ordersToSendToFoody: string[] = [];
 
     for (const order of orders as OrderToDispatch[]) {
       try {
@@ -167,12 +154,7 @@ Deno.serve(async (req) => {
             })
             .eq('id', order.id);
           
-          console.log(`Order ${order.id} notified - waiting for driver pickup via webhook`);
-
-          // Se Foody está habilitado e o pedido ainda não foi enviado, adicionar à lista
-          if (foodyEnabled && !order.foody_uid) {
-            ordersToSendToFoody.push(order.id);
-          }
+          console.log(`Order ${order.id} marked as READY on CardápioWeb - Foody will be notified on dispatch`);
         }
 
       } catch (orderError) {
@@ -187,35 +169,6 @@ Deno.serve(async (req) => {
             notification_error: errorMessage,
           })
           .eq('id', order.id);
-      }
-    }
-
-    // Enviar pedidos ao Foody em lote (se houver)
-    if (ordersToSendToFoody.length > 0) {
-      console.log(`Sending ${ordersToSendToFoody.length} orders to Foody...`);
-      
-      try {
-        const foodyResponse = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/send-to-foody`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          },
-          body: JSON.stringify({ orderIds: ordersToSendToFoody }),
-        });
-
-        const foodyResult = await foodyResponse.json();
-        console.log('Foody send result:', foodyResult);
-
-        // Atualizar resultados com informação do Foody
-        for (const result of results) {
-          if (ordersToSendToFoody.includes(result.orderId)) {
-            result.foody_sent = foodyResult.success || false;
-          }
-        }
-      } catch (foodyError) {
-        console.error('Error sending to Foody:', foodyError);
-        // Não falhar a operação principal por causa do Foody
       }
     }
 
