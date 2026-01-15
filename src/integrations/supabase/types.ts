@@ -74,6 +74,33 @@ export type Database = {
         }
         Relationships: []
       }
+      buffer_settings_by_day: {
+        Row: {
+          buffer_timeout_minutes: number
+          created_at: string | null
+          day_of_week: number
+          enabled: boolean | null
+          id: string
+          updated_at: string | null
+        }
+        Insert: {
+          buffer_timeout_minutes?: number
+          created_at?: string | null
+          day_of_week: number
+          enabled?: boolean | null
+          id: string
+          updated_at?: string | null
+        }
+        Update: {
+          buffer_timeout_minutes?: number
+          created_at?: string | null
+          day_of_week?: number
+          enabled?: boolean | null
+          id?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       delivery_groups: {
         Row: {
           center_lat: number
