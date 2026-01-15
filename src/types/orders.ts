@@ -24,6 +24,9 @@ export interface Order {
   ready_at: string | null;
   dispatched_at: string | null;
   notification_error: string | null;
+  foody_uid: string | null;
+  foody_status: string | null;
+  foody_error: string | null;
 }
 
 export interface DeliveryGroup {
