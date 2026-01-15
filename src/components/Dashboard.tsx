@@ -5,12 +5,12 @@ import { useSettings } from '@/hooks/useSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
-import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 
 export function Dashboard() {
-  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody } =
+  const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, retryFoody, cleanupErrors } =
     useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
@@ -40,6 +40,12 @@ export function Dashboard() {
       orders
         .filter((o) => o.status === 'dispatched')
         .slice(0, 20),
+    [orders]
+  );
+
+  // Count orders with errors
+  const ordersWithErrors = useMemo(
+    () => orders.filter((o) => o.foody_error || o.notification_error),
     [orders]
   );
 
@@ -168,6 +174,22 @@ export function Dashboard() {
     }
   };
 
+  const handleCleanupErrors = async () => {
+    try {
+      const result = await cleanupErrors.mutateAsync();
+      toast({
+        title: 'Limpeza concluída!',
+        description: result.message || 'Pedidos com erros foram removidos.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro na limpeza',
+        description: 'Não foi possível limpar os pedidos.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   if (isLoading && orders.length === 0) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -201,6 +223,16 @@ export function Dashboard() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            {ordersWithErrors.length > 0 && (
+              <button 
+                onClick={handleCleanupErrors}
+                disabled={cleanupErrors.isPending}
+                className="text-sm text-destructive hover:underline disabled:opacity-50 flex items-center gap-1"
+              >
+                <Trash2 className={cn("h-3 w-3", cleanupErrors.isPending && "animate-pulse")} />
+                Limpar {ordersWithErrors.length} com erro
+              </button>
+            )}
             <button 
               onClick={handleSyncStatus}
               disabled={syncOrdersStatus.isPending}
