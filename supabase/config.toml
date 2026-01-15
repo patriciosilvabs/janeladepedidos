@@ -26,3 +26,9 @@ verify_jwt = false
 
 [functions.create-user]
 verify_jwt = false
+
+[functions.send-to-foody]
+verify_jwt = false
+
+[functions.foody-webhook]
+verify_jwt = false
