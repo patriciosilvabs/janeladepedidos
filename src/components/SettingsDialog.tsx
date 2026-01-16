@@ -6,6 +6,7 @@ import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { FoodyStatsPanel } from '@/components/FoodyStatsPanel';
+import { DynamicBufferSettings } from '@/components/DynamicBufferSettings';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -426,21 +427,26 @@ export function SettingsDialog() {
             </TabsContent>
 
             <TabsContent value="buffer" className="space-y-4 mt-4">
-              <div className="space-y-2 mb-6">
-                <Label htmlFor="buffer-timeout">Tempo Padrão (minutos)</Label>
-                <p className="text-sm text-muted-foreground">
-                  Usado como fallback quando o dia não tem configuração específica
-                </p>
-                <Input
-                  id="buffer-timeout"
-                  type="number"
-                  min={1}
-                  max={60}
-                  value={formData.buffer_timeout_minutes || 10}
-                  onChange={(e) =>
-                    setFormData({ ...formData, buffer_timeout_minutes: parseInt(e.target.value) || 10 })
-                  }
-                />
+              {/* Dynamic Buffer Settings */}
+              <DynamicBufferSettings />
+
+              <div className="border-t border-border/50 pt-4">
+                <div className="space-y-2 mb-6">
+                  <Label htmlFor="buffer-timeout">Tempo Padrão (minutos)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Usado quando o timer dinâmico está desabilitado ou como fallback
+                  </p>
+                  <Input
+                    id="buffer-timeout"
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={formData.buffer_timeout_minutes || 10}
+                    onChange={(e) =>
+                      setFormData({ ...formData, buffer_timeout_minutes: parseInt(e.target.value) || 10 })
+                    }
+                  />
+                </div>
               </div>
 
               <div className="border-t border-border/50 pt-4">
@@ -448,6 +454,9 @@ export function SettingsDialog() {
                   <Calendar className="h-4 w-4 text-muted-foreground" />
                   <Label className="text-base font-medium">Configuração por Dia da Semana</Label>
                 </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Usado quando o timer dinâmico está desabilitado
+                </p>
                 
                 {isLoadingBuffer ? (
                   <div className="flex items-center justify-center py-8">

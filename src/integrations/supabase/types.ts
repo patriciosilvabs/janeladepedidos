@@ -140,6 +140,54 @@ export type Database = {
         }
         Relationships: []
       }
+      dynamic_buffer_settings: {
+        Row: {
+          created_at: string | null
+          enabled: boolean | null
+          high_volume_min_orders: number | null
+          high_volume_timer_minutes: number | null
+          id: string
+          low_volume_max_orders: number | null
+          low_volume_min_orders: number | null
+          low_volume_timer_minutes: number | null
+          max_buffer_time_minutes: number | null
+          medium_volume_max_orders: number | null
+          medium_volume_min_orders: number | null
+          medium_volume_timer_minutes: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          enabled?: boolean | null
+          high_volume_min_orders?: number | null
+          high_volume_timer_minutes?: number | null
+          id?: string
+          low_volume_max_orders?: number | null
+          low_volume_min_orders?: number | null
+          low_volume_timer_minutes?: number | null
+          max_buffer_time_minutes?: number | null
+          medium_volume_max_orders?: number | null
+          medium_volume_min_orders?: number | null
+          medium_volume_timer_minutes?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          enabled?: boolean | null
+          high_volume_min_orders?: number | null
+          high_volume_timer_minutes?: number | null
+          id?: string
+          low_volume_max_orders?: number | null
+          low_volume_min_orders?: number | null
+          low_volume_timer_minutes?: number | null
+          max_buffer_time_minutes?: number | null
+          medium_volume_max_orders?: number | null
+          medium_volume_min_orders?: number | null
+          medium_volume_timer_minutes?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       invitations: {
         Row: {
           created_at: string | null

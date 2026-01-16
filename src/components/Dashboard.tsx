@@ -3,6 +3,7 @@ import { useOrders } from '@/hooks/useOrders';
 import { usePolling } from '@/hooks/usePolling';
 import { useSettings } from '@/hooks/useSettings';
 import { useBufferSettings } from '@/hooks/useBufferSettings';
+import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
@@ -26,18 +27,13 @@ export function Dashboard() {
     useOrders();
   const { settings } = useSettings();
   const { getTodayBufferTimeout } = useBufferSettings();
+  const { settings: dynamicSettings, calculateDynamicTimer } = useDynamicBufferSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
   const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
-
-  // Get buffer timeout for today (dynamic per day of week)
-  const bufferTimeoutSeconds = useMemo(() => {
-    const minutes = getTodayBufferTimeout(settings?.buffer_timeout_minutes || 10);
-    return minutes * 60;
-  }, [getTodayBufferTimeout, settings?.buffer_timeout_minutes]);
 
   // Filter orders by status
   const pendingOrders = useMemo(
@@ -49,6 +45,25 @@ export function Dashboard() {
     () => orders.filter((o) => o.status === 'waiting_buffer'),
     [orders]
   );
+
+  // Count active orders for dynamic buffer calculation (pending + buffer)
+  const activeOrderCount = useMemo(() => {
+    return pendingOrders.length + bufferOrders.length;
+  }, [pendingOrders.length, bufferOrders.length]);
+
+  // Calculate dynamic or static buffer timeout
+  const dynamicTimerResult = useMemo(() => {
+    return calculateDynamicTimer(activeOrderCount);
+  }, [calculateDynamicTimer, activeOrderCount]);
+
+  const bufferTimeoutSeconds = useMemo(() => {
+    if (dynamicSettings?.enabled && dynamicTimerResult) {
+      return dynamicTimerResult.timerMinutes * 60;
+    }
+    // Fallback: use per-day static setting
+    const minutes = getTodayBufferTimeout(settings?.buffer_timeout_minutes || 10);
+    return minutes * 60;
+  }, [dynamicSettings?.enabled, dynamicTimerResult, getTodayBufferTimeout, settings?.buffer_timeout_minutes]);
 
   const readyOrders = useMemo(
     () => orders.filter((o) => o.status === 'ready'),
@@ -360,6 +375,8 @@ export function Dashboard() {
               onMoveToReady={handleMoveToReady}
               onForceDispatchOrder={handleForceDispatch}
               timerDuration={bufferTimeoutSeconds}
+              dynamicScenario={dynamicTimerResult}
+              activeOrderCount={activeOrderCount}
             />
           )}
         </OrderColumn>

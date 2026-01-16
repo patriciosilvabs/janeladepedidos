@@ -1,16 +1,24 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { OrderWithGroup } from '@/types/orders';
-import { Clock, Truck, AlertTriangle, Loader2 } from 'lucide-react';
+import { Clock, Truck, AlertTriangle, Loader2, Zap, Users, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OrderCard } from './OrderCard';
+import type { VolumeScenario } from '@/hooks/useDynamicBufferSettings';
 
 interface BufferPanelProps {
   orders: OrderWithGroup[];
   onMoveToReady: (orderIds: string[]) => Promise<void>;
   onForceDispatchOrder: (orderId: string) => void;
   timerDuration: number;
+  dynamicScenario?: {
+    scenario: VolumeScenario;
+    scenarioLabel: string;
+    scenarioDescription: string;
+  } | null;
+  activeOrderCount?: number;
 }
 
 export function BufferPanel({
@@ -18,6 +26,8 @@ export function BufferPanel({
   onMoveToReady,
   onForceDispatchOrder,
   timerDuration,
+  dynamicScenario,
+  activeOrderCount,
 }: BufferPanelProps) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [isDispatching, setIsDispatching] = useState(false);
@@ -138,8 +148,57 @@ export function BufferPanel({
     return null;
   }
 
+  const getScenarioIcon = () => {
+    if (!dynamicScenario?.scenario) return null;
+    switch (dynamicScenario.scenario) {
+      case 'low':
+        return <Zap className="h-4 w-4" />;
+      case 'medium':
+        return <Users className="h-4 w-4" />;
+      case 'high':
+        return <TrendingUp className="h-4 w-4" />;
+      default:
+        return null;
+    }
+  };
+
+  const getScenarioBadgeVariant = () => {
+    if (!dynamicScenario?.scenario) return 'secondary';
+    switch (dynamicScenario.scenario) {
+      case 'low':
+        return 'default';
+      case 'medium':
+        return 'secondary';
+      case 'high':
+        return 'destructive';
+      default:
+        return 'secondary';
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Dynamic Scenario Indicator */}
+      {dynamicScenario && (
+        <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50 border border-border/50">
+          <div className="flex items-center gap-2">
+            {getScenarioIcon()}
+            <div>
+              <Badge variant={getScenarioBadgeVariant() as any} className="mb-1">
+                {dynamicScenario.scenarioLabel}
+              </Badge>
+              <p className="text-xs text-muted-foreground">
+                {dynamicScenario.scenarioDescription}
+              </p>
+            </div>
+          </div>
+          <div className="text-right">
+            <span className="text-lg font-bold">{activeOrderCount}</span>
+            <p className="text-xs text-muted-foreground">pedidos ativos</p>
+          </div>
+        </div>
+      )}
+
       {/* Global Timer Card */}
       {timeLeft !== null && (
         <Card className={cn(
