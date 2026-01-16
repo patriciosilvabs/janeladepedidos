@@ -454,6 +454,7 @@ export type Database = {
           email: string
           id: string
           role: Database["public"]["Enums"]["app_role"]
+          sector_id: string
           user_id: string
         }[]
       }

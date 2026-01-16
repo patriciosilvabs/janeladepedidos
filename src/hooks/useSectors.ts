@@ -29,7 +29,7 @@ export function useSectors() {
   const { data: sectors, isLoading, error } = useQuery({
     queryKey: ['sectors'],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('sectors')
         .select('*')
         .order('created_at', { ascending: true });
@@ -42,7 +42,7 @@ export function useSectors() {
 
   const createSector = useMutation({
     mutationFn: async (params: CreateSectorParams) => {
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('sectors')
         .insert({
           name: params.name,
@@ -63,7 +63,7 @@ export function useSectors() {
   const updateSector = useMutation({
     mutationFn: async (params: UpdateSectorParams) => {
       const { id, ...updateData } = params;
-      const { data, error } = await supabase
+      const { data, error } = await (supabase as any)
         .from('sectors')
         .update(updateData)
         .eq('id', id)
@@ -80,7 +80,7 @@ export function useSectors() {
 
   const deleteSector = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('sectors')
         .delete()
         .eq('id', id);
@@ -118,7 +118,7 @@ export function useUserSector(userId: string | undefined) {
       if (roleError) throw roleError;
       if (!userRole?.sector_id) return null;
 
-      const { data: sector, error: sectorError } = await supabase
+      const { data: sector, error: sectorError } = await (supabase as any)
         .from('sectors')
         .select('*')
         .eq('id', userRole.sector_id)
