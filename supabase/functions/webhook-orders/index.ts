@@ -92,13 +92,10 @@ async function handleStatusEvent(
     case 'waiting_to_catch':
       // Mover para buffer SE ainda estiver pending
       if (order.status === 'pending') {
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({
-            status: 'waiting_buffer',
-            ready_at: new Date().toISOString(),
-          })
-          .eq('id', order.id);
+        // Usar RPC para garantir que ready_at use NOW() do PostgreSQL
+        const { error: updateError } = await supabase.rpc('mark_order_ready', {
+          order_id: order.id,
+        });
 
         if (updateError) {
           console.error('Error updating order:', updateError);
@@ -117,13 +114,10 @@ async function handleStatusEvent(
     case 'on_the_way':
       // Motoboy coletou o pedido - marcar como despachado
       if (['pending', 'waiting_buffer', 'ready'].includes(order.status)) {
-        const { error: dispatchError } = await supabase
-          .from('orders')
-          .update({
-            status: 'dispatched',
-            dispatched_at: new Date().toISOString(),
-          })
-          .eq('id', order.id);
+        // Usar RPC para garantir que dispatched_at use NOW() do PostgreSQL
+        const { error: dispatchError } = await supabase.rpc('set_order_dispatched', {
+          p_order_id: order.id,
+        });
 
         if (dispatchError) {
           console.error('Error dispatching order:', dispatchError);
