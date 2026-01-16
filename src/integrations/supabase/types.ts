@@ -35,6 +35,8 @@ export type Database = {
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           updated_at: string | null
+          urgent_bypass_enabled: boolean | null
+          urgent_production_timeout_minutes: number | null
         }
         Insert: {
           buffer_timeout_minutes?: number | null
@@ -56,6 +58,8 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           updated_at?: string | null
+          urgent_bypass_enabled?: boolean | null
+          urgent_production_timeout_minutes?: number | null
         }
         Update: {
           buffer_timeout_minutes?: number | null
@@ -77,6 +81,8 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           updated_at?: string | null
+          urgent_bypass_enabled?: boolean | null
+          urgent_production_timeout_minutes?: number | null
         }
         Relationships: []
       }
@@ -242,6 +248,7 @@ export type Database = {
           group_id: string | null
           house_number: string | null
           id: string
+          is_urgent: boolean | null
           items: Json | null
           lat: number
           lng: number
@@ -277,6 +284,7 @@ export type Database = {
           group_id?: string | null
           house_number?: string | null
           id?: string
+          is_urgent?: boolean | null
           items?: Json | null
           lat: number
           lng: number
@@ -312,6 +320,7 @@ export type Database = {
           group_id?: string | null
           house_number?: string | null
           id?: string
+          is_urgent?: boolean | null
           items?: Json | null
           lat?: number
           lng?: number

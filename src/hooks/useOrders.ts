@@ -108,6 +108,74 @@ export function useOrders() {
     },
   });
 
+  // Mark urgent order as ready - BYPASSES buffer, goes directly to 'ready' and notifies immediately
+  const markAsReadyUrgent = useMutation({
+    mutationFn: async (orderId: string) => {
+      const now = new Date().toISOString();
+
+      // 1. Update status directly to 'ready' (BYPASS buffer) and mark as urgent
+      const { error: updateError } = await supabase
+        .from('orders')
+        .update({ 
+          status: 'ready',
+          is_urgent: true,
+          ready_at: now,
+          group_id: null,
+        })
+        .eq('id', orderId);
+
+      if (updateError) throw updateError;
+
+      // 2. Notify CardápioWeb immediately (this triggers their Foody integration)
+      const { data, error: fnError } = await supabase.functions.invoke('notify-order-ready', {
+        body: { orderIds: [orderId], urgent: true },
+      });
+
+      if (fnError) {
+        console.error('Error notifying CardápioWeb for urgent order:', fnError);
+      }
+
+      // 3. If Foody direct integration is enabled, send with directRoute flag
+      const { data: foodyData, error: foodyError } = await supabase.functions.invoke('send-to-foody', {
+        body: { orderIds: [orderId], directRoute: true },
+      });
+
+      if (foodyError) {
+        console.error('Error sending urgent order to Foody:', foodyError);
+      }
+
+      return { orderId, notificationResult: data, foodyResult: foodyData };
+    },
+    onMutate: async (orderId) => {
+      await queryClient.cancelQueries({ queryKey: ['orders'] });
+      const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
+      
+      queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
+        old?.map((order) =>
+          order.id === orderId
+            ? { 
+                ...order, 
+                status: 'ready' as const,
+                is_urgent: true,
+                ready_at: new Date().toISOString(),
+                group_id: null,
+              }
+            : order
+        ) ?? []
+      );
+      
+      return { previousOrders };
+    },
+    onError: (_err, _orderId, context) => {
+      if (context?.previousOrders) {
+        queryClient.setQueryData(['orders'], context.previousOrders);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   // Move all buffer orders to ready status AND notify CardápioWeb
   const moveToReady = useMutation({
     mutationFn: async (orderIds: string[]) => {
@@ -328,6 +396,7 @@ export function useOrders() {
     isFetching,
     error,
     markAsReady,
+    markAsReadyUrgent,
     moveToReady,
     markAsCollected,
     forceDispatch,
