@@ -27,6 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Use refs to avoid multiple initializations and track state without causing re-renders
   const initializedRef = useRef(false);
   const mountedRef = useRef(true);
+  const lastEventTimeRef = useRef<number>(0);
 
   const fetchUserRole = async (userId: string) => {
     try {
@@ -50,14 +51,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initializedRef.current = true;
     mountedRef.current = true;
 
-    // Set up auth state listener FIRST (before checking session)
+    // ONLY use onAuthStateChange - do NOT call getSession() separately
+    // This prevents duplicate refresh token calls that cause race conditions
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
         if (!mountedRef.current) return;
         
+        // Debounce TOKEN_REFRESHED events to prevent rate limiting
+        const now = Date.now();
+        if (event === 'TOKEN_REFRESHED' && now - lastEventTimeRef.current < 2000) {
+          return;
+        }
+        lastEventTimeRef.current = now;
+        
         // Update state for any auth event
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
+        setLoading(false);
         
         if (currentSession?.user) {
           // Defer role fetch to avoid Supabase deadlock
@@ -69,29 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setRole(null);
         }
-        
-        // Ensure loading is false after any auth event
-        setLoading(false);
       }
     );
-
-    // THEN check for existing session
-    supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
-      if (!mountedRef.current) return;
-      
-      setSession(existingSession);
-      setUser(existingSession?.user ?? null);
-      setLoading(false);
-      
-      if (existingSession?.user) {
-        fetchUserRole(existingSession.user.id);
-      }
-    }).catch((error) => {
-      console.error('Error getting session:', error);
-      if (mountedRef.current) {
-        setLoading(false);
-      }
-    });
 
     return () => {
       mountedRef.current = false;
