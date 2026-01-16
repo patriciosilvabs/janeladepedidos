@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Crown, Shield, User, UserPlus } from 'lucide-react';
+import { Loader2, Crown, Shield, User, UserPlus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -55,12 +55,13 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ReactNode; varian
 };
 
 export function UsersAdminPanel() {
-  const { users, isLoading, updateUserRole, createUser } = useUsers();
+  const { users, isLoading, updateUserRole, createUser, deleteUser } = useUsers();
   const { user: currentUser } = useAuth();
   const [pendingChange, setPendingChange] = useState<{
     user: UserWithRole;
     newRole: 'admin' | 'user';
   } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<UserWithRole | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const handleCreateUser = async (params: CreateUserParams) => {
@@ -90,6 +91,29 @@ export function UsersAdminPanel() {
       console.error(error);
     } finally {
       setPendingChange(null);
+    }
+  };
+
+  const handleDeleteUser = (userRecord: UserWithRole) => {
+    if (userRecord.role === 'owner') return;
+    if (userRecord.user_id === currentUser?.id) {
+      toast.error('Você não pode excluir a si mesmo');
+      return;
+    }
+    setPendingDelete(userRecord);
+  };
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    try {
+      await deleteUser.mutateAsync(pendingDelete.user_id);
+      toast.success(`Usuário ${pendingDelete.email} excluído com sucesso`);
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao excluir usuário');
+      console.error(error);
+    } finally {
+      setPendingDelete(null);
     }
   };
 
@@ -158,29 +182,40 @@ export function UsersAdminPanel() {
                     {isOwner || isSelf ? (
                       <span className="text-xs text-muted-foreground">—</span>
                     ) : (
-                      <Select
-                        value={userRecord.role}
-                        onValueChange={(value: 'admin' | 'user') => handleRoleChange(userRecord, value)}
-                        disabled={updateUserRole.isPending}
-                      >
-                        <SelectTrigger className="h-8 w-[120px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="admin">
-                            <div className="flex items-center gap-2">
-                              <Shield className="h-3 w-3" />
-                              Admin
-                            </div>
-                          </SelectItem>
-                          <SelectItem value="user">
-                            <div className="flex items-center gap-2">
-                              <User className="h-3 w-3" />
-                              Usuário
-                            </div>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={userRecord.role}
+                          onValueChange={(value: 'admin' | 'user') => handleRoleChange(userRecord, value)}
+                          disabled={updateUserRole.isPending || deleteUser.isPending}
+                        >
+                          <SelectTrigger className="h-8 w-[100px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">
+                              <div className="flex items-center gap-2">
+                                <Shield className="h-3 w-3" />
+                                Admin
+                              </div>
+                            </SelectItem>
+                            <SelectItem value="user">
+                              <div className="flex items-center gap-2">
+                                <User className="h-3 w-3" />
+                                Usuário
+                              </div>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => handleDeleteUser(userRecord)}
+                          disabled={deleteUser.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     )}
                   </TableCell>
                 </TableRow>
@@ -211,6 +246,37 @@ export function UsersAdminPanel() {
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : null}
               Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!pendingDelete} onOpenChange={() => setPendingDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-destructive">Excluir usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você está prestes a excluir permanentemente o usuário{' '}
+              <strong>{pendingDelete?.email}</strong>.
+              <br /><br />
+              <span className="text-destructive font-medium">
+                Esta ação não pode ser desfeita. Todos os dados do usuário serão removidos.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={confirmDelete} 
+              disabled={deleteUser.isPending}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteUser.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-2" />
+              )}
+              Excluir
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
