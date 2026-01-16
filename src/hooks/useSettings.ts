@@ -19,6 +19,8 @@ export interface AppSettings {
   default_country: string;
   created_at: string;
   updated_at: string;
+  dispatched_order_sort_desc: boolean;
+  dispatched_visibility_hours: number;
 }
 
 export function useSettings() {

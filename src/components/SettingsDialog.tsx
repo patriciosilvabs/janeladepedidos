@@ -477,6 +477,48 @@ export function SettingsDialog() {
                   Quando um dia está inativo, será usado o tempo padrão configurado acima.
                 </p>
               </div>
+
+              {/* Dispatched Column Settings */}
+              <div className="border-t border-border/50 pt-4 mt-6">
+                <Label className="text-base font-medium mb-4 block">
+                  Configurações da Coluna Despachados
+                </Label>
+                
+                {/* Sort Order */}
+                <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30 mb-4">
+                  <div className="space-y-0.5">
+                    <Label>Ordenar do mais recente para o mais antigo</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando habilitado, pedidos mais recentes aparecem no topo
+                    </p>
+                  </div>
+                  <Switch
+                    checked={formData.dispatched_order_sort_desc ?? true}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, dispatched_order_sort_desc: checked })
+                    }
+                  />
+                </div>
+                
+                {/* Visibility Time */}
+                <div className="space-y-2">
+                  <Label htmlFor="dispatched-visibility">Tempo de visibilidade (horas)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Pedidos despachados são ocultados após este tempo
+                  </p>
+                  <Input
+                    id="dispatched-visibility"
+                    type="number"
+                    min={1}
+                    max={24}
+                    value={formData.dispatched_visibility_hours ?? 1}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dispatched_visibility_hours: parseInt(e.target.value) || 1 })
+                    }
+                    className="w-24"
+                  />
+                </div>
+              </div>
             </TabsContent>
 
             {isOwner && (

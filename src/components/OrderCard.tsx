@@ -46,9 +46,19 @@ export function OrderCard({
   return (
     <Card className="bg-slate-900/80 border-slate-700/50 backdrop-blur">
       <CardContent className="p-3 text-center">
-        {/* Order Number */}
-        <div className="text-amber-400 text-3xl font-bold mb-1">
-          #{orderNumber}
+        {/* Order Number and Time */}
+        <div className="flex items-center justify-center gap-2 mb-1">
+          <div className="text-amber-400 text-3xl font-bold">
+            #{orderNumber}
+          </div>
+          {order.cardapioweb_created_at && (
+            <div className="text-white/50 text-sm">
+              {new Date(order.cardapioweb_created_at).toLocaleTimeString('pt-BR', {
+                hour: '2-digit',
+                minute: '2-digit'
+              })}
+            </div>
+          )}
         </div>
         
         {/* Store Name */}
