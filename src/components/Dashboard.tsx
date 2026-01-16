@@ -56,8 +56,8 @@ export function Dashboard() {
   );
 
   const dispatchedOrders = useMemo(() => {
-    const visibilityHours = settings?.dispatched_visibility_hours ?? 1;
-    const cutoffTime = new Date(Date.now() - visibilityHours * 60 * 60 * 1000);
+    const visibilityMinutes = settings?.dispatched_visibility_minutes ?? 60;
+    const cutoffTime = new Date(Date.now() - visibilityMinutes * 60 * 1000);
     const sortDesc = settings?.dispatched_order_sort_desc ?? true;
 
     return orders
@@ -72,7 +72,7 @@ export function Dashboard() {
         return sortDesc ? timeB - timeA : timeA - timeB;
       })
       .slice(0, 20);
-  }, [orders, settings?.dispatched_order_sort_desc, settings?.dispatched_visibility_hours]);
+  }, [orders, settings?.dispatched_order_sort_desc, settings?.dispatched_visibility_minutes]);
 
   // Count orders with errors (notification errors only - Foody handled by CardápioWeb)
   const ordersWithErrors = useMemo(

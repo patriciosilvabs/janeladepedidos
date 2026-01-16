@@ -26,7 +26,7 @@ export type Database = {
           default_country: string | null
           default_region: string | null
           dispatched_order_sort_desc: boolean | null
-          dispatched_visibility_hours: number | null
+          dispatched_visibility_minutes: number | null
           foody_api_token: string | null
           foody_api_url: string | null
           foody_enabled: boolean | null
@@ -47,7 +47,7 @@ export type Database = {
           default_country?: string | null
           default_region?: string | null
           dispatched_order_sort_desc?: boolean | null
-          dispatched_visibility_hours?: number | null
+          dispatched_visibility_minutes?: number | null
           foody_api_token?: string | null
           foody_api_url?: string | null
           foody_enabled?: boolean | null
@@ -68,7 +68,7 @@ export type Database = {
           default_country?: string | null
           default_region?: string | null
           dispatched_order_sort_desc?: boolean | null
-          dispatched_visibility_hours?: number | null
+          dispatched_visibility_minutes?: number | null
           foody_api_token?: string | null
           foody_api_url?: string | null
           foody_enabled?: boolean | null
