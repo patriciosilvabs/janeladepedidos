@@ -56,8 +56,8 @@ interface Store {
 async function pollStoreOrders(
   supabase: any,
   store: Store
-): Promise<{ newOrders: number; processed: number; totalFromApi: number; deliveryOnly: number; error?: string }> {
-  const result = { newOrders: 0, processed: 0, totalFromApi: 0, deliveryOnly: 0 };
+): Promise<{ newOrders: number; processed: number; totalFromApi: number; deliveryOnly: number; cancelled: number; error?: string }> {
+  const result = { newOrders: 0, processed: 0, totalFromApi: 0, deliveryOnly: 0, cancelled: 0 };
 
   if (!store.cardapioweb_api_token || !store.cardapioweb_api_url) {
     console.log(`[poll-orders] Store "${store.name}" missing API configuration`);
@@ -190,6 +190,56 @@ async function pollStoreOrders(
         console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId} for store "${store.name}"`);
       }
     }
+
+    // Check status of existing pending orders and remove cancelled ones
+    const { data: existingPendingOrders } = await supabase
+      .from('orders')
+      .select('id, external_id, cardapioweb_order_id')
+      .eq('store_id', store.id)
+      .eq('status', 'pending')
+      .not('external_id', 'is', null);
+
+    if (existingPendingOrders && existingPendingOrders.length > 0) {
+      console.log(`[poll-orders] Checking ${existingPendingOrders.length} existing pending orders for store "${store.name}"`);
+      
+      for (const order of existingPendingOrders) {
+        try {
+          const statusResponse = await fetch(
+            `${baseUrl}/api/partner/v1/orders/${order.external_id}`,
+            {
+              method: 'GET',
+              headers: {
+                'X-API-KEY': token,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+
+          // If order not found (404), it was deleted/cancelled
+          if (statusResponse.status === 404) {
+            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} not found in CardapioWeb, removing...`);
+            await supabase.from('orders').delete().eq('id', order.id);
+            result.cancelled++;
+            continue;
+          }
+
+          if (statusResponse.ok) {
+            const details = await statusResponse.json();
+            const status = details.order_status || details.status;
+            
+            // If cancelled or closed, remove from local database
+            if (['cancelled', 'closed', 'rejected'].includes(status)) {
+              console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has status "${status}", removing...`);
+              await supabase.from('orders').delete().eq('id', order.id);
+              result.cancelled++;
+            }
+          }
+        } catch (err) {
+          console.error(`[poll-orders] Error checking order ${order.external_id}:`, err);
+        }
+      }
+    }
   } catch (err) {
     console.error(`[poll-orders] Error polling store "${store.name}":`, err);
     return { ...result, error: String(err) };
@@ -238,6 +288,7 @@ Deno.serve(async (req) => {
     const results: Array<{ storeName: string; storeId: string } & Awaited<ReturnType<typeof pollStoreOrders>>> = [];
     let totalNewOrders = 0;
     let totalProcessed = 0;
+    let totalCancelled = 0;
 
     for (const store of stores) {
       const storeResult = await pollStoreOrders(supabase, store as Store);
@@ -248,20 +299,29 @@ Deno.serve(async (req) => {
       });
       totalNewOrders += storeResult.newOrders;
       totalProcessed += storeResult.processed;
+      totalCancelled += storeResult.cancelled;
     }
 
-    console.log(`[poll-orders] Completed. Total new orders: ${totalNewOrders}, Processed: ${totalProcessed}`);
+    console.log(`[poll-orders] Completed. New: ${totalNewOrders}, Processed: ${totalProcessed}, Cancelled: ${totalCancelled}`);
+
+    // Build message
+    const messageParts: string[] = [];
+    if (totalNewOrders > 0) messageParts.push(`${totalNewOrders} novo(s)`);
+    if (totalCancelled > 0) messageParts.push(`${totalCancelled} cancelado(s)`);
+    
+    const message = messageParts.length > 0
+      ? `${messageParts.join(', ')} em ${stores.length} loja(s)`
+      : `Nenhum pedido novo encontrado em ${stores.length} loja(s)`;
 
     return new Response(
       JSON.stringify({
         success: true,
         newOrders: totalNewOrders,
         processed: totalProcessed,
+        cancelled: totalCancelled,
         storesProcessed: stores.length,
         storeResults: results,
-        message: totalNewOrders > 0 
-          ? `${totalNewOrders} novo(s) pedido(s) de delivery importado(s) de ${stores.length} loja(s)` 
-          : `Nenhum pedido novo encontrado em ${stores.length} loja(s)`,
+        message,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
