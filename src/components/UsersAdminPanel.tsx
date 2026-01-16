@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useUsers, UserWithRole, CreateUserParams, UpdateUserParams } from '@/hooks/useUsers';
+import { useSectors } from '@/hooks/useSectors';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Table,
@@ -28,7 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Crown, Shield, User, UserPlus, Trash2, Pencil } from 'lucide-react';
+import { Loader2, Crown, Shield, User, UserPlus, Trash2, Pencil, Building2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -56,7 +57,8 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ReactNode; varian
 };
 
 export function UsersAdminPanel() {
-  const { users, isLoading, updateUserRole, createUser, deleteUser, updateUser } = useUsers();
+  const { users, isLoading, updateUserRole, updateUserSector, createUser, deleteUser, updateUser } = useUsers();
+  const { sectors } = useSectors();
   const { user: currentUser } = useAuth();
   const [pendingChange, setPendingChange] = useState<{
     user: UserWithRole;
@@ -137,6 +139,26 @@ export function UsersAdminPanel() {
     }
   };
 
+  const handleSectorChange = async (userRecord: UserWithRole, sectorId: string) => {
+    if (userRecord.user_id === currentUser?.id) {
+      toast.error('Você não pode alterar seu próprio setor');
+      return;
+    }
+    try {
+      await updateUserSector.mutateAsync({
+        userId: userRecord.user_id,
+        sectorId: sectorId === 'none' ? null : sectorId,
+      });
+      const sectorName = sectorId === 'none' 
+        ? 'nenhum' 
+        : sectors?.find(s => s.id === sectorId)?.name || sectorId;
+      toast.success(`Setor de ${userRecord.email} alterado para "${sectorName}"`);
+    } catch (error) {
+      toast.error('Erro ao alterar setor do usuário');
+      console.error(error);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -171,6 +193,7 @@ export function UsersAdminPanel() {
             <TableRow>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
+              <TableHead>Setor</TableHead>
               <TableHead>Cadastrado em</TableHead>
               <TableHead className="w-[140px]">Ações</TableHead>
             </TableRow>
@@ -180,6 +203,7 @@ export function UsersAdminPanel() {
               const config = roleConfig[userRecord.role];
               const isOwner = userRecord.role === 'owner';
               const isSelf = userRecord.user_id === currentUser?.id;
+              const userSector = sectors?.find(s => s.id === userRecord.sector_id);
 
               return (
                 <TableRow key={userRecord.id}>
@@ -194,6 +218,41 @@ export function UsersAdminPanel() {
                       {config.icon}
                       {config.label}
                     </Badge>
+                  </TableCell>
+                  <TableCell>
+                    {isOwner || isSelf ? (
+                      userSector ? (
+                        <Badge variant="outline" className="gap-1">
+                          <Building2 className="h-3 w-3" />
+                          {userSector.name}
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )
+                    ) : (
+                      <Select
+                        value={userRecord.sector_id || 'none'}
+                        onValueChange={(value) => handleSectorChange(userRecord, value)}
+                        disabled={updateUserSector.isPending}
+                      >
+                        <SelectTrigger className="h-8 w-[120px]">
+                          <SelectValue placeholder="Selecionar" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">
+                            <span className="text-muted-foreground">Nenhum</span>
+                          </SelectItem>
+                          {sectors?.map((sector) => (
+                            <SelectItem key={sector.id} value={sector.id}>
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-3 w-3" />
+                                {sector.name}
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
                   </TableCell>
                   <TableCell className="text-muted-foreground whitespace-nowrap">
                     {format(new Date(userRecord.created_at), "dd/MM/yy", { locale: ptBR })}

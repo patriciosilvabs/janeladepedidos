@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { StoresManager } from '@/components/StoresManager';
@@ -7,6 +7,7 @@ import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { FoodyStatsPanel } from '@/components/FoodyStatsPanel';
 import { DynamicBufferSettings } from '@/components/DynamicBufferSettings';
+import { SectorsManager } from '@/components/SectorsManager';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -185,7 +186,7 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-5' : 'grid-cols-4'}`}>
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-6' : 'grid-cols-4'}`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
@@ -196,6 +197,12 @@ export function SettingsDialog() {
                 Foody
               </TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
+              {isOwner && (
+                <TabsTrigger value="sectors" className="text-xs sm:text-sm">
+                  <Building2 className="h-3 w-3 mr-1 hidden sm:inline" />
+                  Setores
+                </TabsTrigger>
+              )}
               {isOwner && (
                 <TabsTrigger value="users" className="text-xs sm:text-sm">
                   <Users className="h-3 w-3 mr-1 hidden sm:inline" />
@@ -554,6 +561,12 @@ export function SettingsDialog() {
                 </div>
               </div>
             </TabsContent>
+
+            {isOwner && (
+              <TabsContent value="sectors" className="space-y-4 mt-4">
+                <SectorsManager />
+              </TabsContent>
+            )}
 
             {isOwner && (
               <TabsContent value="users" className="space-y-6 mt-4">
