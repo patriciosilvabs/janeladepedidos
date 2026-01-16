@@ -209,7 +209,9 @@ export function InvitationsPanel() {
 
                 return (
                   <TableRow key={invitation.id}>
-                    <TableCell className="font-medium">{invitation.email}</TableCell>
+                    <TableCell className="font-medium max-w-[200px]">
+                      <span className="truncate block" title={invitation.email}>{invitation.email}</span>
+                    </TableCell>
                     <TableCell>{getRoleLabel(invitation.role)}</TableCell>
                     <TableCell>
                       <Badge variant={status.variant} className="gap-1">
@@ -217,8 +219,8 @@ export function InvitationsPanel() {
                         {status.label}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {format(new Date(invitation.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      {format(new Date(invitation.created_at), "dd/MM/yy HH:mm", {
                         locale: ptBR,
                       })}
                     </TableCell>

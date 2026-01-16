@@ -139,11 +139,11 @@ export function UsersAdminPanel() {
 
               return (
                 <TableRow key={userRecord.id}>
-                  <TableCell className="font-medium">
-                    {userRecord.email}
-                    {isSelf && (
-                      <span className="ml-2 text-xs text-muted-foreground">(você)</span>
-                    )}
+                  <TableCell className="font-medium max-w-[200px]">
+                    <div className="flex items-center gap-1">
+                      <span className="truncate" title={userRecord.email}>{userRecord.email}</span>
+                      {isSelf && <span className="text-xs text-muted-foreground shrink-0">(você)</span>}
+                    </div>
                   </TableCell>
                   <TableCell>
                     <Badge variant={config.variant} className="gap-1">
@@ -151,8 +151,8 @@ export function UsersAdminPanel() {
                       {config.label}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {format(new Date(userRecord.created_at), "dd 'de' MMM 'de' yyyy", { locale: ptBR })}
+                  <TableCell className="text-muted-foreground whitespace-nowrap">
+                    {format(new Date(userRecord.created_at), "dd/MM/yy", { locale: ptBR })}
                   </TableCell>
                   <TableCell>
                     {isOwner || isSelf ? (
