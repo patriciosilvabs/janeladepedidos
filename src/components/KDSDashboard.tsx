@@ -4,10 +4,10 @@ import { Check, Loader2, AlertCircle, Clock } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
-import { Order } from '@/types/orders';
+import { OrderWithGroup } from '@/types/orders';
 
 interface KDSOrderCardProps {
-  order: Order;
+  order: OrderWithGroup;
   onMarkReady: () => void;
   isProcessing: boolean;
 }
@@ -35,9 +35,9 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
       </div>
 
       {/* Store Name */}
-      {order.store_id && (
+      {order.stores?.name && (
         <p className="text-[10px] text-primary font-medium uppercase tracking-wide mb-1 truncate text-center">
-          LOJA
+          {order.stores.name}
         </p>
       )}
 
