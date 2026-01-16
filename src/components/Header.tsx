@@ -1,4 +1,4 @@
-import { Truck, RefreshCw, LogOut, Crown, Maximize, Minimize } from 'lucide-react';
+import { Truck, RefreshCw, LogOut, Crown, Maximize, Minimize, Building2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
@@ -8,7 +8,11 @@ import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 
-export function Header() {
+interface HeaderProps {
+  sectorName?: string;
+}
+
+export function Header({ sectorName }: HeaderProps) {
   const queryClient = useQueryClient();
   const { user, isOwner, isAdmin, signOut } = useAuth();
   const { toast } = useToast();
@@ -67,6 +71,12 @@ export function Header() {
             Agrupamento inteligente de entregas
           </p>
         </div>
+        {sectorName && (
+          <Badge variant="outline" className="ml-2 gap-1">
+            <Building2 className="h-3 w-3" />
+            {sectorName}
+          </Badge>
+        )}
       </div>
       <div className="flex items-center gap-3">
         {user && (

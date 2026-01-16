@@ -8,6 +8,7 @@ export interface UserWithRole {
   user_id: string;
   email: string;
   role: AppRole;
+  sector_id: string | null;
   created_at: string;
 }
 
@@ -15,12 +16,14 @@ export interface CreateUserParams {
   email: string;
   password: string;
   role: 'admin' | 'user';
+  sector_id?: string;
 }
 
 export interface UpdateUserParams {
   userId: string;
   email?: string;
   password?: string;
+  sector_id?: string | null;
 }
 
 export function useUsers() {
@@ -51,6 +54,24 @@ export function useUsers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+    },
+  });
+
+  const updateUserSector = useMutation({
+    mutationFn: async ({ userId, sectorId }: { userId: string; sectorId: string | null }) => {
+      const { data, error } = await supabase
+        .from('user_roles')
+        .update({ sector_id: sectorId })
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users-with-roles'] });
+      queryClient.invalidateQueries({ queryKey: ['user-sector'] });
     },
   });
 
@@ -104,6 +125,7 @@ export function useUsers() {
     isLoading,
     error,
     updateUserRole,
+    updateUserSector,
     createUser,
     deleteUser,
     updateUser,

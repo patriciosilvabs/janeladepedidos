@@ -1,0 +1,165 @@
+import { useMemo, useState } from 'react';
+import { useOrders } from '@/hooks/useOrders';
+import { Check, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import { Order } from '@/types/orders';
+
+interface KDSOrderCardProps {
+  order: Order;
+  onMarkReady: () => void;
+  isProcessing: boolean;
+}
+
+function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
+  // Calculate time since order was created
+  const minutesAgo = useMemo(() => {
+    const created = new Date(order.created_at);
+    const now = new Date();
+    const diffMs = now.getTime() - created.getTime();
+    return Math.floor(diffMs / 60000);
+  }, [order.created_at]);
+
+  const orderId = order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8);
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-2xl font-bold text-foreground">#{orderId}</span>
+        <div className="flex items-center gap-1 text-muted-foreground">
+          <Clock className="h-4 w-4" />
+          <span className="text-sm font-medium">{minutesAgo}min</span>
+        </div>
+      </div>
+
+      {/* Store Name */}
+      {order.store_id && (
+        <p className="text-xs text-primary font-medium uppercase tracking-wide mb-2 truncate">
+          LOJA
+        </p>
+      )}
+
+      {/* Customer Info */}
+      <div className="space-y-1 mb-4 flex-1">
+        <p className="text-sm font-medium text-foreground truncate">
+          {order.customer_name}
+        </p>
+        <p className="text-xs text-muted-foreground truncate">
+          {order.neighborhood || order.address}
+        </p>
+      </div>
+
+      {/* Action Button */}
+      <Button
+        onClick={onMarkReady}
+        disabled={isProcessing}
+        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 text-lg"
+        size="lg"
+      >
+        {isProcessing ? (
+          <Loader2 className="h-5 w-5 animate-spin" />
+        ) : (
+          <>
+            <Check className="h-5 w-5 mr-2" />
+            PRONTO
+          </>
+        )}
+      </Button>
+    </div>
+  );
+}
+
+export function KDSDashboard() {
+  const { orders, isLoading, error, markAsReady } = useOrders();
+  const { toast } = useToast();
+  const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+
+  // Only show pending orders in KDS view
+  const pendingOrders = useMemo(
+    () => orders.filter((o) => o.status === 'pending'),
+    [orders]
+  );
+
+  const handleMarkReady = async (orderId: string) => {
+    setProcessingOrderId(orderId);
+    try {
+      await markAsReady.mutateAsync(orderId);
+      toast({
+        title: 'Pedido pronto!',
+        description: 'Adicionado ao buffer de espera.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível marcar o pedido como pronto.',
+        variant: 'destructive',
+      });
+    } finally {
+      setProcessingOrderId(null);
+    }
+  };
+
+  if (isLoading && orders.length === 0) {
+    return (
+      <div className="flex h-[calc(100vh-5rem)] items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex h-[calc(100vh-5rem)] items-center justify-center">
+        <div className="flex flex-col items-center gap-4 text-destructive">
+          <AlertCircle className="h-12 w-12" />
+          <p>Erro ao carregar pedidos</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-5rem)] p-4">
+      {/* Header Stats */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg font-semibold text-foreground">
+            Pedidos em Produção
+          </span>
+          <span className={cn(
+            "px-3 py-1 rounded-full text-sm font-bold",
+            pendingOrders.length > 0 
+              ? "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+              : "bg-muted text-muted-foreground"
+          )}>
+            {pendingOrders.length}
+          </span>
+        </div>
+      </div>
+
+      {/* Orders Grid */}
+      {pendingOrders.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center text-muted-foreground">
+            <Check className="h-16 w-16 mx-auto mb-4 opacity-30" />
+            <p className="text-xl font-medium">Nenhum pedido em produção</p>
+            <p className="text-sm mt-2">Novos pedidos aparecerão aqui automaticamente</p>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 overflow-y-auto flex-1">
+          {pendingOrders.map((order) => (
+            <KDSOrderCard
+              key={order.id}
+              order={order}
+              onMarkReady={() => handleMarkReady(order.id)}
+              isProcessing={processingOrderId === order.id}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
