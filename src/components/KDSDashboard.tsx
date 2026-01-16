@@ -26,8 +26,8 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
   return (
     <div className="bg-card border border-border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-lg font-bold text-amber-400">#{orderId}</span>
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <span className="text-2xl font-bold text-amber-400">#{orderId}</span>
         <div className="flex items-center gap-0.5 text-muted-foreground">
           <Clock className="h-3 w-3" />
           <span className="text-xs font-medium">{minutesAgo}min</span>
@@ -36,13 +36,13 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
 
       {/* Store Name */}
       {order.store_id && (
-        <p className="text-[10px] text-primary font-medium uppercase tracking-wide mb-1 truncate">
+        <p className="text-[10px] text-primary font-medium uppercase tracking-wide mb-1 truncate text-center">
           LOJA
         </p>
       )}
 
       {/* Customer Info */}
-      <div className="space-y-0.5 mb-2">
+      <div className="space-y-0.5 mb-2 text-center">
         <p className="text-xs font-medium text-foreground truncate">
           {order.customer_name}
         </p>
