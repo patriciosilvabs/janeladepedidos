@@ -97,8 +97,22 @@ export function BufferPanel({
       return;
     }
 
+    const now = Date.now();
+    
+    // CORREÇÃO: Se ready_at está no futuro, usar agora como base
+    // (protege contra problemas de timezone do browser)
+    const effectiveReadyTime = readyTime > now ? now : readyTime;
+    
+    if (readyTime > now) {
+      console.warn('[BufferPanel] ready_at is in the future, using current time as base:', {
+        readyAt,
+        readyTime: new Date(readyTime).toISOString(),
+        now: new Date(now).toISOString(),
+      });
+    }
+
     const calculateTimeLeft = () => {
-      const endTime = readyTime + timerDuration * 1000;
+      const endTime = effectiveReadyTime + timerDuration * 1000;
       return Math.max(0, Math.floor((endTime - Date.now()) / 1000));
     };
 
