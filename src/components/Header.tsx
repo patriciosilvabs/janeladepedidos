@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { SettingsDialog } from '@/components/SettingsDialog';
+import { EditProfileDialog } from '@/components/EditProfileDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 
@@ -54,6 +55,7 @@ export function Header() {
           </div>
         )}
         {isAdmin && <SettingsDialog />}
+        <EditProfileDialog />
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
         </Button>

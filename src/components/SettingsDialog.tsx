@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
@@ -35,6 +36,29 @@ export function SettingsDialog() {
   const [foodyTestStatus, setFoodyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyTestError, setFoodyTestError] = useState('');
   const [foodyUrlWarning, setFoodyUrlWarning] = useState('');
+  
+  // Local state for buffer input values to avoid lag
+  const [localBufferValues, setLocalBufferValues] = useState<Record<number, number>>({});
+  
+  // Initialize local buffer values when settings load
+  useEffect(() => {
+    const initial: Record<number, number> = {};
+    bufferSettings.forEach((s) => {
+      initial[s.day_of_week] = s.buffer_timeout_minutes;
+    });
+    setLocalBufferValues(initial);
+  }, [bufferSettings]);
+  
+  // Debounced save for buffer settings
+  const debouncedUpdateBuffer = useDebouncedCallback(
+    useCallback((dayOfWeek: number, value: number) => {
+      updateBufferSetting.mutate({
+        dayOfWeek,
+        bufferTimeoutMinutes: value,
+      });
+    }, [updateBufferSetting]),
+    500
+  );
 
   const validateFoodyUrl = (url: string): string => {
     if (!url) return '';
@@ -444,13 +468,14 @@ export function SettingsDialog() {
                             type="number"
                             min={1}
                             max={60}
-                            value={setting.buffer_timeout_minutes}
+                            value={localBufferValues[setting.day_of_week] ?? setting.buffer_timeout_minutes}
                             onChange={(e) => {
                               const value = parseInt(e.target.value) || 10;
-                              updateBufferSetting.mutate({
-                                dayOfWeek: setting.day_of_week,
-                                bufferTimeoutMinutes: value,
-                              });
+                              setLocalBufferValues(prev => ({
+                                ...prev,
+                                [setting.day_of_week]: value
+                              }));
+                              debouncedUpdateBuffer(setting.day_of_week, value);
                             }}
                             className="w-20"
                           />
