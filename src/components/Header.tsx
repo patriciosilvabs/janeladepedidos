@@ -1,4 +1,4 @@
-import { Truck, RefreshCw, LogOut, Crown } from 'lucide-react';
+import { Truck, RefreshCw, LogOut, Crown, Maximize, Minimize } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
@@ -6,11 +6,22 @@ import { SettingsDialog } from '@/components/SettingsDialog';
 import { EditProfileDialog } from '@/components/EditProfileDialog';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
+import { useState, useEffect } from 'react';
 
 export function Header() {
   const queryClient = useQueryClient();
   const { user, isOwner, isAdmin, signOut } = useAuth();
   const { toast } = useToast();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -23,6 +34,23 @@ export function Header() {
         variant: 'destructive',
         title: 'Erro',
         description: 'Erro ao fazer logout',
+      });
+    }
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch (error) {
+      console.error('Fullscreen error:', error);
+      toast({
+        variant: 'destructive',
+        title: 'Erro',
+        description: 'Não foi possível alternar tela cheia',
       });
     }
   };
@@ -56,6 +84,9 @@ export function Header() {
         )}
         {isAdmin && <SettingsDialog />}
         <EditProfileDialog />
+        <Button variant="outline" size="icon" onClick={toggleFullscreen} title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}>
+          {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        </Button>
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />
         </Button>
