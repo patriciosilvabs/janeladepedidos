@@ -229,7 +229,7 @@ async function pollStoreOrders(
             const status = details.order_status || details.status;
             
             // If cancelled or closed, remove from local database
-            if (['cancelled', 'closed', 'rejected'].includes(status)) {
+            if (['cancelled', 'canceled', 'closed', 'rejected'].includes(status)) {
               console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has status "${status}", removing...`);
               await supabase.from('orders').delete().eq('id', order.id);
               result.cancelled++;

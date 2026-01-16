@@ -121,7 +121,8 @@ async function syncStoreOrders(
       // Status que indicam que o pedido foi CONCLUÍDO (deletar)
       const completedStatuses = [
         'closed',      // Fechado
-        'cancelled',   // Cancelado
+        'cancelled',   // Cancelado (inglês britânico)
+        'canceled',    // Cancelado (inglês americano - CardápioWeb usa este)
         'delivered',   // Entregue
         'finished',    // Finalizado
       ];
