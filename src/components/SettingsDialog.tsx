@@ -519,6 +519,57 @@ export function SettingsDialog() {
                 </p>
               </div>
 
+              {/* Urgent Order Bypass Settings */}
+              <div className="border-t border-border/50 pt-4 mt-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <AlertCircle className="h-4 w-4 text-red-500" />
+                  <Label className="text-base font-medium">Sistema de Bypass para Pedidos Urgentes</Label>
+                </div>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Pedidos que excedem o tempo limite em produção são marcados como urgentes e pulam o buffer quando marcados como prontos.
+                </p>
+
+                <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30 mb-4">
+                  <div className="space-y-0.5">
+                    <Label>Habilitar Bypass de Urgência</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Quando ativo, pedidos urgentes vão direto para entrega sem esperar no buffer
+                    </p>
+                  </div>
+                  <Switch
+                    checked={(formData as any).urgent_bypass_enabled ?? true}
+                    onCheckedChange={(checked) =>
+                      setFormData({ ...formData, urgent_bypass_enabled: checked } as any)
+                    }
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="urgent-timeout">Tempo limite em produção (minutos)</Label>
+                  <p className="text-sm text-muted-foreground">
+                    Pedidos que ultrapassarem este tempo são marcados como urgentes (borda vermelha)
+                  </p>
+                  <Input
+                    id="urgent-timeout"
+                    type="number"
+                    min={5}
+                    max={120}
+                    value={(formData as any).urgent_production_timeout_minutes ?? 25}
+                    onChange={(e) =>
+                      setFormData({ ...formData, urgent_production_timeout_minutes: parseInt(e.target.value) || 25 } as any)
+                    }
+                    className="w-24"
+                  />
+                </div>
+
+                <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 mt-4">
+                  <p className="text-sm text-red-600 dark:text-red-400">
+                    <strong>Comportamento:</strong> Pedidos urgentes ao serem marcados como "Pronto" vão diretamente 
+                    para a coluna de prontos e são enviados ao entregador como rota individual (sem agrupamento).
+                  </p>
+                </div>
+              </div>
+
               {/* Dispatched Column Settings */}
               <div className="border-t border-border/50 pt-4 mt-6">
                 <Label className="text-base font-medium mb-4 block">

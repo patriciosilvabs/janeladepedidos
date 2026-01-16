@@ -1,36 +1,86 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useOrders } from '@/hooks/useOrders';
-import { Check, Loader2, AlertCircle, Clock } from 'lucide-react';
+import { useSettings } from '@/hooks/useSettings';
+import { Check, Loader2, AlertCircle, Clock, AlertTriangle, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { OrderWithGroup } from '@/types/orders';
+import { Badge } from '@/components/ui/badge';
 
 interface KDSOrderCardProps {
   order: OrderWithGroup;
   onMarkReady: () => void;
+  onMarkReadyUrgent: () => void;
   isProcessing: boolean;
+  isUrgent: boolean;
+  urgentTimeoutMinutes: number;
 }
 
-function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
-  // Calculate time since order was created
-  const minutesAgo = useMemo(() => {
-    const created = new Date(order.created_at);
-    const now = new Date();
-    const diffMs = now.getTime() - created.getTime();
-    return Math.floor(diffMs / 60000);
+function KDSOrderCard({ order, onMarkReady, onMarkReadyUrgent, isProcessing, isUrgent, urgentTimeoutMinutes }: KDSOrderCardProps) {
+  const [minutesAgo, setMinutesAgo] = useState(0);
+
+  // Update elapsed time every 30 seconds
+  useEffect(() => {
+    const calculateMinutes = () => {
+      const created = new Date(order.created_at);
+      const now = new Date();
+      const diffMs = now.getTime() - created.getTime();
+      return Math.floor(diffMs / 60000);
+    };
+
+    setMinutesAgo(calculateMinutes());
+    const interval = setInterval(() => setMinutesAgo(calculateMinutes()), 30000);
+    return () => clearInterval(interval);
   }, [order.created_at]);
 
   const orderId = order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8);
 
+  // Handle click - use urgent bypass if order is urgent
+  const handleClick = () => {
+    if (isUrgent) {
+      onMarkReadyUrgent();
+    } else {
+      onMarkReady();
+    }
+  };
+
   return (
-    <div className="bg-card border border-border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm">
+    <div className={cn(
+      "bg-card border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm transition-all duration-300",
+      isUrgent 
+        ? "border-red-500 border-2 ring-2 ring-red-500/20 animate-pulse" 
+        : "border-border"
+    )}>
+      {/* Urgent Badge */}
+      {isUrgent && (
+        <div className="flex justify-center mb-1">
+          <Badge variant="destructive" className="text-[10px] px-1.5 py-0 gap-0.5 animate-bounce">
+            <AlertTriangle className="h-2.5 w-2.5" />
+            URGENTE
+          </Badge>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-center gap-2 mb-2">
-        <span className="text-2xl font-bold text-amber-400">#{orderId}</span>
-        <div className="flex items-center gap-0.5 text-muted-foreground">
+        <span className={cn(
+          "text-2xl font-bold",
+          isUrgent ? "text-red-500" : "text-amber-400"
+        )}>
+          #{orderId}
+        </span>
+        <div className={cn(
+          "flex items-center gap-0.5",
+          isUrgent ? "text-red-500" : "text-muted-foreground"
+        )}>
           <Clock className="h-3 w-3" />
-          <span className="text-xs font-medium">{minutesAgo}min</span>
+          <span className={cn(
+            "text-xs font-medium",
+            isUrgent && "font-bold"
+          )}>
+            {minutesAgo}min
+          </span>
         </div>
       </div>
 
@@ -53,13 +103,23 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
 
       {/* Action Button */}
       <Button
-        onClick={onMarkReady}
+        onClick={handleClick}
         disabled={isProcessing}
-        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 text-sm rounded-t-none rounded-b-md"
+        className={cn(
+          "w-full font-bold py-1.5 text-sm rounded-t-none rounded-b-md text-white",
+          isUrgent 
+            ? "bg-red-600 hover:bg-red-700" 
+            : "bg-green-600 hover:bg-green-700"
+        )}
         size="sm"
       >
         {isProcessing ? (
           <Loader2 className="h-4 w-4 animate-spin" />
+        ) : isUrgent ? (
+          <>
+            <Zap className="h-4 w-4 mr-1" />
+            ENVIAR JÁ
+          </>
         ) : (
           <>
             <Check className="h-4 w-4 mr-1" />
@@ -72,14 +132,34 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
 }
 
 export function KDSDashboard() {
-  const { orders, isLoading, error, markAsReady } = useOrders();
+  const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders();
+  const { settings } = useSettings();
   const { toast } = useToast();
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
+
+  // Get urgency settings from app_settings
+  const urgentTimeoutMinutes = (settings as any)?.urgent_production_timeout_minutes ?? 25;
+  const urgentBypassEnabled = (settings as any)?.urgent_bypass_enabled ?? true;
+
+  // Calculate if an order is urgent (exceeds timeout)
+  const isOrderUrgent = (order: OrderWithGroup): boolean => {
+    if (!urgentBypassEnabled) return false;
+    const created = new Date(order.created_at);
+    const now = new Date();
+    const diffMinutes = (now.getTime() - created.getTime()) / 60000;
+    return diffMinutes >= urgentTimeoutMinutes;
+  };
 
   // Only show pending orders in KDS view
   const pendingOrders = useMemo(
     () => orders.filter((o) => o.status === 'pending'),
     [orders]
+  );
+
+  // Count urgent orders
+  const urgentCount = useMemo(
+    () => pendingOrders.filter(isOrderUrgent).length,
+    [pendingOrders, urgentTimeoutMinutes, urgentBypassEnabled]
   );
 
   const handleMarkReady = async (orderId: string) => {
@@ -94,6 +174,25 @@ export function KDSDashboard() {
       toast({
         title: 'Erro',
         description: 'Não foi possível marcar o pedido como pronto.',
+        variant: 'destructive',
+      });
+    } finally {
+      setProcessingOrderId(null);
+    }
+  };
+
+  const handleMarkReadyUrgent = async (orderId: string) => {
+    setProcessingOrderId(orderId);
+    try {
+      await markAsReadyUrgent.mutateAsync(orderId);
+      toast({
+        title: '⚡ Pedido urgente enviado!',
+        description: 'Bypass do buffer - enviado diretamente para entrega.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível enviar o pedido urgente.',
         variant: 'destructive',
       });
     } finally {
@@ -136,7 +235,18 @@ export function KDSDashboard() {
           )}>
             {pendingOrders.length}
           </span>
+          {urgentCount > 0 && (
+            <Badge variant="destructive" className="gap-1 animate-pulse">
+              <AlertTriangle className="h-3 w-3" />
+              {urgentCount} URGENTE{urgentCount > 1 ? 'S' : ''}
+            </Badge>
+          )}
         </div>
+        {urgentBypassEnabled && (
+          <div className="text-xs text-muted-foreground">
+            Limite: {urgentTimeoutMinutes} min
+          </div>
+        )}
       </div>
 
       {/* Orders Grid */}
@@ -150,14 +260,20 @@ export function KDSDashboard() {
         </div>
       ) : (
         <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 overflow-y-auto flex-1 items-start content-start">
-          {pendingOrders.map((order) => (
-            <KDSOrderCard
-              key={order.id}
-              order={order}
-              onMarkReady={() => handleMarkReady(order.id)}
-              isProcessing={processingOrderId === order.id}
-            />
-          ))}
+          {pendingOrders.map((order) => {
+            const isUrgent = isOrderUrgent(order);
+            return (
+              <KDSOrderCard
+                key={order.id}
+                order={order}
+                onMarkReady={() => handleMarkReady(order.id)}
+                onMarkReadyUrgent={() => handleMarkReadyUrgent(order.id)}
+                isProcessing={processingOrderId === order.id}
+                isUrgent={isUrgent}
+                urgentTimeoutMinutes={urgentTimeoutMinutes}
+              />
+            );
+          })}
         </div>
       )}
     </div>

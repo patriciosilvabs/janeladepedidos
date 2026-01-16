@@ -92,7 +92,7 @@ function formatItems(items: unknown): string {
   }
 }
 
-function buildFoodyPayload(order: OrderData): FoodyOrderPayload {
+function buildFoodyPayload(order: OrderData, directRoute: boolean = false): FoodyOrderPayload {
   // Usar os últimos 10 caracteres do external_id ou cardapioweb_order_id como ID
   const orderId = (order.external_id || order.cardapioweb_order_id || order.id).slice(-10);
   
@@ -107,7 +107,7 @@ function buildFoodyPayload(order: OrderData): FoodyOrderPayload {
   
   const formattedAddress = addressParts.length > 0 ? addressParts.join(', ') : order.address;
 
-  return {
+  const payload: FoodyOrderPayload = {
     id: orderId,
     status: 'ready', // Pedido está pronto para entrega
     deliveryPoint: {
@@ -134,6 +134,16 @@ function buildFoodyPayload(order: OrderData): FoodyOrderPayload {
     notes: order.notes || undefined,
     orderDetails: formatItems(order.items),
   };
+
+  // Add directRoute/priority flags for urgent orders
+  if (directRoute) {
+    // Note: Adjust these field names based on Foody's actual API specification
+    (payload as any).directRoute = true;
+    (payload as any).priority = 'urgent';
+    (payload as any).groupable = false; // Prevent grouping with other orders
+  }
+
+  return payload;
 }
 
 // deno-lint-ignore no-explicit-any
@@ -141,7 +151,8 @@ async function sendOrderToFoody(
   supabase: any,
   order: OrderData,
   foodyApiUrl: string,
-  foodyApiToken: string
+  foodyApiToken: string,
+  directRoute: boolean = false
 ): Promise<{ success: boolean; foody_uid?: string; error?: string }> {
   
   // Verificar se já foi enviado ao Foody
@@ -150,8 +161,8 @@ async function sendOrderToFoody(
     return { success: true, foody_uid: order.foody_uid };
   }
 
-  const payload = buildFoodyPayload(order);
-  console.log(`Sending order ${order.id} to Foody:`, JSON.stringify(payload));
+  const payload = buildFoodyPayload(order, directRoute);
+  console.log(`Sending order ${order.id} to Foody (directRoute: ${directRoute}):`, JSON.stringify(payload));
 
   try {
     const response = await fetch(`${foodyApiUrl}/orders`, {
@@ -224,7 +235,7 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { orderIds } = await req.json();
+    const { orderIds, directRoute } = await req.json();
 
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
       return new Response(
@@ -280,7 +291,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing ${orders.length} orders for Foody`);
+    console.log(`Processing ${orders.length} orders for Foody (directRoute: ${directRoute || false})`);
 
     const results: { orderId: string; foody_uid?: string }[] = [];
     const errors: { orderId: string; error: string }[] = [];
@@ -290,7 +301,8 @@ Deno.serve(async (req) => {
         supabase,
         order,
         foodySettings.foody_api_url,
-        foodySettings.foody_api_token
+        foodySettings.foody_api_token,
+        directRoute || false
       );
 
       if (result.success) {

@@ -21,6 +21,8 @@ export interface AppSettings {
   updated_at: string;
   dispatched_order_sort_desc: boolean;
   dispatched_visibility_minutes: number;
+  urgent_production_timeout_minutes: number;
+  urgent_bypass_enabled: boolean;
 }
 
 export function useSettings() {

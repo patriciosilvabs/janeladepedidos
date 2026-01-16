@@ -69,7 +69,11 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    const { orderIds, groupId } = await req.json();
+    const { orderIds, groupId, urgent } = await req.json();
+
+    if (urgent) {
+      console.log('🚨 URGENT ORDER - Bypassing buffer, immediate dispatch');
+    }
 
     if (!orderIds || !Array.isArray(orderIds) || orderIds.length === 0) {
       return new Response(
@@ -78,7 +82,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log(`Processing ${orderIds.length} orders - marking as READY and notifying CardápioWeb`);
+    console.log(`Processing ${orderIds.length} orders - marking as READY and notifying CardápioWeb${urgent ? ' (URGENT - BYPASS)' : ''}`);
 
     const now = new Date().toISOString();
     const results: { orderId: string; success: boolean; cardapiowebNotified: boolean; error?: string }[] = [];
@@ -103,14 +107,20 @@ Deno.serve(async (req) => {
 
         const typedOrder = order as OrderData;
 
-        // Update order status to ready
+        // Update order status to ready (mark as urgent if applicable)
+        const updateData: Record<string, unknown> = {
+          status: 'ready',
+          ready_at: now,
+          group_id: null,
+        };
+        
+        if (urgent) {
+          updateData.is_urgent = true;
+        }
+
         const { error: updateError } = await supabase
           .from('orders')
-          .update({
-            status: 'ready',
-            ready_at: now,
-            group_id: null,
-          })
+          .update(updateData)
           .eq('id', orderId);
 
         if (updateError) {
@@ -146,7 +156,7 @@ Deno.serve(async (req) => {
 
         // Notify CardápioWeb that order is READY
         // This will trigger CardápioWeb's native Foody integration
-        console.log(`Notifying CardápioWeb for order ${typedOrder.external_id}`);
+        console.log(`Notifying CardápioWeb for order ${typedOrder.external_id}${urgent ? ' (URGENT)' : ''}`);
         const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id);
 
         if (readyResult.success) {
