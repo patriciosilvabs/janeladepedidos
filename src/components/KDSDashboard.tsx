@@ -42,7 +42,7 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
       )}
 
       {/* Customer Info */}
-      <div className="space-y-0.5 mb-2 text-center">
+      <div className="space-y-0.5 text-center">
         <p className="text-xs font-medium text-foreground truncate">
           {order.customer_name}
         </p>
