@@ -20,7 +20,7 @@ export interface AppSettings {
   created_at: string;
   updated_at: string;
   dispatched_order_sort_desc: boolean;
-  dispatched_visibility_hours: number;
+  dispatched_visibility_minutes: number;
 }
 
 export function useSettings() {

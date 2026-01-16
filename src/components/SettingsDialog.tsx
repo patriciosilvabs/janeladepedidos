@@ -502,18 +502,18 @@ export function SettingsDialog() {
                 
                 {/* Visibility Time */}
                 <div className="space-y-2">
-                  <Label htmlFor="dispatched-visibility">Tempo de visibilidade (horas)</Label>
+                  <Label htmlFor="dispatched-visibility">Tempo de visibilidade (minutos)</Label>
                   <p className="text-sm text-muted-foreground">
-                    Pedidos despachados são ocultados após este tempo
+                    Pedidos despachados são ocultados após este tempo (ex: 60 = 1 hora)
                   </p>
                   <Input
                     id="dispatched-visibility"
                     type="number"
-                    min={1}
-                    max={24}
-                    value={formData.dispatched_visibility_hours ?? 1}
+                    min={5}
+                    max={1440}
+                    value={formData.dispatched_visibility_minutes ?? 60}
                     onChange={(e) =>
-                      setFormData({ ...formData, dispatched_visibility_hours: parseInt(e.target.value) || 1 })
+                      setFormData({ ...formData, dispatched_visibility_minutes: parseInt(e.target.value) || 60 })
                     }
                     className="w-24"
                   />
