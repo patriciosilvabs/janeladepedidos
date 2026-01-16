@@ -24,7 +24,7 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
   const orderId = order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-2 flex flex-col shadow-sm">
+    <div className="bg-card border border-border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <span className="text-lg font-bold text-foreground">#{orderId}</span>
@@ -55,7 +55,7 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
       <Button
         onClick={onMarkReady}
         disabled={isProcessing}
-        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 text-sm"
+        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 text-sm rounded-t-none rounded-b-md"
         size="sm"
       >
         {isProcessing ? (
