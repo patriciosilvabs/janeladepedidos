@@ -344,6 +344,33 @@ export type Database = {
           },
         ]
       }
+      sectors: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          name: string
+          updated_at: string | null
+          view_type: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name: string
+          updated_at?: string | null
+          view_type?: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          name?: string
+          updated_at?: string | null
+          view_type?: string
+        }
+        Relationships: []
+      }
       stores: {
         Row: {
           cardapioweb_api_token: string | null
@@ -388,21 +415,32 @@ export type Database = {
           created_at: string | null
           id: string
           role: Database["public"]["Enums"]["app_role"]
+          sector_id: string | null
           user_id: string
         }
         Insert: {
           created_at?: string | null
           id?: string
           role: Database["public"]["Enums"]["app_role"]
+          sector_id?: string | null
           user_id: string
         }
         Update: {
           created_at?: string | null
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          sector_id?: string | null
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
