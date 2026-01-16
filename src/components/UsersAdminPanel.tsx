@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useUsers, UserWithRole, CreateUserParams } from '@/hooks/useUsers';
+import { useUsers, UserWithRole, CreateUserParams, UpdateUserParams } from '@/hooks/useUsers';
 import { useAuth } from '@/hooks/useAuth';
 import {
   Table,
@@ -28,11 +28,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Loader2, Crown, Shield, User, UserPlus, Trash2 } from 'lucide-react';
+import { Loader2, Crown, Shield, User, UserPlus, Trash2, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CreateUserDialog } from './CreateUserDialog';
+import { EditUserDialog, EditUserParams } from './EditUserDialog';
 
 type AppRole = 'owner' | 'admin' | 'user';
 
@@ -55,15 +56,15 @@ const roleConfig: Record<AppRole, { label: string; icon: React.ReactNode; varian
 };
 
 export function UsersAdminPanel() {
-  const { users, isLoading, updateUserRole, createUser, deleteUser } = useUsers();
+  const { users, isLoading, updateUserRole, createUser, deleteUser, updateUser } = useUsers();
   const { user: currentUser } = useAuth();
   const [pendingChange, setPendingChange] = useState<{
     user: UserWithRole;
     newRole: 'admin' | 'user';
   } | null>(null);
   const [pendingDelete, setPendingDelete] = useState<UserWithRole | null>(null);
+  const [editingUser, setEditingUser] = useState<UserWithRole | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-
   const handleCreateUser = async (params: CreateUserParams) => {
     await createUser.mutateAsync(params);
   };
@@ -114,6 +115,25 @@ export function UsersAdminPanel() {
       console.error(error);
     } finally {
       setPendingDelete(null);
+    }
+  };
+
+  const handleEditUser = (userRecord: UserWithRole) => {
+    if (userRecord.role === 'owner') return;
+    if (userRecord.user_id === currentUser?.id) {
+      toast.error('Use o seu perfil para editar seus próprios dados');
+      return;
+    }
+    setEditingUser(userRecord);
+  };
+
+  const handleUpdateUser = async (params: UpdateUserParams) => {
+    try {
+      await updateUser.mutateAsync(params);
+      toast.success('Usuário atualizado com sucesso');
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao atualizar usuário');
+      throw error;
     }
   };
 
@@ -209,9 +229,20 @@ export function UsersAdminPanel() {
                         <Button
                           variant="ghost"
                           size="icon"
+                          className="h-8 w-8"
+                          onClick={() => handleEditUser(userRecord)}
+                          disabled={updateUser.isPending || deleteUser.isPending}
+                          title="Editar usuário"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
                           className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                           onClick={() => handleDeleteUser(userRecord)}
-                          disabled={deleteUser.isPending}
+                          disabled={deleteUser.isPending || updateUser.isPending}
+                          title="Excluir usuário"
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -281,6 +312,14 @@ export function UsersAdminPanel() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <EditUserDialog
+        open={!!editingUser}
+        onOpenChange={(open) => !open && setEditingUser(null)}
+        user={editingUser}
+        onSubmit={handleUpdateUser}
+        isLoading={updateUser.isPending}
+      />
 
       <CreateUserDialog
         open={showCreateDialog}
