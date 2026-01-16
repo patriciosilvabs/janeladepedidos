@@ -465,6 +465,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      mark_order_ready: { Args: { order_id: string }; Returns: undefined }
       use_invitation: {
         Args: { invitation_token: string; new_user_id: string }
         Returns: boolean

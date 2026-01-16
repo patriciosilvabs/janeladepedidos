@@ -68,16 +68,13 @@ export function useOrders() {
   }, [queryClient, debouncedInvalidate]);
 
   // Mark order as ready - simplified without group logic
+  // IMPORTANTE: Usa RPC para garantir que ready_at usa timestamp do servidor (não do browser)
   const markAsReady = useMutation({
     mutationFn: async (orderId: string) => {
-      const { error } = await supabase
-        .from('orders')
-        .update({
-          status: 'waiting_buffer',
-          group_id: null,
-          ready_at: new Date().toISOString(),
-        })
-        .eq('id', orderId);
+      // Usar o timestamp do servidor via SQL para evitar problemas de timezone do browser
+      const { error } = await supabase.rpc('mark_order_ready' as any, {
+        order_id: orderId,
+      });
 
       if (error) throw error;
       return { orderId };
