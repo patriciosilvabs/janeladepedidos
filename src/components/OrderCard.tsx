@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { OrderWithGroup } from '@/types/orders';
-import { Loader2 } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { Loader2, Clock } from 'lucide-react';
 
 interface OrderCardProps {
   order: OrderWithGroup;
@@ -32,9 +31,36 @@ export function OrderCard({
   isMarkingCollected = false,
   isForceClosing = false,
 }: OrderCardProps) {
+  const [elapsedTime, setElapsedTime] = useState('');
+
   const orderNumber = order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8);
   const storeName = order.stores?.name || 'Loja';
   const customerName = order.customer_name;
+
+  useEffect(() => {
+    const calculateElapsed = () => {
+      const startTime = new Date(order.created_at).getTime();
+      const now = Date.now();
+      const diffMs = now - startTime;
+      
+      const minutes = Math.floor(diffMs / 60000);
+      const hours = Math.floor(minutes / 60);
+      const remainingMinutes = minutes % 60;
+      
+      if (hours > 0) {
+        return `${hours}h ${remainingMinutes}min`;
+      }
+      return `${minutes}min`;
+    };
+
+    setElapsedTime(calculateElapsed());
+    
+    const interval = setInterval(() => {
+      setElapsedTime(calculateElapsed());
+    }, 30000);
+
+    return () => clearInterval(interval);
+  }, [order.created_at]);
 
   // Determine which action button to show
   const showMarkReady = onMarkReady;
@@ -46,19 +72,15 @@ export function OrderCard({
   return (
     <Card className="bg-slate-900/80 border-slate-700/50 backdrop-blur">
       <CardContent className="p-3 text-center">
-        {/* Order Number and Time */}
+        {/* Order Number and Elapsed Time */}
         <div className="flex items-center justify-center gap-2 mb-1">
           <div className="text-amber-400 text-3xl font-bold">
             #{orderNumber}
           </div>
-          {order.cardapioweb_created_at && (
-            <div className="text-white/50 text-sm">
-              {new Date(order.cardapioweb_created_at).toLocaleTimeString('pt-BR', {
-                hour: '2-digit',
-                minute: '2-digit'
-              })}
-            </div>
-          )}
+          <div className="flex items-center gap-1 text-orange-400 text-sm font-medium">
+            <Clock className="h-3 w-3" />
+            {elapsedTime}
+          </div>
         </div>
         
         {/* Store Name */}
