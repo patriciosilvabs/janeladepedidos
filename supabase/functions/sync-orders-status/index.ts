@@ -153,13 +153,10 @@ async function syncStoreOrders(
       // Check if order was collected by driver (mark as dispatched)
       if (dispatchedStatuses.includes(cardapiowebStatus) && order.status !== 'dispatched') {
         console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} collected by driver (${cardapiowebStatus}), marking as dispatched`);
-        const { error: dispatchError } = await supabase
-          .from('orders')
-          .update({
-            status: 'dispatched',
-            dispatched_at: new Date().toISOString(),
-          })
-          .eq('id', order.id);
+        // Usar RPC para garantir que dispatched_at use NOW() do PostgreSQL
+        const { error: dispatchError } = await supabase.rpc('set_order_dispatched', {
+          p_order_id: order.id,
+        });
 
         if (dispatchError) {
           result.errors.push(`Erro ao despachar pedido ${order.cardapioweb_order_id}: ${dispatchError.message}`);
@@ -206,13 +203,20 @@ async function syncStoreOrders(
 
         console.log(`[sync-orders-status] Created group ${newGroup.id} for order ${order.cardapioweb_order_id}`);
 
+        // Usar RPC para garantir que ready_at use NOW() do PostgreSQL
+        const { error: rpcError } = await supabase.rpc('mark_order_ready', {
+          order_id: order.id,
+        });
+
+        if (rpcError) {
+          result.errors.push(`Erro ao marcar pedido ${order.cardapioweb_order_id} como pronto: ${rpcError.message}`);
+          continue;
+        }
+
+        // Atualizar group_id separadamente
         const { error: updateError } = await supabase
           .from('orders')
-          .update({
-            status: 'waiting_buffer',
-            ready_at: new Date().toISOString(),
-            group_id: newGroup.id,
-          })
+          .update({ group_id: newGroup.id })
           .eq('id', order.id);
 
         if (updateError) {

@@ -97,23 +97,8 @@ export function BufferPanel({
       return;
     }
 
-    const now = Date.now();
-    
-    // Proteção: Se ready_at está muito no futuro (>15min), usar agora como base
-    // Isso protege contra problemas de timezone do browser em pedidos antigos
-    const maxAllowedFuture = 15 * 60 * 1000; // 15 minutos
-    const effectiveReadyTime = (readyTime - now) > maxAllowedFuture ? now : readyTime;
-    
-    if (readyTime > now + maxAllowedFuture) {
-      console.warn('[BufferPanel] ready_at muito no futuro, usando NOW:', {
-        readyAt,
-        readyTime: new Date(readyTime).toISOString(),
-        now: new Date(now).toISOString(),
-      });
-    }
-
     const calculateTimeLeft = () => {
-      const endTime = effectiveReadyTime + timerDuration * 1000;
+      const endTime = readyTime + timerDuration * 1000;
       return Math.max(0, Math.floor((endTime - Date.now()) / 1000));
     };
 
