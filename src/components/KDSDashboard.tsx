@@ -24,29 +24,29 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
   const orderId = order.cardapioweb_order_id || order.external_id || order.id.slice(0, 8);
 
   return (
-    <div className="bg-card border border-border rounded-xl p-4 flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+    <div className="bg-card border border-border rounded-lg p-2 flex flex-col shadow-sm">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-2xl font-bold text-foreground">#{orderId}</span>
-        <div className="flex items-center gap-1 text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <span className="text-sm font-medium">{minutesAgo}min</span>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-lg font-bold text-foreground">#{orderId}</span>
+        <div className="flex items-center gap-0.5 text-muted-foreground">
+          <Clock className="h-3 w-3" />
+          <span className="text-xs font-medium">{minutesAgo}min</span>
         </div>
       </div>
 
       {/* Store Name */}
       {order.store_id && (
-        <p className="text-xs text-primary font-medium uppercase tracking-wide mb-2 truncate">
+        <p className="text-[10px] text-primary font-medium uppercase tracking-wide mb-1 truncate">
           LOJA
         </p>
       )}
 
       {/* Customer Info */}
-      <div className="space-y-1 mb-4 flex-1">
-        <p className="text-sm font-medium text-foreground truncate">
+      <div className="space-y-0.5 mb-2">
+        <p className="text-xs font-medium text-foreground truncate">
           {order.customer_name}
         </p>
-        <p className="text-xs text-muted-foreground truncate">
+        <p className="text-[10px] text-muted-foreground truncate">
           {order.neighborhood || order.address}
         </p>
       </div>
@@ -55,14 +55,14 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
       <Button
         onClick={onMarkReady}
         disabled={isProcessing}
-        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 text-lg"
-        size="lg"
+        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 text-sm"
+        size="sm"
       >
         {isProcessing ? (
-          <Loader2 className="h-5 w-5 animate-spin" />
+          <Loader2 className="h-4 w-4 animate-spin" />
         ) : (
           <>
-            <Check className="h-5 w-5 mr-2" />
+            <Check className="h-4 w-4 mr-1" />
             PRONTO
           </>
         )}
@@ -149,7 +149,7 @@ export function KDSDashboard() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 overflow-y-auto flex-1">
+        <div className="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2 overflow-y-auto flex-1">
           {pendingOrders.map((order) => (
             <KDSOrderCard
               key={order.id}
