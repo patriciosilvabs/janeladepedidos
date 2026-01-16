@@ -55,13 +55,24 @@ export function Dashboard() {
     [orders]
   );
 
-  const dispatchedOrders = useMemo(
-    () =>
-      orders
-        .filter((o) => o.status === 'dispatched')
-        .slice(0, 20),
-    [orders]
-  );
+  const dispatchedOrders = useMemo(() => {
+    const visibilityHours = settings?.dispatched_visibility_hours ?? 1;
+    const cutoffTime = new Date(Date.now() - visibilityHours * 60 * 60 * 1000);
+    const sortDesc = settings?.dispatched_order_sort_desc ?? true;
+
+    return orders
+      .filter((o) => {
+        if (o.status !== 'dispatched') return false;
+        if (!o.dispatched_at) return true;
+        return new Date(o.dispatched_at) > cutoffTime;
+      })
+      .sort((a, b) => {
+        const timeA = a.dispatched_at ? new Date(a.dispatched_at).getTime() : 0;
+        const timeB = b.dispatched_at ? new Date(b.dispatched_at).getTime() : 0;
+        return sortDesc ? timeB - timeA : timeA - timeB;
+      })
+      .slice(0, 20);
+  }, [orders, settings?.dispatched_order_sort_desc, settings?.dispatched_visibility_hours]);
 
   // Count orders with errors (notification errors only - Foody handled by CardápioWeb)
   const ordersWithErrors = useMemo(
