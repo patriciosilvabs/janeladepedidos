@@ -27,7 +27,7 @@ function KDSOrderCard({ order, onMarkReady, isProcessing }: KDSOrderCardProps) {
     <div className="bg-card border border-border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
-        <span className="text-lg font-bold text-foreground">#{orderId}</span>
+        <span className="text-lg font-bold text-amber-400">#{orderId}</span>
         <div className="flex items-center gap-0.5 text-muted-foreground">
           <Clock className="h-3 w-3" />
           <span className="text-xs font-medium">{minutesAgo}min</span>
