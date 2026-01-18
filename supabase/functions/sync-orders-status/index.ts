@@ -166,64 +166,11 @@ async function syncStoreOrders(
         continue;
       }
 
-      // Check if order should be moved to buffer
+      // Status 'ready' ou 'waiting_to_catch' do CardápioWeb - IGNORAR para pedidos pending
+      // O fluxo local controla quando o pedido vai para o buffer (operador clica "Pronto")
       if (['ready', 'waiting_to_catch'].includes(cardapiowebStatus) && order.status === 'pending') {
-        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ready, moving to buffer`);
-        
-        // First, get order lat/lng for creating group
-        const { data: orderData, error: orderFetchError } = await supabase
-          .from('orders')
-          .select('lat, lng')
-          .eq('id', order.id)
-          .single();
-
-        if (orderFetchError) {
-          console.error(`[sync-orders-status] Error fetching order coords:`, orderFetchError);
-          result.errors.push(`Erro ao buscar coordenadas do pedido ${order.cardapioweb_order_id}`);
-          continue;
-        }
-
-        // Create a new delivery group for this order
-        const { data: newGroup, error: groupError } = await supabase
-          .from('delivery_groups')
-          .insert({
-            center_lat: orderData.lat,
-            center_lng: orderData.lng,
-            order_count: 1,
-            status: 'waiting',
-          })
-          .select('id')
-          .single();
-
-        if (groupError) {
-          console.error(`[sync-orders-status] Error creating group:`, groupError);
-          result.errors.push(`Erro ao criar grupo para pedido ${order.cardapioweb_order_id}: ${groupError.message}`);
-          continue;
-        }
-
-        console.log(`[sync-orders-status] Created group ${newGroup.id} for order ${order.cardapioweb_order_id}`);
-
-        // Usar RPC para garantir que ready_at use NOW() do PostgreSQL
-        const { error: rpcError } = await supabase.rpc('mark_order_ready', {
-          order_id: order.id,
-        });
-
-        if (rpcError) {
-          result.errors.push(`Erro ao marcar pedido ${order.cardapioweb_order_id} como pronto: ${rpcError.message}`);
-          continue;
-        }
-
-        // Atualizar group_id separadamente
-        const { error: updateError } = await supabase
-          .from('orders')
-          .update({ group_id: newGroup.id })
-          .eq('id', order.id);
-
-        if (updateError) {
-          result.errors.push(`Erro ao atualizar pedido ${order.cardapioweb_order_id}: ${updateError.message}`);
-        } else {
-          result.updated++;
-        }
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} in CardápioWeb - ignoring (local flow controls buffer)`);
+        result.unchanged++;
         continue;
       }
 

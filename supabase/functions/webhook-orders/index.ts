@@ -90,24 +90,10 @@ async function handleStatusEvent(
 
     case 'ready':
     case 'waiting_to_catch':
-      // Mover para buffer SE ainda estiver pending
-      if (order.status === 'pending') {
-        // Usar RPC para garantir que ready_at use NOW() do PostgreSQL
-        const { error: updateError } = await supabase.rpc('mark_order_ready', {
-          order_id: order.id,
-        });
-
-        if (updateError) {
-          console.error('Error updating order:', updateError);
-          return { action: 'error', reason: updateError.message };
-        }
-
-        console.log(`Order ${order_id} moved to waiting_buffer`);
-        return { action: 'updated', order_id };
-      }
-
-      console.log(`Order ${order_id} already processed (current status: ${order.status})`);
-      return { action: 'ignored', reason: 'already_processed' };
+      // IGNORAR status 'ready' do CardápioWeb - o fluxo local controla o buffer
+      // O operador local clica "Pronto" quando o pedido está pronto para ir ao buffer
+      console.log(`Order ${order_id} status ${order_status} from CardápioWeb - ignoring (local flow controls buffer)`);
+      return { action: 'ignored', reason: 'local_flow_controls_buffer' };
 
     case 'released':
     case 'dispatched':
