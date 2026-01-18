@@ -27,29 +27,47 @@ export function usePolling(intervalMs: number = 30000) {
     setState((prev) => ({ ...prev, isPolling: true, error: null }));
 
     try {
-      const { data, error } = await supabase.functions.invoke('poll-orders', {
+      // 1. Buscar novos pedidos do CardápioWeb
+      const { data: pollData, error: pollError } = await supabase.functions.invoke('poll-orders', {
         method: 'POST',
       });
 
-      if (error) {
-        console.error('[usePolling] Error:', error);
+      if (pollError) {
+        console.error('[usePolling] Error polling orders:', pollError);
+      }
+
+      // 2. Sincronizar status dos pedidos existentes (detectar "Saiu para Entrega")
+      const { data: syncData, error: syncError } = await supabase.functions.invoke('sync-orders-status');
+
+      if (syncError) {
+        console.error('[usePolling] Error syncing status:', syncError);
+      }
+
+      // Se ambos falharam, reportar erro
+      if (pollError && syncError) {
         setState((prev) => ({
           ...prev,
           isPolling: false,
-          error: error.message,
+          error: pollError.message,
         }));
         return;
       }
 
+      const newOrders = pollData?.newOrders || 0;
+      const updatedOrders = syncData?.updated || 0;
+
       setState({
         isPolling: false,
         lastSync: new Date(),
-        newOrdersCount: data?.newOrders || 0,
+        newOrdersCount: newOrders,
         error: null,
       });
 
-      if (data?.newOrders > 0) {
-        console.log(`[usePolling] Imported ${data.newOrders} new orders`);
+      if (newOrders > 0) {
+        console.log(`[usePolling] Imported ${newOrders} new orders`);
+      }
+      if (updatedOrders > 0) {
+        console.log(`[usePolling] Updated ${updatedOrders} orders from CardápioWeb status`);
       }
     } catch (err) {
       console.error('[usePolling] Unexpected error:', err);
