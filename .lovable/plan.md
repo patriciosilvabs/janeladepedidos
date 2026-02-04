@@ -1,129 +1,125 @@
 
-# Restringir Visibilidade de Itens por Setor do Usuario
 
-## Problema Atual
+# Correção: Erro 406 ao Salvar Configurações
 
-Usuarios vinculados a um setor especifico (ex: "BANCADA A") conseguem ver itens de **todos** os setores KDS atraves das abas. Isso quebra a separacao logica de areas de producao.
+## Problema Identificado
 
-## Situacao Identificada
+O erro ocorre porque as tabelas `app_settings` e `dynamic_buffer_settings` estão **vazias**. O código tenta fazer `UPDATE` em uma linha com `id='default'` que não existe.
 
-| Usuario | Setor Vinculado | O que deveria ver |
-|---------|-----------------|-------------------|
-| Owner (sem setor) | Nenhum | Dashboard de gerenciamento |
-| user-a@domhelderpizzaria.com.br | BANCADA A | **Somente** itens do setor BANCADA A |
+**Erro**: `PGRST116 - The result contains 0 rows`
 
-## Solucao Proposta
+## Causa Raiz
 
-Modificar `KDSItemsDashboard` para:
-1. Receber o `userSector` do usuario logado
-2. Se o usuario esta vinculado a um setor, mostrar **apenas** esse setor (sem abas)
-3. Se o usuario nao esta vinculado a nenhum setor (admin/gerente), manter comportamento atual com todas as abas
+Ambos os hooks usam `.update()` para salvar:
+- `useSettings.ts` → linha 50: `.update(newSettings).eq('id', 'default')`  
+- `useDynamicBufferSettings.ts` → linha 50: `.update({ ...updates }).eq('id', 'default')`
 
-### Fluxo Atualizado
+Como não existe linha com `id='default'`, o UPDATE não afeta nenhum registro e o `.single()` falha.
 
-```text
-Usuario faz login
-       |
-       v
-Index.tsx busca userSector via useUserSector()
-       |
-       v
-userSector.view_type === 'kds'?
-    |            |
-   SIM          NAO
-    |            |
-    v            v
-KDSItemsDashboard   Dashboard (gerenciamento)
-com userSector.id
-    |
-    v
-Filtra items APENAS do setor do usuario
+## Solução
+
+**Duas partes:**
+
+### Parte 1: Inserir Dados Iniciais no Banco
+
+Executar SQL migration para criar as linhas padrão:
+
+```sql
+-- Inserir configurações padrão se não existirem
+INSERT INTO app_settings (id)
+VALUES ('default')
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO dynamic_buffer_settings (id)
+VALUES ('default')
+ON CONFLICT (id) DO NOTHING;
 ```
 
-## Mudancas Tecnicas
+### Parte 2: Modificar Hooks para Usar Upsert
 
-### Arquivo: `src/pages/Index.tsx`
+Para evitar o problema no futuro, alterar os hooks para usar **upsert** (insert ou update):
 
-Passar o `userSector` como prop para o `KDSItemsDashboard`:
+**Arquivo: `src/hooks/useSettings.ts`**
 
-```tsx
-// ANTES (linha 45):
-{isKDSSector 
-  ? (kdsMode === 'items' ? <KDSItemsDashboard /> : <KDSDashboard />) 
-  : <Dashboard />
-}
+```typescript
+// ANTES (linha 46-57):
+const saveSettings = useMutation({
+  mutationFn: async (newSettings: Partial<AppSettings>) => {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .update(newSettings)
+      .eq('id', 'default')
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  // ...
+});
 
 // DEPOIS:
-{isKDSSector 
-  ? (kdsMode === 'items' 
-    ? <KDSItemsDashboard userSector={userSector} /> 
-    : <KDSDashboard userSector={userSector} />) 
-  : <Dashboard />
-}
-```
-
-### Arquivo: `src/components/kds/KDSItemsDashboard.tsx`
-
-1. Aceitar prop `userSector`
-2. Se usuario tem setor vinculado, mostrar apenas itens desse setor (sem abas)
-3. Filtrar useOrderItems pelo sectorId do usuario
-
-```tsx
-// Interface para props
-interface KDSItemsDashboardProps {
-  userSector?: Sector | null;
-}
-
-export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
-  // Se usuario tem setor especifico, usar como filtro
-  const filterSectorId = userSector?.id;
-  
-  // Buscar items filtrados pelo setor do usuario
-  const { items, pendingItems, ... } = useOrderItems({ 
-    sectorId: filterSectorId 
-  });
-  
+const saveSettings = useMutation({
+  mutationFn: async (newSettings: Partial<AppSettings>) => {
+    const { data, error } = await supabase
+      .from('app_settings')
+      .upsert({ id: 'default', ...newSettings })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
   // ...
-  
-  // Se usuario esta vinculado a um setor, NAO mostrar abas
-  // Mostrar apenas a fila do seu setor
-  if (filterSectorId) {
-    return (
-      <div className="flex-1">
-        <SectorQueuePanel 
-          sectorId={filterSectorId} 
-          sectorName={userSector?.name || 'Fila de Producao'} 
-        />
-      </div>
-    );
-  }
-  
-  // Comportamento original para admins (sem setor vinculado)
-  // ... manter logica de abas
-}
+});
 ```
 
-### Arquivo: `src/components/KDSDashboard.tsx`
+**Arquivo: `src/hooks/useDynamicBufferSettings.ts`**
 
-Aplicar a mesma logica para o modo "Por Pedido", restringindo pelos pedidos do setor do usuario.
+```typescript
+// ANTES (linha 46-57):
+const updateSettings = useMutation({
+  mutationFn: async (updates: Partial<DynamicBufferSettings>) => {
+    const { data, error } = await supabase
+      .from('dynamic_buffer_settings')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', 'default')
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  // ...
+});
 
-## Comportamento Final
+// DEPOIS:
+const updateSettings = useMutation({
+  mutationFn: async (updates: Partial<DynamicBufferSettings>) => {
+    const { data, error } = await supabase
+      .from('dynamic_buffer_settings')
+      .upsert({ 
+        id: 'default', 
+        ...updates, 
+        updated_at: new Date().toISOString() 
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+  // ...
+});
+```
 
-| Tipo de Usuario | Interface |
-|-----------------|-----------|
-| Operador KDS (vinculado a setor) | Ve apenas itens do seu setor, sem abas |
-| Admin/Owner (sem setor vinculado) | Ve todos os setores com abas (comportamento atual) |
+## Resumo das Mudanças
 
-## Arquivos a Modificar
+| Componente | Ação |
+|------------|------|
+| Database Migration | Inserir linhas `id='default'` nas tabelas |
+| `useSettings.ts` | Trocar `.update()` por `.upsert()` |
+| `useDynamicBufferSettings.ts` | Trocar `.update()` por `.upsert()` |
 
-| Arquivo | Acao |
-|---------|------|
-| `src/pages/Index.tsx` | Passar userSector como prop |
-| `src/components/kds/KDSItemsDashboard.tsx` | Filtrar por setor do usuario |
-| `src/components/KDSDashboard.tsx` | Aplicar mesma logica |
+## Benefícios
 
-## Beneficios
+- Erro 406 corrigido imediatamente após migration
+- Sistema resiliente: upsert cria o registro automaticamente se não existir
+- Configurações funcionam corretamente para novos deployments
 
-- Operadores veem apenas itens relevantes ao seu setor
-- Evita confusao entre areas de producao
-- Mantém flexibilidade para admins visualizarem todos os setores
