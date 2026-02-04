@@ -13,7 +13,7 @@ export function KDSItemsDashboard() {
 
   // Filter KDS sectors (view_type = 'kds')
   const kdsSectors = useMemo(
-    () => sectors.filter((s) => s.view_type === 'kds'),
+    () => sectors?.filter((s) => s.view_type === 'kds') ?? [],
     [sectors]
   );
 
