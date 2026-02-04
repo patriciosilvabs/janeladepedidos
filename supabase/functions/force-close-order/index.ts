@@ -64,6 +64,29 @@ Deno.serve(async (req) => {
       );
     }
 
+    // If no store_id, just delete locally
+    if (!order.store_id) {
+      console.log(`Order ${orderId} has no store_id, deleting locally only`);
+      
+      const { error: deleteError } = await supabase
+        .from('orders')
+        .delete()
+        .eq('id', orderId);
+
+      if (deleteError) {
+        console.error(`Error deleting order ${orderId}:`, deleteError);
+        return new Response(
+          JSON.stringify({ success: false, error: deleteError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      return new Response(
+        JSON.stringify({ success: true, message: 'Order deleted locally (no store linked)' }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch store configuration
     const { data: store, error: storeError } = await supabase
       .from('stores')
