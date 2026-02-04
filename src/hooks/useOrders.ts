@@ -77,7 +77,7 @@ export function useOrders(options: UseOrdersOptions = {}) {
     }
     debounceTimeoutRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-    }, 200);
+    }, 50);
   }, [queryClient]);
 
   useEffect(() => {

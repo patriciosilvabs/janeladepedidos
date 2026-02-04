@@ -64,7 +64,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     debounceTimeoutRef.current = setTimeout(() => {
       queryClient.invalidateQueries({ queryKey: ['order-items'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
-    }, 150);
+    }, 50);
   }, [queryClient]);
 
   useEffect(() => {
