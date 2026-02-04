@@ -57,7 +57,6 @@ export function OrderSimulator() {
   const [customerName, setCustomerName] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
   const [storeId, setStoreId] = useState<string | null>(null);
-  const [sectorId, setSectorId] = useState<string | null>(null);
   const [items, setItems] = useState<SimulatedItem[]>([
     { name: 'Pizza Margherita', quantity: 1, notes: '' },
   ]);
@@ -158,7 +157,7 @@ export function OrderSimulator() {
         {
           p_order_id: order.id,
           p_items: itemsJson,
-          p_default_sector_id: sectorId,
+          p_default_sector_id: null,
         }
       );
 
@@ -286,23 +285,6 @@ export function OrderSimulator() {
             </div>
           )}
 
-          {/* Sector Selection */}
-          {kdsSectors.length > 0 && (
-            <div className="space-y-2">
-              <Label>Setor de Produção</Label>
-              <Select value={sectorId || 'none'} onValueChange={(v) => setSectorId(v === 'none' ? null : v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o setor..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem setor (visível apenas para admins)</SelectItem>
-                  {kdsSectors.map((sector) => (
-                    <SelectItem key={sector.id} value={sector.id}>{sector.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
 
           {/* Items */}
           <div className="space-y-2">
