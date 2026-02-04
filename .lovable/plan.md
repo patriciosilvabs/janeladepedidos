@@ -1,106 +1,168 @@
 
 
-# Plano: Fluxo Correto - Bancada Envia ao Forno, Despacho Recebe
+# Plano: Corrigir Fluxo Bancada → Forno → Despacho
 
 ## Problema Identificado
 
-O sistema esta funcionando corretamente, mas o usuario esta na **tela errada**:
+O usuario do setor **DESPACHO** nao ve os itens no forno porque:
 
-| Rota `/` | Setor do Usuario | Tela Exibida | Funcionalidade |
-|----------|------------------|--------------|----------------|
-| `/` | Nenhum (owner/admin) | `Dashboard` | Ve pedidos + forno (recebe) |
-| `/` | Setor KDS | `KDSItemsDashboard` | Ve itens + botao FORNO (envia) |
-
-O usuario owner que esta na rota `/` ve o Dashboard (despacho), nao a tela da bancada onde esta o botao FORNO.
-
-## Solucao
-
-Atualmente o painel do forno (`OvenTimerPanel`) aparece no `Dashboard`, mas o owner/admin **nao tem como enviar itens ao forno** porque ele nao ve o `KDSItemsDashboard`.
-
-Precisamos permitir que admins alternem entre as views ou mostrar ambas as telas.
-
-### Opcao Recomendada: Permitir Admin Ver KDS
-
-Adicionar tabs no `Index.tsx` para que admins possam alternar entre:
-- **Dashboard** (despacho tradicional)
-- **KDS Items** (ver como operador de bancada)
+| Problema | Detalhes |
+|----------|----------|
+| Setor DESPACHO tem `view_type = 'kds'` | Isso faz o usuario ver a tela `KDSItemsDashboard` (bancada) |
+| Itens mantem `assigned_sector_id` original | Quando vao ao forno, continuam associados a BANCADA A/B |
+| `OvenTimerPanel` esta no `Dashboard` | Mas o usuario de DESPACHO ve `KDSItemsDashboard`, nao `Dashboard` |
 
 ```text
-┌────────────────────────────────────────────────────────────┐
-│  Header                    [Despacho] [KDS]                │
-├────────────────────────────────────────────────────────────┤
-│                                                            │
-│  Tab "Despacho" → Dashboard (colunas + forno)              │
-│  Tab "KDS"      → KDSItemsDashboard (bancada)              │
-│                                                            │
-└────────────────────────────────────────────────────────────┘
+FLUXO ATUAL (QUEBRADO):
+┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
+│  BANCADA A   │     │    FORNO      │     │    DESPACHO      │
+│  view: kds   │────►│ (status only) │     │    view: kds     │
+│              │     │               │     │   VE: KDSItems   │
+│  Item aqui   │     │ Item tem      │     │   DEVERIA VER:   │
+│  sector=A    │     │ sector=A      │     │   Dashboard      │
+└──────────────┘     └───────────────┘     └──────────────────┘
+                            │
+                            ▼
+                     Nao muda setor!
+                     Despacho nao ve!
+```
+
+## Solucao Proposta
+
+Criar um novo tipo de visualizacao `dispatch` para setores de despacho que mostra o **Dashboard** com o **OvenTimerPanel**.
+
+```text
+FLUXO CORRIGIDO:
+┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
+│  BANCADA     │     │    FORNO      │     │    DESPACHO      │
+│  view: kds   │────►│ status=in_oven│────►│  view: dispatch  │
+│              │     │               │     │                  │
+│  KDSItems    │     │ Timer ativo   │     │  Ve: Dashboard   │
+│  INICIAR/    │     │               │     │  + OvenTimer     │
+│  FORNO       │     │               │     │  + Colunas       │
+└──────────────┘     └───────────────┘     └──────────────────┘
 ```
 
 ---
 
 ## Mudancas Necessarias
 
-### 1. Atualizar Index.tsx
+### 1. Adicionar Tipo `dispatch` na Tabela `sectors`
 
-Adicionar tabs principais para admins alternarem entre Dashboard e KDS:
+Alterar a coluna `view_type` para aceitar 3 valores:
+- `kds` - Tela de bancada (producao)
+- `management` - Tela administrativa
+- `dispatch` - Tela de despacho (Dashboard + OvenTimer)
+
+```sql
+-- Alterar o check constraint ou enum para incluir 'dispatch'
+ALTER TABLE sectors 
+DROP CONSTRAINT IF EXISTS sectors_view_type_check;
+
+ALTER TABLE sectors 
+ADD CONSTRAINT sectors_view_type_check 
+CHECK (view_type IN ('kds', 'management', 'dispatch'));
+
+-- Atualizar setor DESPACHO existente
+UPDATE sectors 
+SET view_type = 'dispatch' 
+WHERE name = 'DESPACHO';
+```
+
+### 2. Atualizar Hook `useSectors.ts`
+
+Adicionar `dispatch` ao tipo TypeScript:
 
 ```typescript
-// Para admins sem setor, mostrar tabs para alternar entre views
-const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+export interface Sector {
+  id: string;
+  name: string;
+  view_type: 'kds' | 'management' | 'dispatch'; // Adicionar dispatch
+  // ...
+}
+```
 
-// No header ou abaixo dele
-{isAdmin && !isKDSSector && (
-  <Tabs value={mainView} onValueChange={(v) => setMainView(v)}>
-    <TabsTrigger value="dashboard">Despacho</TabsTrigger>
-    <TabsTrigger value="kds">KDS Producao</TabsTrigger>
-  </Tabs>
-)}
+### 3. Atualizar `Index.tsx`
+
+Modificar logica para reconhecer setores `dispatch`:
+
+```typescript
+// Antes
+const isKDSSector = userSector?.view_type === 'kds';
+
+// Depois
+const isKDSSector = userSector?.view_type === 'kds';
+const isDispatchSector = userSector?.view_type === 'dispatch';
 
 // Renderizacao
 {isKDSSector 
   ? <KDSItemsDashboard userSector={userSector} />
-  : mainView === 'kds'
-    ? <KDSItemsDashboard />
-    : <Dashboard />
+  : isDispatchSector || mainView === 'dashboard'
+    ? <Dashboard />
+    : <KDSItemsDashboard />
 }
 ```
 
-### 2. Fluxo Esperado Apos Mudanca
+### 4. OvenTimerPanel - Remover Filtro por Setor
 
-```text
-ADMIN/OWNER (sem setor)
-────────────────────────────────────────────────────
-1. Abre o sistema → Tabs: [Despacho] [KDS]
-2. Clica em "KDS" → Ve KDSItemsDashboard
-3. Clica INICIAR em um item → Status = in_prep
-4. Clica FORNO → Status = in_oven
-5. Item SOME da tela KDS
-6. Clica em "Despacho" → Ve Dashboard com OvenTimerPanel
-7. Timer contando → Ao acabar, pisca vermelho
-8. Clica PRONTO → Status = ready, item vai para coluna "Pronto"
+Atualmente o `OvenTimerPanel` pode receber um `sectorId` opcional. Para o despacho, precisamos garantir que ele veja **todos** os itens no forno, independente do setor de origem:
 
-OPERADOR DE BANCADA (com setor KDS)
-────────────────────────────────────────────────────
-1. Abre o sistema → Ve APENAS KDSItemsDashboard
-2. Clica INICIAR → Status = in_prep
-3. Clica FORNO → Status = in_oven, item SOME da tela
-4. Item aparece no tablet do DESPACHO (outro dispositivo)
+```typescript
+// OvenTimerPanel.tsx
+// O Dashboard ja chama sem sectorId, entao todos os itens in_oven sao exibidos
+const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven' });
+// Sem filtro de setor = ve tudo
+```
+
+### 5. Atualizar `SectorsManager.tsx`
+
+Adicionar opcao `dispatch` ao criar/editar setores:
+
+```typescript
+const viewTypeOptions = [
+  { value: 'kds', label: 'KDS (Bancada de Producao)' },
+  { value: 'management', label: 'Gerencial' },
+  { value: 'dispatch', label: 'Despacho' },
+];
 ```
 
 ---
 
-## Arquivo a Modificar
+## Resumo das Alteracoes
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/pages/Index.tsx` | Adicionar tabs para admins alternarem entre Dashboard e KDS |
+| **Migracao SQL** | Adicionar `dispatch` como valor valido para `view_type` |
+| **Migracao SQL** | Atualizar setor DESPACHO para `view_type = 'dispatch'` |
+| `src/hooks/useSectors.ts` | Adicionar `dispatch` ao tipo `view_type` |
+| `src/pages/Index.tsx` | Adicionar logica para renderizar `Dashboard` para setores `dispatch` |
+| `src/components/SectorsManager.tsx` | Adicionar opcao `dispatch` no formulario |
+
+---
+
+## Fluxo Final Esperado
+
+```text
+1. Pedido chega → itens criados com assigned_sector_id = BANCADA A/B
+
+2. Operador BANCADA ve item → clica INICIAR → clica FORNO
+   - Item muda para status = 'in_oven'
+   - Item desaparece da tela do operador (filtro: pending/in_prep)
+
+3. Operador DESPACHO ve Dashboard
+   - OvenTimerPanel mostra item com timer contando
+   - Clica PRONTO → status = 'ready'
+   - Item vai para coluna "Pedido Pronto" do Dashboard
+
+4. Fluxo continua normal: Buffer → Despachado
+```
 
 ---
 
 ## Beneficios
 
-- Admins podem testar o fluxo completo em um unico dispositivo
-- Operadores de bancada continuam vendo apenas sua fila
-- Despacho continua funcionando como antes
-- Fluxo de bancada → forno → despacho fica claro e testavel
+- Separacao clara entre telas de producao (KDS) e despacho (Dashboard)
+- Operador de despacho ve painel do forno centralizado
+- Admins ainda podem alternar entre views
+- Nao requer mudanca na logica de `assigned_sector_id` - itens no forno sao vistos globalmente pelo despacho
 
