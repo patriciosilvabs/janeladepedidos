@@ -1,149 +1,114 @@
 
-# Plano: Configuracao do Tempo de Forno + Mover Timer para Despacho
+# Plano: Garantir que Item Some da Bancada ao Ir para o Forno
 
-## Resumo
+## Situacao Atual
 
-Adicionar uma configuracao global para o tempo do forno (atualmente fixo em 120 segundos) e mover o painel de timer do forno das bancadas de producao (KDS) para o painel de despacho.
+A implementacao ja esta quase correta:
+
+| Componente | Status Filter | Itens Visiveis |
+|------------|---------------|----------------|
+| SectorQueuePanel (Bancada) | `['pending', 'in_prep']` | Pendentes e em preparo |
+| OvenTimerPanel (Despacho) | `['in_oven']` | Apenas itens no forno |
+
+O item JA some da bancada quando vai pro forno porque o filtro exclui `in_oven`.
+
+## Problema Identificado
+
+O `KDSItemCard` ainda contem logica desnecessaria para renderizar itens `in_oven`:
+- Countdown do forno (linhas 62-84)
+- Botao "PRONTO" para status in_oven (linhas 159-175)
+- Estilos visuais para in_oven (linhas 98-101)
+
+Isso cria codigo morto e pode causar bugs se alguem usar `showAllStatuses=true`.
 
 ---
 
 ## Mudancas Necessarias
 
-### 1. Banco de Dados
+### 1. Simplificar KDSItemCard
 
-Adicionar nova coluna na tabela `app_settings`:
-
-```sql
-ALTER TABLE app_settings 
-ADD COLUMN oven_time_seconds integer DEFAULT 120;
-```
-
-### 2. Interface de Configuracao
-
-Adicionar campo de configuracao na aba "KDS" do SettingsDialog:
-
-| Campo | Descricao |
-|-------|-----------|
-| Tempo do Forno (segundos) | Duracao da esteira do forno (padrao: 120s = 2 minutos) |
+Remover toda logica relacionada a `in_oven` e `ready` do card das bancadas:
 
 ```text
-┌─────────────────────────────────────────┐
-│ Tempo do Forno                          │
-├─────────────────────────────────────────┤
-│ Label: "Tempo do forno (segundos)"      │
-│ Input: [120]                            │
-│ Desc: "Tempo da esteira ate saida"      │
-└─────────────────────────────────────────┘
+ANTES (KDSItemCard):
+- Countdown de forno
+- Estilos para in_oven/ready
+- Botoes PRONTO para forno
+- Auto-complete quando timer = 0
+
+DEPOIS (KDSItemCard):
+- Apenas pending e in_prep
+- Botao INICIAR (pending)
+- Botao FORNO + LIBERAR (in_prep)
+- Sem logica de countdown
 ```
 
-### 3. Mover OvenTimerPanel
+### 2. Garantir Update em Tempo Real
 
-**Remover de:** `KDSItemsDashboard.tsx` (bancadas de producao)
-
-**Adicionar em:** `Dashboard.tsx` (painel de despacho)
-
-Logica de exibicao:
-- Aparece quando houver itens com status `in_oven`
-- Posicionado acima das colunas de pedidos
-- Busca TODOS os itens no forno (sem filtro de setor)
-
-### 4. Usar Configuracao no Codigo
-
-**Arquivos a modificar:**
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `useOrderItems.ts` | Receber `ovenTimeSeconds` como parametro |
-| `SectorQueuePanel.tsx` | Passar tempo configurado ao enviar para forno |
-| `OvenTimerPanel.tsx` | Usar tempo configurado para calculo de progresso |
-| `useSettings.ts` | Adicionar tipo `oven_time_seconds` |
-
----
-
-## Arquitetura Final
+O realtime ja esta configurado com debounce de 50ms:
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                     PAINEL DE DESPACHO                          │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │              🔥 FORNO (Timer Global)                      │  │
-│  │  ┌─────────────────────────────────────────────────────┐  │  │
-│  │  │ [1:45] #1234 Pizza Calabresa      [PRONTO]         │  │  │
-│  │  │ [0:32] #1235 Pizza Frango         [PRONTO]         │  │  │
-│  │  └─────────────────────────────────────────────────────┘  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-│                                                                  │
-│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
-│  │Em Prod   │ │Buffer    │ │Pronto    │ │Despachado│           │
-│  │          │ │          │ │          │ │          │           │
-│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
-└─────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────┐
-│                    BANCADA A / BANCADA B                        │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │              Fila de Producao (sem timer forno)           │  │
-│  │  • Itens pendentes                                        │  │
-│  │  • Itens em preparo                                       │  │
-│  │  • Botao "Enviar ao Forno"                                │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Detalhes Tecnicos
-
-### Tipo AppSettings Atualizado
-
-```typescript
-export interface AppSettings {
-  // ... campos existentes ...
-  oven_time_seconds: number; // NOVO - padrao 120
-}
-```
-
-### Uso do Tempo Configurado
-
-```typescript
-// SectorQueuePanel.tsx - ao enviar para forno
-const { settings } = useSettings();
-const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
-
-sendToOven.mutateAsync({ 
-  itemId, 
-  ovenTimeSeconds  // Usa valor das configuracoes
-});
-```
-
-```typescript
-// OvenTimerPanel.tsx - calculo de progresso
-const { settings } = useSettings();
-const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
-
-// Calcula porcentagem baseado no tempo configurado
-const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
+┌─────────────────┐     WebSocket      ┌─────────────────┐
+│   BANCADA A     │◄──────────────────►│    DESPACHO     │
+│                 │                    │                 │
+│  [Click FORNO]  │                    │                 │
+│       │         │                    │                 │
+│       ▼         │                    │                 │
+│  Item muda para │───► Broadcast ────►│  OvenTimerPanel │
+│  status=in_oven │      (50ms)        │  recebe item    │
+│       │         │                    │       │         │
+│       ▼         │                    │       ▼         │
+│  Item SOME da   │                    │  Timer inicia   │
+│  lista (filtro) │                    │  contagem       │
+└─────────────────┘                    └─────────────────┘
 ```
 
 ---
 
 ## Arquivos a Modificar
 
-| Tipo | Arquivo | Alteracao |
-|------|---------|-----------|
-| SQL | Migration | Adicionar coluna `oven_time_seconds` |
-| Hook | `src/hooks/useSettings.ts` | Adicionar tipo da nova coluna |
-| UI | `src/components/SettingsDialog.tsx` | Campo de input na aba KDS |
-| Componente | `src/components/Dashboard.tsx` | Importar e exibir OvenTimerPanel |
-| Componente | `src/components/kds/KDSItemsDashboard.tsx` | Remover OvenTimerPanel |
-| Componente | `src/components/kds/OvenTimerPanel.tsx` | Usar tempo configurado |
-| Componente | `src/components/kds/SectorQueuePanel.tsx` | Passar tempo ao enviar forno |
+| Arquivo | Alteracao |
+|---------|-----------|
+| `src/components/kds/KDSItemCard.tsx` | Remover logica de in_oven/ready, simplificar para apenas pending/in_prep |
+
+---
+
+## Fluxo Esperado
+
+1. Funcionario na Bancada A ve item com status `in_prep`
+2. Clica no botao "FORNO"
+3. Item atualiza para `status = 'in_oven'` no banco
+4. Realtime dispara broadcast
+5. Bancada: item SAI da lista (filtro nao inclui in_oven)
+6. Despacho: OvenTimerPanel RECEBE o item e inicia timer
+7. Tudo acontece em ~100ms
+
+---
+
+## Codigo Simplificado do KDSItemCard
+
+O card ficara focado apenas em:
+
+```typescript
+// Apenas estes status sao tratados
+switch (item.status) {
+  case 'pending':
+    // Botao INICIAR
+    break;
+  case 'in_prep':
+    // Botao FORNO + LIBERAR
+    break;
+  default:
+    // Nao renderiza nada (item nao deveria estar aqui)
+    return null;
+}
+```
 
 ---
 
 ## Beneficios
 
-- Tempo de forno configuravel (nao mais fixo em 120s)
-- Timer visivel apenas para quem precisa (despacho)
-- Bancadas focam apenas em producao
-- Sincronizado em tempo real entre todos os dispositivos
+- Codigo mais limpo e focado
+- Sem logica duplicada entre bancada e despacho
+- Comportamento claro: bancada = producao, despacho = forno + entrega
+- Update em tempo real ja funciona (50ms debounce)
