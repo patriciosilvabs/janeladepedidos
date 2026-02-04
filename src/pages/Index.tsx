@@ -38,13 +38,14 @@ const Index = () => {
 
   // Determine which dashboard to show based on user's sector
   const isKDSSector = userSector?.view_type === 'kds';
+  const isDispatchSector = userSector?.view_type === 'dispatch';
   
   // KDS mode: admin can toggle, regular users use the configured default
   const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
   const showKdsTabs = isAdmin && isKDSSector;
   
-  // Show main view tabs for admins without a KDS sector
-  const showMainViewTabs = isAdmin && !isKDSSector;
+  // Show main view tabs for admins without a KDS sector (management or no sector)
+  const showMainViewTabs = isAdmin && !isKDSSector && !isDispatchSector;
 
   return (
     <div className="min-h-screen bg-background">
@@ -80,9 +81,11 @@ const Index = () => {
         ? (effectiveKdsMode === 'items' 
             ? <KDSItemsDashboard userSector={userSector} /> 
             : <KDSDashboard userSector={userSector} />) 
-        : mainView === 'kds'
-          ? <KDSItemsDashboard />
-          : <Dashboard />
+        : isDispatchSector
+          ? <Dashboard />
+          : mainView === 'kds'
+            ? <KDSItemsDashboard />
+            : <Dashboard />
       }
     </div>
   );

@@ -56,6 +56,12 @@ const viewTypeConfig = {
     icon: <LayoutDashboard className="h-3 w-3" />,
     variant: 'default' as const,
   },
+  dispatch: {
+    label: 'Despacho',
+    description: 'Dashboard de despacho com painel do forno',
+    icon: <LayoutDashboard className="h-3 w-3" />,
+    variant: 'outline' as const,
+  },
 };
 
 export function SectorsManager() {
@@ -66,7 +72,7 @@ export function SectorsManager() {
 
   // Form state
   const [formName, setFormName] = useState('');
-  const [formViewType, setFormViewType] = useState<'kds' | 'management'>('kds');
+  const [formViewType, setFormViewType] = useState<'kds' | 'management' | 'dispatch'>('kds');
   const [formDescription, setFormDescription] = useState('');
 
   const resetForm = () => {
@@ -257,7 +263,7 @@ export function SectorsManager() {
               <Label htmlFor="sector-view-type">Tipo de Visualização</Label>
               <Select
                 value={formViewType}
-                onValueChange={(value: 'kds' | 'management') => setFormViewType(value)}
+                onValueChange={(value: 'kds' | 'management' | 'dispatch') => setFormViewType(value)}
                 disabled={createSector.isPending || updateSector.isPending}
               >
                 <SelectTrigger id="sector-view-type">
@@ -267,7 +273,13 @@ export function SectorsManager() {
                   <SelectItem value="kds">
                     <div className="flex items-center gap-2">
                       <ChefHat className="h-4 w-4" />
-                      KDS - Visualização simplificada
+                      KDS - Bancada de produção
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="dispatch">
+                    <div className="flex items-center gap-2">
+                      <LayoutDashboard className="h-4 w-4" />
+                      Despacho - Painel do forno + colunas
                     </div>
                   </SelectItem>
                   <SelectItem value="management">

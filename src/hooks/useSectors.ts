@@ -4,7 +4,7 @@ import { supabase } from '@/integrations/supabase/client';
 export interface Sector {
   id: string;
   name: string;
-  view_type: 'kds' | 'management';
+  view_type: 'kds' | 'management' | 'dispatch';
   description: string | null;
   created_at: string;
   updated_at: string;
@@ -12,14 +12,14 @@ export interface Sector {
 
 export interface CreateSectorParams {
   name: string;
-  view_type: 'kds' | 'management';
+  view_type: 'kds' | 'management' | 'dispatch';
   description?: string;
 }
 
 export interface UpdateSectorParams {
   id: string;
   name?: string;
-  view_type?: 'kds' | 'management';
+  view_type?: 'kds' | 'management' | 'dispatch';
   description?: string;
 }
 
