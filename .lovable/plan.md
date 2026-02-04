@@ -1,129 +1,121 @@
 
+# Plano: Criar Tela Exclusiva para Setor Despacho
 
-# Plano: Corrigir Fluxo Bancada → Forno → Despacho
+## Entendimento do Problema
 
-## Problema Identificado
+Atualmente o usuario do setor DESPACHO ve o Dashboard completo com 4 colunas:
+- Em Producao
+- Buffer de Espera
+- Pedido Pronto
+- Despachados
 
-O usuario do setor **DESPACHO** nao ve os itens no forno porque:
-
-| Problema | Detalhes |
-|----------|----------|
-| Setor DESPACHO tem `view_type = 'kds'` | Isso faz o usuario ver a tela `KDSItemsDashboard` (bancada) |
-| Itens mantem `assigned_sector_id` original | Quando vao ao forno, continuam associados a BANCADA A/B |
-| `OvenTimerPanel` esta no `Dashboard` | Mas o usuario de DESPACHO ve `KDSItemsDashboard`, nao `Dashboard` |
-
-```text
-FLUXO ATUAL (QUEBRADO):
-┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
-│  BANCADA A   │     │    FORNO      │     │    DESPACHO      │
-│  view: kds   │────►│ (status only) │     │    view: kds     │
-│              │     │               │     │   VE: KDSItems   │
-│  Item aqui   │     │ Item tem      │     │   DEVERIA VER:   │
-│  sector=A    │     │ sector=A      │     │   Dashboard      │
-└──────────────┘     └───────────────┘     └──────────────────┘
-                            │
-                            ▼
-                     Nao muda setor!
-                     Despacho nao ve!
-```
-
-## Solucao Proposta
-
-Criar um novo tipo de visualizacao `dispatch` para setores de despacho que mostra o **Dashboard** com o **OvenTimerPanel**.
+Porem, o fluxo correto e:
+- Usuario DESPACHO ve APENAS o painel do forno (itens vindos das bancadas)
+- Ao clicar PRONTO no item, o pedido vai para o fluxo normal (Buffer → Pronto → Despachados)
+- As 4 colunas sao vistas SOMENTE por admins/owners
 
 ```text
-FLUXO CORRIGIDO:
-┌──────────────┐     ┌───────────────┐     ┌──────────────────┐
-│  BANCADA     │     │    FORNO      │     │    DESPACHO      │
-│  view: kds   │────►│ status=in_oven│────►│  view: dispatch  │
-│              │     │               │     │                  │
-│  KDSItems    │     │ Timer ativo   │     │  Ve: Dashboard   │
-│  INICIAR/    │     │               │     │  + OvenTimer     │
-│  FORNO       │     │               │     │  + Colunas       │
-└──────────────┘     └───────────────┘     └──────────────────┘
+FLUXO CORRETO:
+
+   BANCADA               DESPACHO              ADMIN/OWNER
+   (view: kds)           (view: dispatch)      (Dashboard completo)
+        │                      │                     │
+        ▼                      ▼                     ▼
+   ┌─────────┐           ┌─────────────┐      ┌──────────────────┐
+   │ INICIAR │           │   FORNO     │      │ Em Producao      │
+   │  FORNO  │──────────►│  (timer)    │      │ Buffer de Espera │
+   └─────────┘           │   PRONTO    │      │ Pedido Pronto    │
+                         └──────┬──────┘      │ Despachados      │
+                                │             └────────┬─────────┘
+                                │                      │
+                                └──────────────────────┘
+                                    Envia para Buffer
 ```
 
 ---
 
-## Mudancas Necessarias
+## Solucao
 
-### 1. Adicionar Tipo `dispatch` na Tabela `sectors`
+Criar um novo componente `DispatchDashboard` que exibe APENAS:
+1. Painel do Forno (OvenTimerPanel) - itens com status `in_oven`
+2. Quando o usuario clica PRONTO, o item muda para `ready`
+3. Quando TODOS os itens do pedido estao prontos, o pedido aparece no Dashboard (admins)
 
-Alterar a coluna `view_type` para aceitar 3 valores:
-- `kds` - Tela de bancada (producao)
-- `management` - Tela administrativa
-- `dispatch` - Tela de despacho (Dashboard + OvenTimer)
+---
+
+## Alteracoes Necessarias
+
+### 1. Criar Componente `DispatchDashboard.tsx`
+
+Novo componente simplificado para o setor de despacho:
+
+```typescript
+// src/components/DispatchDashboard.tsx
+export function DispatchDashboard() {
+  // Busca itens no forno (sem filtro de setor = ve todos)
+  const { inOvenItems } = useOrderItems({ status: 'in_oven' });
+  
+  return (
+    <div className="flex flex-col h-[calc(100vh-5rem)] p-4">
+      {/* Cabecalho simples */}
+      <div className="text-center mb-4">
+        <h2>Painel do Forno</h2>
+        <p>Itens aguardando finalizacao</p>
+      </div>
+      
+      {/* Painel do forno expandido */}
+      {inOvenItems.length === 0 ? (
+        <EmptyState message="Nenhum item no forno" />
+      ) : (
+        <OvenTimerPanel />  // Sem sectorId = ve todos os setores
+      )}
+    </div>
+  );
+}
+```
+
+### 2. Atualizar `Index.tsx`
+
+Trocar a renderizacao para usar `DispatchDashboard` quando o setor for `dispatch`:
+
+```typescript
+// src/pages/Index.tsx
+import { DispatchDashboard } from '@/components/DispatchDashboard';
+
+// Na renderizacao:
+{isKDSSector 
+  ? <KDSItemsDashboard userSector={userSector} /> 
+  : isDispatchSector
+    ? <DispatchDashboard />    // NOVO: Tela simplificada para despacho
+    : mainView === 'kds'
+      ? <KDSItemsDashboard />
+      : <Dashboard />          // Dashboard completo so para admins
+}
+```
+
+### 3. Transicao Automatica para Buffer
+
+Quando o usuario de despacho clica PRONTO em um item:
+1. Item vai para status `ready`
+2. Se TODOS os itens do pedido estao prontos, marca `all_items_ready = true`
+3. O sistema deve automaticamente mover o pedido para `waiting_buffer`
+
+Atualmente isso NAO acontece automaticamente. Preciso modificar a funcao `check_order_completion` no banco para:
+- Quando todos os itens estao prontos → mover pedido para `waiting_buffer`
 
 ```sql
--- Alterar o check constraint ou enum para incluir 'dispatch'
-ALTER TABLE sectors 
-DROP CONSTRAINT IF EXISTS sectors_view_type_check;
-
-ALTER TABLE sectors 
-ADD CONSTRAINT sectors_view_type_check 
-CHECK (view_type IN ('kds', 'management', 'dispatch'));
-
--- Atualizar setor DESPACHO existente
-UPDATE sectors 
-SET view_type = 'dispatch' 
-WHERE name = 'DESPACHO';
-```
-
-### 2. Atualizar Hook `useSectors.ts`
-
-Adicionar `dispatch` ao tipo TypeScript:
-
-```typescript
-export interface Sector {
-  id: string;
-  name: string;
-  view_type: 'kds' | 'management' | 'dispatch'; // Adicionar dispatch
-  // ...
-}
-```
-
-### 3. Atualizar `Index.tsx`
-
-Modificar logica para reconhecer setores `dispatch`:
-
-```typescript
-// Antes
-const isKDSSector = userSector?.view_type === 'kds';
-
-// Depois
-const isKDSSector = userSector?.view_type === 'kds';
-const isDispatchSector = userSector?.view_type === 'dispatch';
-
-// Renderizacao
-{isKDSSector 
-  ? <KDSItemsDashboard userSector={userSector} />
-  : isDispatchSector || mainView === 'dashboard'
-    ? <Dashboard />
-    : <KDSItemsDashboard />
-}
-```
-
-### 4. OvenTimerPanel - Remover Filtro por Setor
-
-Atualmente o `OvenTimerPanel` pode receber um `sectorId` opcional. Para o despacho, precisamos garantir que ele veja **todos** os itens no forno, independente do setor de origem:
-
-```typescript
-// OvenTimerPanel.tsx
-// O Dashboard ja chama sem sectorId, entao todos os itens in_oven sao exibidos
-const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven' });
-// Sem filtro de setor = ve tudo
-```
-
-### 5. Atualizar `SectorsManager.tsx`
-
-Adicionar opcao `dispatch` ao criar/editar setores:
-
-```typescript
-const viewTypeOptions = [
-  { value: 'kds', label: 'KDS (Bancada de Producao)' },
-  { value: 'management', label: 'Gerencial' },
-  { value: 'dispatch', label: 'Despacho' },
-];
+-- Alteracao na funcao check_order_completion
+IF v_total = v_ready THEN
+  UPDATE orders
+  SET 
+    all_items_ready = true,
+    mixed_origin = (v_sectors > 1),
+    status = 'waiting_buffer',  -- NOVO: Mover automaticamente para buffer
+    ready_at = NOW()            -- NOVO: Marcar quando ficou pronto
+  WHERE id = p_order_id;
+  
+  RETURN true;
+END IF;
 ```
 
 ---
@@ -132,37 +124,40 @@ const viewTypeOptions = [
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| **Migracao SQL** | Adicionar `dispatch` como valor valido para `view_type` |
-| **Migracao SQL** | Atualizar setor DESPACHO para `view_type = 'dispatch'` |
-| `src/hooks/useSectors.ts` | Adicionar `dispatch` ao tipo `view_type` |
-| `src/pages/Index.tsx` | Adicionar logica para renderizar `Dashboard` para setores `dispatch` |
-| `src/components/SectorsManager.tsx` | Adicionar opcao `dispatch` no formulario |
+| **NOVO** `src/components/DispatchDashboard.tsx` | Componente simplificado com apenas o painel do forno |
+| `src/pages/Index.tsx` | Usar `DispatchDashboard` para setores `dispatch` |
+| **Migracao SQL** | Atualizar `check_order_completion` para mover pedido para buffer automaticamente |
 
 ---
 
-## Fluxo Final Esperado
+## Fluxo Final
 
 ```text
-1. Pedido chega → itens criados com assigned_sector_id = BANCADA A/B
+1. Pedido chega → itens criados e atribuidos as bancadas
 
-2. Operador BANCADA ve item → clica INICIAR → clica FORNO
-   - Item muda para status = 'in_oven'
-   - Item desaparece da tela do operador (filtro: pending/in_prep)
+2. Operador BANCADA:
+   - Ve item em sua bancada
+   - Clica INICIAR → status = 'in_prep'
+   - Clica FORNO → status = 'in_oven'
+   - Item desaparece da bancada
 
-3. Operador DESPACHO ve Dashboard
-   - OvenTimerPanel mostra item com timer contando
-   - Clica PRONTO → status = 'ready'
-   - Item vai para coluna "Pedido Pronto" do Dashboard
+3. Operador DESPACHO:
+   - Ve APENAS o painel do forno (OvenTimerPanel)
+   - Timer contando para cada item
+   - Clica PRONTO → item.status = 'ready'
+   - Se todos os itens do pedido prontos → order.status = 'waiting_buffer'
 
-4. Fluxo continua normal: Buffer → Despachado
+4. ADMIN/OWNER:
+   - Ve Dashboard completo (4 colunas)
+   - Pedido aparece em "Buffer de Espera"
+   - Fluxo continua normal: Buffer → Pronto → Despachados
 ```
 
 ---
 
 ## Beneficios
 
-- Separacao clara entre telas de producao (KDS) e despacho (Dashboard)
-- Operador de despacho ve painel do forno centralizado
-- Admins ainda podem alternar entre views
-- Nao requer mudanca na logica de `assigned_sector_id` - itens no forno sao vistos globalmente pelo despacho
-
+- Usuario de despacho tem interface simplificada e focada
+- Transicao automatica para buffer quando todos os itens estao prontos
+- Separacao clara de responsabilidades entre setores
+- Admins mantem visao completa do fluxo
