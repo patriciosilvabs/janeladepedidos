@@ -1,128 +1,129 @@
 
-# Otimizacao de Tempo Real para KDS
+# Plano: Configuracao do Tempo de Forno + Mover Timer para Despacho
 
-## Diagnostico de Latencia Atual
+## Resumo
 
-### Problemas Identificados
-
-| Problema | Impacto | Latencia Atual |
-|----------|---------|----------------|
-| Tabela `orders` sem realtime | Atualizacoes de pedidos dependem de invalidacao manual | ~200ms + query |
-| Debounce em `useOrderItems` | Atrasa propagacao de mudancas | 150ms fixo |
-| Debounce em `useOrders` | Atrasa propagacao de mudancas | 200ms fixo |
-| Polling a cada 30s | Novos pedidos externos demoram ate 30s | 30000ms |
-| Atualizacoes Otimistas | Ja implementado - BOM | 0ms (UI local) |
-
-### Estado do Realtime
-
-```text
-Publicacao supabase_realtime:
-  - order_items: HABILITADO
-  - orders: NAO HABILITADO  <-- PROBLEMA
-```
-
----
-
-## Solucao Proposta
-
-### 1. Habilitar Realtime para Tabela `orders`
-
-Adicionar a tabela `orders` a publicacao realtime do Supabase:
-
-```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
-```
-
-**Beneficio**: Todas as mudancas em pedidos (status, ready_at, dispatched_at) serao propagadas instantaneamente.
-
-### 2. Reduzir Debounce para 50ms
-
-Ajustar os valores de debounce em ambos os hooks:
-
-| Hook | Antes | Depois | Reducao |
-|------|-------|--------|---------|
-| `useOrderItems.ts` | 150ms | 50ms | -67% |
-| `useOrders.ts` | 200ms | 50ms | -75% |
-
-**Tradeoff**: 50ms ainda evita "flood" de invalidacoes em batch, mas responde muito mais rapido.
-
-### 3. Adicionar Subscricao Separada por Setor (Opcional)
-
-Para ambientes com muitos tablets, usar filtro no canal realtime:
-
-```typescript
-// Filtrar eventos apenas para o setor do usuario
-.on('postgres_changes', { 
-  event: '*', 
-  schema: 'public', 
-  table: 'order_items',
-  filter: `assigned_sector_id=eq.${sectorId}` // Menos eventos processados
-}, ...)
-```
-
-**Beneficio**: Cada tablet processa apenas eventos relevantes.
-
----
-
-## Arquitetura Otimizada
-
-```text
-┌────────────────────────────────────────────────────────────────┐
-│                        SUPABASE                                 │
-│  ┌──────────────┐    ┌──────────────┐                          │
-│  │ order_items  │    │    orders    │                          │
-│  │   REALTIME   │    │   REALTIME   │  <- NOVO                 │
-│  └──────┬───────┘    └──────┬───────┘                          │
-└─────────┼───────────────────┼──────────────────────────────────┘
-          │                   │
-          ▼                   ▼
-    ┌─────────────────────────────────┐
-    │     Websocket Broadcast         │
-    │     (< 100ms)                   │
-    └─────────────┬───────────────────┘
-                  │
-    ┌─────────────┴─────────────────────┐
-    │                                   │
-    ▼                                   ▼
-┌────────────┐                   ┌────────────┐
-│ BANCADA A  │                   │ BANCADA B  │
-│  50ms      │                   │  50ms      │
-│  debounce  │                   │  debounce  │
-└────────────┘                   └────────────┘
-```
+Adicionar uma configuracao global para o tempo do forno (atualmente fixo em 120 segundos) e mover o painel de timer do forno das bancadas de producao (KDS) para o painel de despacho.
 
 ---
 
 ## Mudancas Necessarias
 
-### Migration SQL
+### 1. Banco de Dados
 
-Habilitar realtime para `orders`:
+Adicionar nova coluna na tabela `app_settings`:
 
 ```sql
-ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
+ALTER TABLE app_settings 
+ADD COLUMN oven_time_seconds integer DEFAULT 120;
 ```
 
-### Codigo Frontend
+### 2. Interface de Configuracao
 
-1. **`src/hooks/useOrderItems.ts`**
-   - Reduzir debounce de 150ms para 50ms
-   - Adicionar filtro por setor no canal realtime (opcional)
+Adicionar campo de configuracao na aba "KDS" do SettingsDialog:
 
-2. **`src/hooks/useOrders.ts`**
-   - Reduzir debounce de 200ms para 50ms
+| Campo | Descricao |
+|-------|-----------|
+| Tempo do Forno (segundos) | Duracao da esteira do forno (padrao: 120s = 2 minutos) |
+
+```text
+┌─────────────────────────────────────────┐
+│ Tempo do Forno                          │
+├─────────────────────────────────────────┤
+│ Label: "Tempo do forno (segundos)"      │
+│ Input: [120]                            │
+│ Desc: "Tempo da esteira ate saida"      │
+└─────────────────────────────────────────┘
+```
+
+### 3. Mover OvenTimerPanel
+
+**Remover de:** `KDSItemsDashboard.tsx` (bancadas de producao)
+
+**Adicionar em:** `Dashboard.tsx` (painel de despacho)
+
+Logica de exibicao:
+- Aparece quando houver itens com status `in_oven`
+- Posicionado acima das colunas de pedidos
+- Busca TODOS os itens no forno (sem filtro de setor)
+
+### 4. Usar Configuracao no Codigo
+
+**Arquivos a modificar:**
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `useOrderItems.ts` | Receber `ovenTimeSeconds` como parametro |
+| `SectorQueuePanel.tsx` | Passar tempo configurado ao enviar para forno |
+| `OvenTimerPanel.tsx` | Usar tempo configurado para calculo de progresso |
+| `useSettings.ts` | Adicionar tipo `oven_time_seconds` |
 
 ---
 
-## Resultado Esperado
+## Arquitetura Final
 
-| Cenario | Antes | Depois |
-|---------|-------|--------|
-| Item capturado na Bancada A | ~350ms | ~100ms |
-| Item enviado ao forno | ~350ms | ~100ms |
-| Novo pedido via webhook | ~350ms | ~100ms |
-| Pedido marcado como pronto | ~400ms | ~100ms |
-| Propagacao entre 9 tablets | Consistente | Mais rapido |
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                     PAINEL DE DESPACHO                          │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              🔥 FORNO (Timer Global)                      │  │
+│  │  ┌─────────────────────────────────────────────────────┐  │  │
+│  │  │ [1:45] #1234 Pizza Calabresa      [PRONTO]         │  │  │
+│  │  │ [0:32] #1235 Pizza Frango         [PRONTO]         │  │  │
+│  │  └─────────────────────────────────────────────────────┘  │  │
+│  └───────────────────────────────────────────────────────────┘  │
+│                                                                  │
+│  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐           │
+│  │Em Prod   │ │Buffer    │ │Pronto    │ │Despachado│           │
+│  │          │ │          │ │          │ │          │           │
+│  └──────────┘ └──────────┘ └──────────┘ └──────────┘           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│                    BANCADA A / BANCADA B                        │
+│  ┌───────────────────────────────────────────────────────────┐  │
+│  │              Fila de Producao (sem timer forno)           │  │
+│  │  • Itens pendentes                                        │  │
+│  │  • Itens em preparo                                       │  │
+│  │  • Botao "Enviar ao Forno"                                │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## Detalhes Tecnicos
+
+### Tipo AppSettings Atualizado
+
+```typescript
+export interface AppSettings {
+  // ... campos existentes ...
+  oven_time_seconds: number; // NOVO - padrao 120
+}
+```
+
+### Uso do Tempo Configurado
+
+```typescript
+// SectorQueuePanel.tsx - ao enviar para forno
+const { settings } = useSettings();
+const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+
+sendToOven.mutateAsync({ 
+  itemId, 
+  ovenTimeSeconds  // Usa valor das configuracoes
+});
+```
+
+```typescript
+// OvenTimerPanel.tsx - calculo de progresso
+const { settings } = useSettings();
+const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+
+// Calcula porcentagem baseado no tempo configurado
+const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
+```
 
 ---
 
@@ -130,16 +131,19 @@ ALTER PUBLICATION supabase_realtime ADD TABLE public.orders;
 
 | Tipo | Arquivo | Alteracao |
 |------|---------|-----------|
-| SQL | Migration | Adicionar `orders` ao realtime |
-| Frontend | `src/hooks/useOrderItems.ts` | Debounce 150ms -> 50ms |
-| Frontend | `src/hooks/useOrders.ts` | Debounce 200ms -> 50ms |
+| SQL | Migration | Adicionar coluna `oven_time_seconds` |
+| Hook | `src/hooks/useSettings.ts` | Adicionar tipo da nova coluna |
+| UI | `src/components/SettingsDialog.tsx` | Campo de input na aba KDS |
+| Componente | `src/components/Dashboard.tsx` | Importar e exibir OvenTimerPanel |
+| Componente | `src/components/kds/KDSItemsDashboard.tsx` | Remover OvenTimerPanel |
+| Componente | `src/components/kds/OvenTimerPanel.tsx` | Usar tempo configurado |
+| Componente | `src/components/kds/SectorQueuePanel.tsx` | Passar tempo ao enviar forno |
 
 ---
 
 ## Beneficios
 
-- Latencia reduzida em ~70%
-- Sincronizacao mais rapida entre bancadas
-- Menos "colisoes" de claims por timing
-- Experiencia mais responsiva para operadores
-
+- Tempo de forno configuravel (nao mais fixo em 120s)
+- Timer visivel apenas para quem precisa (despacho)
+- Bancadas focam apenas em producao
+- Sincronizado em tempo real entre todos os dispositivos
