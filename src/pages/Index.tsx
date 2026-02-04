@@ -42,7 +42,9 @@ const Index = () => {
         )}
       </Header>
       {isKDSSector 
-        ? (kdsMode === 'items' ? <KDSItemsDashboard /> : <KDSDashboard />) 
+        ? (kdsMode === 'items' 
+            ? <KDSItemsDashboard userSector={userSector} /> 
+            : <KDSDashboard userSector={userSector} />) 
         : <Dashboard />
       }
     </div>

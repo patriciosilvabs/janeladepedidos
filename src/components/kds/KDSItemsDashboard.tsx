@@ -1,17 +1,26 @@
 import { useMemo } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
-import { useSectors } from '@/hooks/useSectors';
+import { useSectors, Sector } from '@/hooks/useSectors';
 import { OvenTimerPanel } from './OvenTimerPanel';
 import { SectorQueuePanel } from './SectorQueuePanel';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, AlertCircle, CheckCircle2, Flame, Clock, Users } from 'lucide-react';
 
-export function KDSItemsDashboard() {
-  const { sectors, isLoading: sectorsLoading } = useSectors();
-  const { items, pendingItems, inPrepItems, inOvenItems, readyItems, isLoading } = useOrderItems();
+interface KDSItemsDashboardProps {
+  userSector?: Sector | null;
+}
 
-  // Filter KDS sectors (view_type = 'kds')
+export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
+  // If user has a sector, use it as filter
+  const filterSectorId = userSector?.id;
+  
+  const { sectors, isLoading: sectorsLoading } = useSectors();
+  const { items, pendingItems, inPrepItems, inOvenItems, readyItems, isLoading } = useOrderItems({
+    sectorId: filterSectorId,
+  });
+
+  // Filter KDS sectors (view_type = 'kds') - only for admins without sector
   const kdsSectors = useMemo(
     () => sectors?.filter((s) => s.view_type === 'kds') ?? [],
     [sectors]
@@ -60,38 +69,48 @@ export function KDSItemsDashboard() {
 
       {/* Oven Panel - Always visible if there are items */}
       {totalInOven > 0 && (
-        <OvenTimerPanel />
+        <OvenTimerPanel sectorId={filterSectorId} />
       )}
 
-      {/* Sector Tabs or Single Queue */}
-      {kdsSectors.length > 1 ? (
-        <Tabs defaultValue="all" className="flex-1 flex flex-col">
-          <TabsList>
-            <TabsTrigger value="all">Todos</TabsTrigger>
-            {kdsSectors.map((sector) => (
-              <TabsTrigger key={sector.id} value={sector.id}>
-                {sector.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-          
-          <TabsContent value="all" className="flex-1 mt-4">
-            <SectorQueuePanel sectorName="Todos os Setores" />
-          </TabsContent>
-          
-          {kdsSectors.map((sector) => (
-            <TabsContent key={sector.id} value={sector.id} className="flex-1 mt-4">
-              <SectorQueuePanel 
-                sectorId={sector.id} 
-                sectorName={sector.name} 
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
-      ) : (
+      {/* If user is linked to a sector, show ONLY that sector's queue (no tabs) */}
+      {filterSectorId ? (
         <div className="flex-1">
-          <SectorQueuePanel sectorName="Fila de Produção" />
+          <SectorQueuePanel 
+            sectorId={filterSectorId} 
+            sectorName={userSector?.name || 'Fila de Produção'} 
+          />
         </div>
+      ) : (
+        /* Admins/owners without sector see all sectors with tabs */
+        kdsSectors.length > 1 ? (
+          <Tabs defaultValue="all" className="flex-1 flex flex-col">
+            <TabsList>
+              <TabsTrigger value="all">Todos</TabsTrigger>
+              {kdsSectors.map((sector) => (
+                <TabsTrigger key={sector.id} value={sector.id}>
+                  {sector.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            
+            <TabsContent value="all" className="flex-1 mt-4">
+              <SectorQueuePanel sectorName="Todos os Setores" />
+            </TabsContent>
+            
+            {kdsSectors.map((sector) => (
+              <TabsContent key={sector.id} value={sector.id} className="flex-1 mt-4">
+                <SectorQueuePanel 
+                  sectorId={sector.id} 
+                  sectorName={sector.name} 
+                />
+              </TabsContent>
+            ))}
+          </Tabs>
+        ) : (
+          <div className="flex-1">
+            <SectorQueuePanel sectorName="Fila de Produção" />
+          </div>
+        )
       )}
 
       {/* Empty state */}
