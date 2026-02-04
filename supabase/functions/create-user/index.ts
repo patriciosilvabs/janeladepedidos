@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
     }
 
     // Parse request body
-    const { email, password, role } = await req.json();
+    const { email, password, role, sector_id } = await req.json();
 
     if (!email || !password || !role) {
       return new Response(
@@ -106,21 +106,31 @@ Deno.serve(async (req) => {
 
     console.log('User created:', newUser.user.id);
 
-    // Update user role (trigger creates with 'user' role by default)
-    if (role !== 'user') {
-      const { error: updateRoleError } = await adminClient
-        .from('user_roles')
-        .update({ role })
-        .eq('user_id', newUser.user.id);
+    // Insert user_roles entry explicitly (triggers don't work on auth schema in Lovable Cloud)
+    const { error: insertRoleError } = await adminClient
+      .from('user_roles')
+      .insert({ 
+        user_id: newUser.user.id, 
+        role: role,
+        sector_id: sector_id || null
+      });
 
-      if (updateRoleError) {
-        console.error('Update role error:', updateRoleError);
-        // User was created but role update failed - log but don't fail
-        console.warn('User created but role update failed, user has default role');
+    if (insertRoleError) {
+      console.error('Insert role error:', insertRoleError);
+      // Rollback: delete the user we just created
+      try {
+        await adminClient.auth.admin.deleteUser(newUser.user.id);
+        console.log('Rolled back user creation due to role insert failure');
+      } catch (deleteError) {
+        console.error('Failed to rollback user creation:', deleteError);
       }
+      return new Response(
+        JSON.stringify({ error: 'Erro ao criar permissões do usuário' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
-    console.log('User created successfully with role:', role);
+    console.log('User created successfully with role:', role, 'sector:', sector_id);
 
     return new Response(
       JSON.stringify({ 
