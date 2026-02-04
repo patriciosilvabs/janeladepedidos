@@ -53,15 +53,15 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
         }
       }
 
-      // Auto-complete at 0
+      // Stop interval at 0, but do NOT auto-complete
+      // Item stays visible until manual click
       if (remaining === 0) {
-        onMarkReady();
         clearInterval(interval);
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [item.estimated_exit_at, hasPlayedAlert, audioEnabled, onMarkReady]);
+  }, [item.estimated_exit_at, hasPlayedAlert, audioEnabled]);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -69,15 +69,18 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const isUrgent = countdown <= 10;
+  const isFinished = countdown === 0;
+  const isUrgent = countdown <= 10 && countdown > 0;
   const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
 
   return (
     <div className={cn(
       "relative p-3 rounded-lg border-2 transition-all",
-      isUrgent 
-        ? "border-red-500 bg-red-500/10 animate-pulse" 
-        : "border-orange-500/30 bg-orange-500/5"
+      isFinished 
+        ? "border-red-600 bg-red-600/20 animate-[pulse_0.5s_ease-in-out_infinite]" 
+        : isUrgent 
+          ? "border-red-500 bg-red-500/10 animate-pulse" 
+          : "border-orange-500/30 bg-orange-500/5"
     )}>
       {/* Progress bar background */}
       <div 
@@ -92,9 +95,9 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
         {/* Timer */}
         <div className={cn(
           "flex items-center gap-2 font-mono text-2xl font-bold min-w-[80px]",
-          isUrgent ? "text-red-500" : "text-orange-500"
+          isFinished ? "text-red-600" : isUrgent ? "text-red-500" : "text-orange-500"
         )}>
-          {isUrgent && <AlertTriangle className="h-5 w-5 animate-bounce" />}
+          {(isFinished || isUrgent) && <AlertTriangle className="h-5 w-5 animate-bounce" />}
           {formatTime(countdown)}
         </div>
 
