@@ -547,6 +547,7 @@ export type Database = {
         }
         Returns: number
       }
+      distribute_unassigned_items: { Args: never; Returns: number }
       get_users_with_roles: {
         Args: never
         Returns: {
