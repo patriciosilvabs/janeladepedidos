@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSectors, Sector } from '@/hooks/useSectors';
-import { OvenTimerPanel } from './OvenTimerPanel';
 import { SectorQueuePanel } from './SectorQueuePanel';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, AlertCircle, CheckCircle2, Flame, Clock, Users } from 'lucide-react';
+import { Loader2, CheckCircle2, Clock, Users } from 'lucide-react';
 
 interface KDSItemsDashboardProps {
   userSector?: Sector | null;
@@ -29,8 +28,6 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
   // Stats
   const totalPending = pendingItems.length;
   const totalInPrep = inPrepItems.length;
-  const totalInOven = inOvenItems.length;
-  const totalReady = readyItems.length;
 
   if (isLoading || sectorsLoading) {
     return (
@@ -55,22 +52,9 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
               <Users className="h-3 w-3" />
               {totalInPrep} em preparo
             </Badge>
-            <Badge variant="outline" className="gap-1 bg-orange-500/10">
-              <Flame className="h-3 w-3" />
-              {totalInOven} no forno
-            </Badge>
-            <Badge variant="outline" className="gap-1 bg-green-500/10">
-              <CheckCircle2 className="h-3 w-3" />
-              {totalReady} prontos
-            </Badge>
           </div>
         </div>
       </div>
-
-      {/* Oven Panel - Always visible if there are items */}
-      {totalInOven > 0 && (
-        <OvenTimerPanel sectorId={filterSectorId} />
-      )}
 
       {/* If user is linked to a sector, show ONLY that sector's queue (no tabs) */}
       {filterSectorId ? (

@@ -4,9 +4,11 @@ import { usePolling } from '@/hooks/usePolling';
 import { useSettings } from '@/hooks/useSettings';
 import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
+import { useOrderItems } from '@/hooks/useOrderItems';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
+import { OvenTimerPanel } from './kds/OvenTimerPanel';
 import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -30,6 +32,7 @@ export function Dashboard() {
   const { settings: dynamicSettings, calculateDynamicTimer } = useDynamicBufferSettings();
   const { toast } = useToast();
   const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
+  const { inOvenItems } = useOrderItems({ status: 'in_oven' });
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
@@ -329,6 +332,13 @@ export function Dashboard() {
               Buscar novos pedidos
             </Button>
           </div>
+        </div>
+      )}
+
+      {/* Oven Timer Panel - visible when there are items in oven */}
+      {inOvenItems.length > 0 && (
+        <div className="px-4 pt-4">
+          <OvenTimerPanel />
         </div>
       )}
       

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
+import { useSettings } from '@/hooks/useSettings';
 import { KDSItemCard } from './KDSItemCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,7 +22,11 @@ export function SectorQueuePanel({
 }: SectorQueuePanelProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { settings } = useSettings();
   const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Get oven time from settings
+  const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
 
   // Fetch items based on status filter
   const statusFilter: ItemStatus[] = showAllStatuses 
@@ -81,10 +86,13 @@ export function SectorQueuePanel({
   const handleSendToOven = async (itemId: string) => {
     setProcessingId(itemId);
     try {
-      await sendToOven.mutateAsync({ itemId, ovenTimeSeconds: 120 });
+      await sendToOven.mutateAsync({ itemId, ovenTimeSeconds });
+      const minutes = Math.floor(ovenTimeSeconds / 60);
+      const seconds = ovenTimeSeconds % 60;
+      const timeStr = seconds > 0 ? `${minutes}m${seconds}s` : `${minutes} minutos`;
       toast({
         title: '🔥 Enviado ao forno!',
-        description: 'Timer de 2 minutos iniciado.',
+        description: `Timer de ${timeStr} iniciado.`,
       });
     } catch (error: any) {
       toast({
