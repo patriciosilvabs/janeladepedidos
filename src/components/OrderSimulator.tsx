@@ -272,12 +272,12 @@ export function OrderSimulator() {
           {stores && stores.length > 0 && (
             <div className="space-y-2">
               <Label>Loja (opcional)</Label>
-              <Select value={storeId || ''} onValueChange={(v) => setStoreId(v || null)}>
+              <Select value={storeId || 'none'} onValueChange={(v) => setStoreId(v === 'none' ? null : v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sem loja específica" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem loja específica</SelectItem>
+                  <SelectItem value="none">Sem loja específica</SelectItem>
                   {stores.map((store) => (
                     <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
                   ))}
@@ -290,12 +290,12 @@ export function OrderSimulator() {
           {kdsSectors.length > 0 && (
             <div className="space-y-2">
               <Label>Setor de Produção</Label>
-              <Select value={sectorId || ''} onValueChange={(v) => setSectorId(v || null)}>
+              <Select value={sectorId || 'none'} onValueChange={(v) => setSectorId(v === 'none' ? null : v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o setor..." />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Sem setor (visível apenas para admins)</SelectItem>
+                  <SelectItem value="none">Sem setor (visível apenas para admins)</SelectItem>
                   {kdsSectors.map((sector) => (
                     <SelectItem key={sector.id} value={sector.id}>{sector.name}</SelectItem>
                   ))}
