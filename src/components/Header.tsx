@@ -12,22 +12,13 @@ import { useState, useEffect } from 'react';
 interface HeaderProps {
   sectorName?: string;
   children?: React.ReactNode;
+  isFullscreen?: boolean;
 }
 
-export function Header({ sectorName, children }: HeaderProps) {
+export function Header({ sectorName, children, isFullscreen = false }: HeaderProps) {
   const queryClient = useQueryClient();
   const { user, isOwner, isAdmin, signOut } = useAuth();
   const { toast } = useToast();
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
-  }, []);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -60,6 +51,17 @@ export function Header({ sectorName, children }: HeaderProps) {
       });
     }
   };
+
+  // Simplified header when in fullscreen mode
+  if (isFullscreen) {
+    return (
+      <header className="flex h-12 items-center justify-end border-b border-border/50 bg-card/50 px-4 backdrop-blur">
+        <Button variant="outline" size="icon" onClick={toggleFullscreen} title="Sair da tela cheia">
+          <Minimize className="h-4 w-4" />
+        </Button>
+      </header>
+    );
+  }
 
   return (
     <header className="flex h-20 items-center justify-between border-b border-border/50 bg-card/50 px-6 backdrop-blur">
@@ -98,8 +100,8 @@ export function Header({ sectorName, children }: HeaderProps) {
         {isAdmin && <OrderSimulator />}
         {isAdmin && <SettingsDialog />}
         <EditProfileDialog />
-        <Button variant="outline" size="icon" onClick={toggleFullscreen} title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}>
-          {isFullscreen ? <Minimize className="h-4 w-4" /> : <Maximize className="h-4 w-4" />}
+        <Button variant="outline" size="icon" onClick={toggleFullscreen} title="Tela cheia">
+          <Maximize className="h-4 w-4" />
         </Button>
         <Button variant="outline" size="icon" onClick={handleRefresh}>
           <RefreshCw className="h-4 w-4" />

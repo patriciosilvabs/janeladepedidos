@@ -32,6 +32,7 @@ export type Database = {
           foody_enabled: boolean | null
           grouping_radius_km: number | null
           id: string
+          kds_default_mode: string | null
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           updated_at: string | null
@@ -55,6 +56,7 @@ export type Database = {
           foody_enabled?: boolean | null
           grouping_radius_km?: number | null
           id?: string
+          kds_default_mode?: string | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           updated_at?: string | null
@@ -78,6 +80,7 @@ export type Database = {
           foody_enabled?: boolean | null
           grouping_radius_km?: number | null
           id?: string
+          kds_default_mode?: string | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           updated_at?: string | null

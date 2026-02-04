@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2 } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { StoresManager } from '@/components/StoresManager';
@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Dialog,
   DialogContent,
@@ -186,7 +187,7 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-6' : 'grid-cols-4'}`}>
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-7' : 'grid-cols-4'}`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
@@ -197,6 +198,12 @@ export function SettingsDialog() {
                 Foody
               </TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
+              {isOwner && (
+                <TabsTrigger value="kds" className="text-xs sm:text-sm">
+                  <Monitor className="h-3 w-3 mr-1 hidden sm:inline" />
+                  KDS
+                </TabsTrigger>
+              )}
               {isOwner && (
                 <TabsTrigger value="sectors" className="text-xs sm:text-sm">
                   <Building2 className="h-3 w-3 mr-1 hidden sm:inline" />
@@ -612,6 +619,57 @@ export function SettingsDialog() {
                 </div>
               </div>
             </TabsContent>
+
+            {isOwner && (
+              <TabsContent value="kds" className="space-y-4 mt-4">
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-base font-medium">Modo de Visualização KDS</Label>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Define como os operadores de cozinha visualizam os pedidos. Esta configuração afeta todos os usuários vinculados a setores KDS.
+                    </p>
+                  </div>
+
+                  <RadioGroup
+                    value={(formData as any).kds_default_mode || 'items'}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, kds_default_mode: value as 'items' | 'orders' } as any)
+                    }
+                    className="space-y-3"
+                  >
+                    <div className="flex items-start space-x-3 p-4 rounded-lg border border-border/50 bg-muted/30">
+                      <RadioGroupItem value="items" id="kds-items" className="mt-1" />
+                      <div className="space-y-1">
+                        <Label htmlFor="kds-items" className="font-medium cursor-pointer">
+                          Por Item
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Cada item do pedido aparece como um card individual. Ideal para cozinhas com múltiplos operadores trabalhando em paralelo.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-start space-x-3 p-4 rounded-lg border border-border/50 bg-muted/30">
+                      <RadioGroupItem value="orders" id="kds-orders" className="mt-1" />
+                      <div className="space-y-1">
+                        <Label htmlFor="kds-orders" className="font-medium cursor-pointer">
+                          Por Pedido
+                        </Label>
+                        <p className="text-sm text-muted-foreground">
+                          Cada pedido aparece como um card único com todos os itens listados. Ideal para cozinhas onde um operador prepara o pedido completo.
+                        </p>
+                      </div>
+                    </div>
+                  </RadioGroup>
+
+                  <div className="p-4 rounded-lg bg-muted/50 border border-border/50">
+                    <p className="text-sm text-muted-foreground">
+                      <strong>Nota:</strong> Administradores podem alternar entre os modos a qualquer momento para visualização. Os operadores sempre verão o modo configurado aqui.
+                    </p>
+                  </div>
+                </div>
+              </TabsContent>
+            )}
 
             {isOwner && (
               <TabsContent value="sectors" className="space-y-4 mt-4">

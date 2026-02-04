@@ -23,6 +23,7 @@ export interface AppSettings {
   dispatched_visibility_minutes: number;
   urgent_production_timeout_minutes: number;
   urgent_bypass_enabled: boolean;
+  kds_default_mode: 'items' | 'orders';
 }
 
 export function useSettings() {
