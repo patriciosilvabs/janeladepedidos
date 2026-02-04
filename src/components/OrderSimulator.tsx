@@ -265,7 +265,7 @@ export function OrderSimulator() {
           </div>
 
           {/* Store Selection */}
-          {stores.length > 0 && (
+          {stores && stores.length > 0 && (
             <div className="space-y-2">
               <Label>Loja (opcional)</Label>
               <Select value={storeId || ''} onValueChange={(v) => setStoreId(v || null)}>
