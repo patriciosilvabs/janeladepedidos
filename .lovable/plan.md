@@ -1,73 +1,144 @@
 
 
-# Corrigir Pedidos Existentes Sem Setor Atribuído
+# Distribuicao Automatica de Itens Entre Bancadas
 
-## Diagnóstico
+## Problema Atual
 
-Os pedidos em produção existem no banco de dados, mas todos os itens estão com `assigned_sector_id = NULL`:
+Quando itens sao criados sem setor atribuido (`assigned_sector_id = NULL`), eles ficam invisiveis para os operadores das bancadas. A solucao atual de atribuir tudo a uma unica bancada nao e ideal pois sobrecarrega um setor.
 
-| Produto | Setor Atribuído |
-|---------|-----------------|
-| Pizza Margherita | NULL |
-| Pizza Quatro Queijos | NULL |
-| Pizza Portuguesa | NULL |
+## Solucao Proposta
 
-Quando o operador da Bancada B faz login, o sistema filtra:
-```
-WHERE assigned_sector_id = 'uuid-bancada-b'
-```
-
-Como todos os itens têm NULL, **nenhum aparece**.
+Implementar uma **distribuicao automatica round-robin** que alterna os itens entre os setores KDS disponiveis (Bancada A e Bancada B).
 
 ---
 
-## Solução em Duas Partes
+## Mudancas Necessarias
 
-### Parte 1: Corrigir Itens Existentes (Migration SQL)
+### 1. Criar Funcao SQL para Distribuicao Automatica
 
-Atualizar os itens que estão com setor NULL para distribuí-los entre os setores existentes. Podemos atribuir todos à Bancada A ou distribuir proporcionalmente:
+Uma funcao no banco de dados que distribui itens sem setor entre as bancadas disponiveis:
 
 ```sql
--- Opção 1: Atribuir todos os itens sem setor à BANCADA A
-UPDATE order_items 
-SET assigned_sector_id = '92e3f369-a599-4c7e-a0a0-29d8719c2161'
-WHERE assigned_sector_id IS NULL;
-
--- OU Opção 2: Atribuir à BANCADA B
-UPDATE order_items 
-SET assigned_sector_id = 'bfbd6e97-509a-4597-94b8-84d907332472'
-WHERE assigned_sector_id IS NULL;
+CREATE OR REPLACE FUNCTION distribute_unassigned_items()
+RETURNS integer
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_kds_sectors uuid[];
+  v_sector_count integer;
+  v_item record;
+  v_index integer := 0;
+  v_updated integer := 0;
+BEGIN
+  -- Buscar setores KDS ativos
+  SELECT ARRAY_AGG(id ORDER BY name) INTO v_kds_sectors
+  FROM sectors
+  WHERE view_type = 'kds';
+  
+  v_sector_count := COALESCE(array_length(v_kds_sectors, 1), 0);
+  
+  IF v_sector_count = 0 THEN
+    RETURN 0;
+  END IF;
+  
+  -- Distribuir itens sem setor em round-robin
+  FOR v_item IN 
+    SELECT id FROM order_items 
+    WHERE assigned_sector_id IS NULL
+    ORDER BY created_at
+  LOOP
+    UPDATE order_items 
+    SET assigned_sector_id = v_kds_sectors[(v_index % v_sector_count) + 1]
+    WHERE id = v_item.id;
+    
+    v_index := v_index + 1;
+    v_updated := v_updated + 1;
+  END LOOP;
+  
+  RETURN v_updated;
+END;
+$$;
 ```
 
-### Parte 2: Testar com Novos Pedidos
+### 2. Atualizar a Funcao `create_order_items_from_json`
 
-Após a correção, o administrador pode usar o **Simulador de Pedidos** que agora tem o campo "Setor de Produção" para criar novos pedidos atribuídos ao setor correto.
+Modificar para distribuir automaticamente quando nenhum setor e especificado:
 
----
-
-## Setores Disponíveis
-
-| Setor | ID |
-|-------|-----|
-| BANCADA A | 92e3f369-a599-4c7e-a0a0-29d8719c2161 |
-| BANCADA B | bfbd6e97-509a-4597-94b8-84d907332472 |
-| DESPACHO | d440ed0f-86b0-45cb-9c9a-f89d8141c23a |
+```sql
+-- Dentro da funcao, se p_default_sector_id for NULL:
+-- Usar round-robin entre setores KDS disponiveis
+```
 
 ---
 
-## Próximos Passos
+## Fluxo de Distribuicao
 
-1. **Executar migration** para atribuir os itens existentes a um setor (escolha entre BANCADA A ou BANCADA B)
-2. **Validar** que os operadores das bancadas agora veem os pedidos
-3. **Testar** criando novos pedidos simulados com o seletor de setor
+```text
+Novo pedido chega (webhook ou simulador)
+        |
+        v
+Setor especificado? ----SIM----> Atribuir ao setor escolhido
+        |
+       NAO
+        |
+        v
+Buscar setores KDS ativos (Bancada A, B...)
+        |
+        v
+Distribuir itens em round-robin:
+  Item 1 -> Bancada A
+  Item 2 -> Bancada B
+  Item 3 -> Bancada A
+  Item 4 -> Bancada B
+  ...
+```
 
 ---
 
-## Comportamento Final
+## Correcao dos Dados Atuais
 
-| Antes | Depois |
-|-------|--------|
-| Operador Bancada A: 0 itens | Operador Bancada A: X itens |
-| Operador Bancada B: 0 itens | Operador Bancada B: Y itens |
-| Admin: Vê todos os itens | Admin: Vê todos os itens |
+Redistribuir os itens existentes entre as bancadas:
+
+```sql
+-- Redistribuir itens que foram todos alocados na Bancada A
+-- Metade vai para Bancada B
+WITH numbered_items AS (
+  SELECT id, ROW_NUMBER() OVER (ORDER BY created_at) as rn
+  FROM order_items
+  WHERE assigned_sector_id = '92e3f369-a599-4c7e-a0a0-29d8719c2161'
+)
+UPDATE order_items 
+SET assigned_sector_id = 'bfbd6e97-509a-4597-94b8-84d907332472'
+FROM numbered_items
+WHERE order_items.id = numbered_items.id
+  AND numbered_items.rn % 2 = 0;
+```
+
+---
+
+## Resultado Esperado
+
+| Cenario | Antes | Depois |
+|---------|-------|--------|
+| 10 itens sem setor | Todos na Bancada A | 5 na A, 5 na B |
+| Novo pedido 3 itens | Nenhuma bancada ve | 2 na A, 1 na B (ou vice-versa) |
+
+---
+
+## Arquivos a Modificar
+
+| Tipo | Arquivo/Recurso | Alteracao |
+|------|-----------------|-----------|
+| SQL | Migration | Criar funcao `distribute_unassigned_items` |
+| SQL | Migration | Atualizar `create_order_items_from_json` para distribuir automaticamente |
+| SQL | Query | Redistribuir itens atuais entre bancadas |
+
+---
+
+## Beneficios
+
+- Carga de trabalho balanceada entre operadores
+- Nenhum item fica "perdido" sem setor
+- Funciona automaticamente para novos pedidos
+- Admin pode sempre sobrescrever escolhendo setor especifico no simulador
 
