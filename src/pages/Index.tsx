@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Header } from '@/components/Header';
 import { Dashboard } from '@/components/Dashboard';
+import { DispatchDashboard } from '@/components/DispatchDashboard';
 import { KDSDashboard } from '@/components/KDSDashboard';
 import { KDSItemsDashboard } from '@/components/kds';
 import { useAuth } from '@/hooks/useAuth';
