@@ -1,141 +1,101 @@
 
 
-# Ocultar Configuracoes de Modo KDS para Usuarios e Simplificar Header em Fullscreen
+# Corrigir Atribuicao de Setor no Simulador de Pedidos
 
 ## Problema Identificado
 
-1. **Abas "Por Item" / "Por Pedido"**: Usuarios comuns conseguem ver e alternar entre modos KDS, mas esta e uma decisao de negocio que deve ser controlada apenas pelo administrador.
+Quando o simulador cria pedidos, os itens sao criados com `assigned_sector_id = NULL`:
 
-2. **Header em modo fullscreen**: Atualmente mostra todas as informacoes (email, badges, botoes de configuracao, etc). O usuario pediu que em fullscreen apareca apenas o botao de fullscreen e informacoes dos pedidos.
+```
+| product_name          | assigned_sector_id |
+|-----------------------|--------------------|
+| Pizza Margherita      | NULL               |
+| Pizza Quatro Queijos  | NULL               |
+| Pizza Portuguesa      | NULL               |
+```
 
-## Solucao Proposta
+Como os usuarios de setores (Bancada A, Bancada B) filtram por `assigned_sector_id`, eles **nao veem nenhum item** quando o valor e NULL.
 
-### Parte 1: Modo KDS Controlado pelo Admin
+## Causa Raiz
 
-**Adicionar campo `kds_default_mode` na tabela `app_settings`**
+No `OrderSimulator.tsx`, a funcao RPC e chamada com setor null:
 
-O admin configura qual modo os operadores KDS verao:
-- `items` (Por Item) - padrao
-- `orders` (Por Pedido)
+```typescript
+await supabase.rpc('create_order_items_from_json', {
+  p_order_id: order.id,
+  p_items: itemsJson,
+  p_default_sector_id: null,  // <-- Problema aqui!
+});
+```
 
-**Logica:**
-- Se usuario e admin/owner: mostra as abas para poder alternar
-- Se usuario e operador comum: usa o modo definido nas configuracoes (sem abas)
+## Solucao
 
-### Parte 2: Header Simplificado em Fullscreen
-
-**Quando em fullscreen:**
-- Esconder: email do usuario, badges (Proprietario), botao de logout, configuracoes, perfil, simulador, refresh, setor
-- Mostrar: apenas o botao de fullscreen (para sair do modo)
-
-**Quando fora do fullscreen:**
-- Mostrar tudo normalmente (comportamento atual)
+Adicionar um campo de selecao de **setor padrao** no simulador de pedidos, permitindo que o admin escolha para qual setor os itens serao atribuidos.
 
 ---
 
-## Mudancas Tecnicas
+## Mudancas Necessarias
 
-### 1. Migration SQL - Adicionar campo kds_default_mode
+### Arquivo: `src/components/OrderSimulator.tsx`
 
-```sql
-ALTER TABLE app_settings 
-ADD COLUMN IF NOT EXISTS kds_default_mode text 
-DEFAULT 'items' 
-CHECK (kds_default_mode IN ('items', 'orders'));
-```
-
-### 2. Arquivo: `src/hooks/useSettings.ts`
-
-Adicionar o novo campo na interface:
+1. Importar o hook `useSectors`
+2. Adicionar estado `sectorId` para o setor selecionado
+3. Renderizar um `<Select>` para escolher o setor
+4. Passar o `sectorId` na chamada RPC em vez de `null`
 
 ```typescript
-export interface AppSettings {
-  // ... campos existentes
-  kds_default_mode: 'items' | 'orders';
-}
-```
+// Adicionar imports
+import { useSectors } from '@/hooks/useSectors';
 
-### 3. Arquivo: `src/pages/Index.tsx`
+// Dentro do componente
+const { sectors } = useSectors();
+const kdsSectors = sectors?.filter(s => s.view_type === 'kds') ?? [];
+const [sectorId, setSectorId] = useState<string | null>(null);
 
-- Buscar `settings.kds_default_mode`
-- Se usuario e admin: mostrar abas e permitir alternar
-- Se usuario nao e admin: usar o modo das configuracoes, sem abas
-
-```typescript
-const { isAdmin } = useAuth();
-const { settings } = useSettings();
-
-// Modo KDS: admin pode alternar, usuario usa o configurado
-const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
-const showKdsTabs = isAdmin && isKDSSector;
-```
-
-### 4. Arquivo: `src/components/Header.tsx`
-
-Receber prop `isFullscreen` e simplificar a exibicao:
-
-```typescript
-// Quando fullscreen, mostrar apenas o botao de sair
-{isFullscreen ? (
-  <Button onClick={toggleFullscreen} title="Sair da tela cheia">
-    <Minimize />
-  </Button>
-) : (
-  // Mostrar todos os elementos normalmente
-  <>
-    {user && (...)}
-    {isAdmin && <OrderSimulator />}
-    {isAdmin && <SettingsDialog />}
-    <EditProfileDialog />
-    <Button onClick={toggleFullscreen}>...</Button>
-    <Button onClick={handleRefresh}>...</Button>
-    <Button onClick={handleLogout}>...</Button>
-  </>
-)}
+// No handleSubmit, usar o sectorId selecionado
+const { error: itemsError } = await supabase.rpc(
+  'create_order_items_from_json',
+  {
+    p_order_id: order.id,
+    p_items: itemsJson,
+    p_default_sector_id: sectorId,  // <-- Agora usa o setor selecionado
+  }
+);
 ```
 
 ---
 
-## Fluxo de Uso
+## Fluxo Corrigido
 
 ```text
-ADMIN abre Configuracoes
-    |
-    v
-Define kds_default_mode = 'items' ou 'orders'
-    |
-    v
-OPERADOR faz login
-    |
-    v
-Index.tsx verifica: isAdmin?
-    |           |
-   SIM         NAO
-    |           |
-    v           v
-Mostra       Usa modo das
-abas         configuracoes
-             (sem abas)
+Admin abre Simulador de Pedidos
+        |
+        v
+Seleciona setor: "BANCADA A" ou "BANCADA B"
+        |
+        v
+Cria pedido simulado
+        |
+        v
+Itens criados com assigned_sector_id = 'uuid-bancada-a'
+        |
+        v
+Usuario da BANCADA A ve os itens em tempo real!
 ```
 
-```text
-USUARIO clica em Fullscreen
-    |
-    v
-Header detecta isFullscreen = true
-    |
-    v
-Esconde: email, badges, logout, config, perfil, refresh
-    |
-    v
-Mostra: apenas botao Minimizar
-    |
-    v
-Usuario clica em Minimizar
-    |
-    v
-Volta ao modo normal com todos elementos
-```
+---
+
+## Interface do Usuario
+
+O simulador tera um novo campo "Setor de Producao":
+
+| Campo              | Valor                          |
+|--------------------|--------------------------------|
+| Cliente            | Joao Silva                     |
+| Bairro             | Manaira                        |
+| Loja (opcional)    | Sem loja especifica            |
+| **Setor de Producao** | BANCADA A / BANCADA B / DESPACHO |
+| Itens do Pedido    | Pizza Margherita (1)           |
 
 ---
 
@@ -143,20 +103,15 @@ Volta ao modo normal com todos elementos
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| Database Migration | Adicionar `kds_default_mode` |
-| `src/hooks/useSettings.ts` | Incluir novo campo na interface |
-| `src/pages/Index.tsx` | Logica de abas apenas para admin |
-| `src/components/Header.tsx` | Simplificar header em fullscreen |
-| `src/components/SettingsDialog.tsx` | Adicionar opcao para configurar modo KDS |
+| `src/components/OrderSimulator.tsx` | Adicionar selecao de setor |
 
 ---
 
 ## Comportamento Final
 
-| Contexto | O que aparece |
-|----------|---------------|
-| Admin (normal) | Abas Por Item/Por Pedido + todos botoes |
-| Admin (fullscreen) | Apenas botao Minimizar |
-| Operador (normal) | Modo definido pelo admin + botoes basicos |
-| Operador (fullscreen) | Apenas botao Minimizar |
+| Cenario | Resultado |
+|---------|-----------|
+| Admin simula pedido com setor "BANCADA A" | Itens aparecem para usuario da BANCADA A |
+| Admin simula pedido com setor "BANCADA B" | Itens aparecem para usuario da BANCADA B |
+| Admin simula pedido sem setor (null) | Itens aparecem apenas para admins (todos) |
 
