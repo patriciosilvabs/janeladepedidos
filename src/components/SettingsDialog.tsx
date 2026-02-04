@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { StoresManager } from '@/components/StoresManager';
@@ -666,6 +666,40 @@ export function SettingsDialog() {
                     <p className="text-sm text-muted-foreground">
                       <strong>Nota:</strong> Administradores podem alternar entre os modos a qualquer momento para visualização. Os operadores sempre verão o modo configurado aqui.
                     </p>
+                  </div>
+
+                  {/* Oven Time Configuration */}
+                  <div className="border-t border-border/50 pt-4 mt-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Flame className="h-4 w-4 text-orange-500" />
+                      <Label className="text-base font-medium">Tempo do Forno</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Define o tempo padrão da esteira do forno. Este tempo é usado para calcular a contagem regressiva quando um item é enviado ao forno.
+                    </p>
+                    
+                    <div className="space-y-2">
+                      <Label htmlFor="oven-time">Duração (segundos)</Label>
+                      <div className="flex items-center gap-3">
+                        <Input
+                          id="oven-time"
+                          type="number"
+                          min={30}
+                          max={600}
+                          value={(formData as any).oven_time_seconds ?? 120}
+                          onChange={(e) =>
+                            setFormData({ ...formData, oven_time_seconds: parseInt(e.target.value) || 120 } as any)
+                          }
+                          className="w-24"
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          = {Math.floor(((formData as any).oven_time_seconds ?? 120) / 60)}m {((formData as any).oven_time_seconds ?? 120) % 60}s
+                        </span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Valores comuns: 90s (1m30s), 120s (2m), 150s (2m30s), 180s (3m)
+                      </p>
+                    </div>
                   </div>
                 </div>
               </TabsContent>

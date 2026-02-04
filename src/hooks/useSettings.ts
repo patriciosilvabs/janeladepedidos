@@ -24,6 +24,7 @@ export interface AppSettings {
   urgent_production_timeout_minutes: number;
   urgent_bypass_enabled: boolean;
   kds_default_mode: 'items' | 'orders';
+  oven_time_seconds: number;
 }
 
 export function useSettings() {

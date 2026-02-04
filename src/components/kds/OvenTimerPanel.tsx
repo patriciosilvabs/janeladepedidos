@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
+import { useSettings } from '@/hooks/useSettings';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -13,10 +14,11 @@ interface OvenItemRowProps {
   onMarkReady: () => void;
   isProcessing: boolean;
   audioEnabled: boolean;
+  ovenTimeSeconds: number;
 }
 
-function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled }: OvenItemRowProps) {
-  const [countdown, setCountdown] = useState<number>(120);
+function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSeconds }: OvenItemRowProps) {
+  const [countdown, setCountdown] = useState<number>(ovenTimeSeconds);
   const [hasPlayedAlert, setHasPlayedAlert] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -68,7 +70,7 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled }: OvenItem
   };
 
   const isUrgent = countdown <= 10;
-  const progressPercent = Math.max(0, Math.min(100, (countdown / 120) * 100));
+  const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
 
   return (
     <div className={cn(
@@ -139,9 +141,13 @@ interface OvenTimerPanelProps {
 
 export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
+  const { settings } = useSettings();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const { toast } = useToast();
+  
+  // Get oven time from settings
+  const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
 
   const handleMarkReady = async (itemId: string) => {
     setProcessingId(itemId);
@@ -205,6 +211,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
             onMarkReady={() => handleMarkReady(item.id)}
             isProcessing={processingId === item.id}
             audioEnabled={audioEnabled}
+            ovenTimeSeconds={ovenTimeSeconds}
           />
         ))}
       </CardContent>
