@@ -15,6 +15,7 @@ const Index = () => {
   const { settings, isLoading: settingsLoading } = useSettings();
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
 
   // Track fullscreen state
   useEffect(() => {
@@ -41,10 +42,27 @@ const Index = () => {
   // KDS mode: admin can toggle, regular users use the configured default
   const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
   const showKdsTabs = isAdmin && isKDSSector;
+  
+  // Show main view tabs for admins without a KDS sector
+  const showMainViewTabs = isAdmin && !isKDSSector;
 
   return (
     <div className="min-h-screen bg-background">
       <Header sectorName={userSector?.name} isFullscreen={isFullscreen}>
+        {/* Main view tabs for admins without KDS sector */}
+        {showMainViewTabs && !isFullscreen && (
+          <Tabs value={mainView} onValueChange={(v) => setMainView(v as 'dashboard' | 'kds')}>
+            <TabsList className="h-8">
+              <TabsTrigger value="dashboard" className="text-xs px-3">
+                Despacho
+              </TabsTrigger>
+              <TabsTrigger value="kds" className="text-xs px-3">
+                KDS Produção
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        )}
+        {/* KDS mode tabs (items vs orders) for admins in KDS sector */}
         {showKdsTabs && !isFullscreen && (
           <Tabs value={kdsMode} onValueChange={(v) => setKdsMode(v as 'orders' | 'items')}>
             <TabsList className="h-8">
@@ -62,7 +80,9 @@ const Index = () => {
         ? (effectiveKdsMode === 'items' 
             ? <KDSItemsDashboard userSector={userSector} /> 
             : <KDSDashboard userSector={userSector} />) 
-        : <Dashboard />
+        : mainView === 'kds'
+          ? <KDSItemsDashboard />
+          : <Dashboard />
       }
     </div>
   );
