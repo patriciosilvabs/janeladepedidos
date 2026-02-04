@@ -133,8 +133,12 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled }: OvenItem
   );
 }
 
-export function OvenTimerPanel() {
-  const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven' });
+interface OvenTimerPanelProps {
+  sectorId?: string;
+}
+
+export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
+  const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const { toast } = useToast();

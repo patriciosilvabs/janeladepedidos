@@ -7,6 +7,7 @@ import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { OrderWithGroup } from '@/types/orders';
 import { Badge } from '@/components/ui/badge';
+import { Sector } from '@/hooks/useSectors';
 
 interface KDSOrderCardProps {
   order: OrderWithGroup;
@@ -131,7 +132,14 @@ function KDSOrderCard({ order, onMarkReady, onMarkReadyUrgent, isProcessing, isU
   );
 }
 
-export function KDSDashboard() {
+interface KDSDashboardProps {
+  userSector?: Sector | null;
+}
+
+export function KDSDashboard({ userSector }: KDSDashboardProps) {
+  // If user has a sector, use it as filter
+  const filterSectorId = userSector?.id;
+  
   const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders();
   const { settings } = useSettings();
   const { toast } = useToast();
