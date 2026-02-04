@@ -1,136 +1,162 @@
 
 
-# Restringir Visualização do KDS "Por Pedido" ao Setor do Usuário
+# Ocultar Configuracoes de Modo KDS para Usuarios e Simplificar Header em Fullscreen
 
-## Problema Atual
+## Problema Identificado
 
-No modo **"Por Pedido"** (`KDSDashboard`), usuários vinculados a um setor específico ainda veem **todos os pedidos pendentes**, em vez de apenas os pedidos que contêm itens do seu setor.
+1. **Abas "Por Item" / "Por Pedido"**: Usuarios comuns conseguem ver e alternar entre modos KDS, mas esta e uma decisao de negocio que deve ser controlada apenas pelo administrador.
 
-**Cenário:**
-- Usuário `user-a@domhelderpizzaria.com.br` está vinculado ao setor "BANCADA A"
-- Deveria ver apenas pedidos que têm itens atribuídos ao setor "BANCADA A"
-- Atualmente vê todos os pedidos do sistema
+2. **Header em modo fullscreen**: Atualmente mostra todas as informacoes (email, badges, botoes de configuracao, etc). O usuario pediu que em fullscreen apareca apenas o botao de fullscreen e informacoes dos pedidos.
 
-## Análise Técnica
+## Solucao Proposta
 
-| Tabela | Campo de Setor |
-|--------|----------------|
-| `orders` | Não tem `sector_id` |
-| `order_items` | `assigned_sector_id` |
+### Parte 1: Modo KDS Controlado pelo Admin
 
-Um pedido pode ter itens de **múltiplos setores** (ex: uma pizza na BANCADA A e um doce na BANCADA B).
+**Adicionar campo `kds_default_mode` na tabela `app_settings`**
 
-## Solução Proposta
+O admin configura qual modo os operadores KDS verao:
+- `items` (Por Item) - padrao
+- `orders` (Por Pedido)
 
-### Abordagem: Filtrar Pedidos por Itens do Setor
+**Logica:**
+- Se usuario e admin/owner: mostra as abas para poder alternar
+- Se usuario e operador comum: usa o modo definido nas configuracoes (sem abas)
 
-Se o usuário tem setor vinculado, buscar apenas pedidos que tenham pelo menos um `order_item` com `assigned_sector_id = userSector.id`.
+### Parte 2: Header Simplificado em Fullscreen
 
-### Mudanças Necessárias
+**Quando em fullscreen:**
+- Esconder: email do usuario, badges (Proprietario), botao de logout, configuracoes, perfil, simulador, refresh, setor
+- Mostrar: apenas o botao de fullscreen (para sair do modo)
 
-**Arquivo: `src/hooks/useOrders.ts`**
+**Quando fora do fullscreen:**
+- Mostrar tudo normalmente (comportamento atual)
 
-Adicionar parâmetro opcional `sectorId` para filtrar pedidos:
+---
+
+## Mudancas Tecnicas
+
+### 1. Migration SQL - Adicionar campo kds_default_mode
+
+```sql
+ALTER TABLE app_settings 
+ADD COLUMN IF NOT EXISTS kds_default_mode text 
+DEFAULT 'items' 
+CHECK (kds_default_mode IN ('items', 'orders'));
+```
+
+### 2. Arquivo: `src/hooks/useSettings.ts`
+
+Adicionar o novo campo na interface:
 
 ```typescript
-interface UseOrdersOptions {
-  sectorId?: string;
-}
-
-export function useOrders(options: UseOrdersOptions = {}) {
-  const { sectorId } = options;
-  
-  const { data: orders = [], isLoading, error } = useQuery({
-    queryKey: ['orders', sectorId],
-    queryFn: async () => {
-      let query = supabase
-        .from('orders')
-        .select('*, delivery_groups(*), stores(*)')
-        .order('created_at', { ascending: true });
-
-      // Se tem filtro de setor, buscar apenas pedidos com itens desse setor
-      if (sectorId) {
-        // Buscar IDs de pedidos que têm itens neste setor
-        const { data: itemData } = await supabase
-          .from('order_items')
-          .select('order_id')
-          .eq('assigned_sector_id', sectorId);
-        
-        const orderIds = [...new Set(itemData?.map(i => i.order_id) || [])];
-        
-        if (orderIds.length === 0) {
-          return []; // Nenhum pedido para este setor
-        }
-        
-        query = query.in('id', orderIds);
-      }
-      
-      const { data, error } = await query;
-      if (error) throw error;
-      return data as OrderWithGroup[];
-    },
-  });
-  // ...
+export interface AppSettings {
+  // ... campos existentes
+  kds_default_mode: 'items' | 'orders';
 }
 ```
 
-**Arquivo: `src/components/KDSDashboard.tsx`**
+### 3. Arquivo: `src/pages/Index.tsx`
 
-Passar o `filterSectorId` para o hook:
+- Buscar `settings.kds_default_mode`
+- Se usuario e admin: mostrar abas e permitir alternar
+- Se usuario nao e admin: usar o modo das configuracoes, sem abas
 
 ```typescript
-export function KDSDashboard({ userSector }: KDSDashboardProps) {
-  const filterSectorId = userSector?.id;
-  
-  // Agora filtrado pelo setor do usuário
-  const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders({
-    sectorId: filterSectorId,
-  });
-  // ...
-}
+const { isAdmin } = useAuth();
+const { settings } = useSettings();
+
+// Modo KDS: admin pode alternar, usuario usa o configurado
+const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
+const showKdsTabs = isAdmin && isKDSSector;
 ```
 
-## Fluxo Corrigido
+### 4. Arquivo: `src/components/Header.tsx`
+
+Receber prop `isFullscreen` e simplificar a exibicao:
+
+```typescript
+// Quando fullscreen, mostrar apenas o botao de sair
+{isFullscreen ? (
+  <Button onClick={toggleFullscreen} title="Sair da tela cheia">
+    <Minimize />
+  </Button>
+) : (
+  // Mostrar todos os elementos normalmente
+  <>
+    {user && (...)}
+    {isAdmin && <OrderSimulator />}
+    {isAdmin && <SettingsDialog />}
+    <EditProfileDialog />
+    <Button onClick={toggleFullscreen}>...</Button>
+    <Button onClick={handleRefresh}>...</Button>
+    <Button onClick={handleLogout}>...</Button>
+  </>
+)}
+```
+
+---
+
+## Fluxo de Uso
 
 ```text
-Usuario KDS faz login
-        |
-        v
-Index.tsx detecta userSector.view_type === 'kds'
-        |
-        v
-Renderiza KDSDashboard com userSector prop
-        |
-        v
-useOrders({ sectorId: userSector.id })
-        |
-        v
-Query busca order_items do setor -> extrai order_ids
-        |
-        v
-Query busca orders com IN(order_ids)
-        |
-        v
-Usuario ve APENAS pedidos com itens do seu setor
+ADMIN abre Configuracoes
+    |
+    v
+Define kds_default_mode = 'items' ou 'orders'
+    |
+    v
+OPERADOR faz login
+    |
+    v
+Index.tsx verifica: isAdmin?
+    |           |
+   SIM         NAO
+    |           |
+    v           v
+Mostra       Usa modo das
+abas         configuracoes
+             (sem abas)
 ```
+
+```text
+USUARIO clica em Fullscreen
+    |
+    v
+Header detecta isFullscreen = true
+    |
+    v
+Esconde: email, badges, logout, config, perfil, refresh
+    |
+    v
+Mostra: apenas botao Minimizar
+    |
+    v
+Usuario clica em Minimizar
+    |
+    v
+Volta ao modo normal com todos elementos
+```
+
+---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteração |
+| Arquivo | Alteracao |
 |---------|-----------|
-| `src/hooks/useOrders.ts` | Aceitar `sectorId` opcional e filtrar query |
-| `src/components/KDSDashboard.tsx` | Passar `filterSectorId` para hook |
+| Database Migration | Adicionar `kds_default_mode` |
+| `src/hooks/useSettings.ts` | Incluir novo campo na interface |
+| `src/pages/Index.tsx` | Logica de abas apenas para admin |
+| `src/components/Header.tsx` | Simplificar header em fullscreen |
+| `src/components/SettingsDialog.tsx` | Adicionar opcao para configurar modo KDS |
+
+---
 
 ## Comportamento Final
 
-| Tipo de Usuário | Modo Por Pedido |
-|-----------------|-----------------|
-| Operador (com setor) | Vê apenas pedidos que contêm itens do seu setor |
-| Admin/Owner (sem setor) | Vê todos os pedidos (comportamento atual) |
-
-## Benefícios
-
-- Consistência entre modos "Por Item" e "Por Pedido"
-- Operadores focam apenas nos pedidos relevantes ao seu setor
-- Administradores mantêm visão global para gerenciamento
+| Contexto | O que aparece |
+|----------|---------------|
+| Admin (normal) | Abas Por Item/Por Pedido + todos botoes |
+| Admin (fullscreen) | Apenas botao Minimizar |
+| Operador (normal) | Modo definido pelo admin + botoes basicos |
+| Operador (fullscreen) | Apenas botao Minimizar |
 
