@@ -21,6 +21,7 @@ import {
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 import { useStores } from '@/hooks/useStores';
+import { useSectors } from '@/hooks/useSectors';
 import { Plus, Trash2, Loader2, Beaker, Pizza } from 'lucide-react';
 
 interface SimulatedItem {
@@ -56,11 +57,14 @@ export function OrderSimulator() {
   const [customerName, setCustomerName] = useState('');
   const [neighborhood, setNeighborhood] = useState('');
   const [storeId, setStoreId] = useState<string | null>(null);
+  const [sectorId, setSectorId] = useState<string | null>(null);
   const [items, setItems] = useState<SimulatedItem[]>([
     { name: 'Pizza Margherita', quantity: 1, notes: '' },
   ]);
   const { toast } = useToast();
   const { stores } = useStores();
+  const { sectors } = useSectors();
+  const kdsSectors = sectors?.filter(s => s.view_type === 'kds') ?? [];
 
   const addItem = () => {
     const randomPizza = PIZZA_PRESETS[Math.floor(Math.random() * PIZZA_PRESETS.length)];
@@ -154,7 +158,7 @@ export function OrderSimulator() {
         {
           p_order_id: order.id,
           p_items: itemsJson,
-          p_default_sector_id: null,
+          p_default_sector_id: sectorId,
         }
       );
 
@@ -276,6 +280,24 @@ export function OrderSimulator() {
                   <SelectItem value="">Sem loja específica</SelectItem>
                   {stores.map((store) => (
                     <SelectItem key={store.id} value={store.id}>{store.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Sector Selection */}
+          {kdsSectors.length > 0 && (
+            <div className="space-y-2">
+              <Label>Setor de Produção</Label>
+              <Select value={sectorId || ''} onValueChange={(v) => setSectorId(v || null)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o setor..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">Sem setor (visível apenas para admins)</SelectItem>
+                  {kdsSectors.map((sector) => (
+                    <SelectItem key={sector.id} value={sector.id}>{sector.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
