@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { useQueryClient } from '@tanstack/react-query';
 import { SettingsDialog } from '@/components/SettingsDialog';
 import { EditProfileDialog } from '@/components/EditProfileDialog';
+import { OrderSimulator } from '@/components/OrderSimulator';
 import { useAuth } from '@/hooks/useAuth';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
@@ -94,6 +95,7 @@ export function Header({ sectorName, children }: HeaderProps) {
             </span>
           </div>
         )}
+        {isAdmin && <OrderSimulator />}
         {isAdmin && <SettingsDialog />}
         <EditProfileDialog />
         <Button variant="outline" size="icon" onClick={toggleFullscreen} title={isFullscreen ? "Sair da tela cheia" : "Tela cheia"}>
