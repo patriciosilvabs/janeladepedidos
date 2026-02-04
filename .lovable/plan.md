@@ -1,125 +1,136 @@
 
 
-# Correção: Erro 406 ao Salvar Configurações
+# Restringir Visualização do KDS "Por Pedido" ao Setor do Usuário
 
-## Problema Identificado
+## Problema Atual
 
-O erro ocorre porque as tabelas `app_settings` e `dynamic_buffer_settings` estão **vazias**. O código tenta fazer `UPDATE` em uma linha com `id='default'` que não existe.
+No modo **"Por Pedido"** (`KDSDashboard`), usuários vinculados a um setor específico ainda veem **todos os pedidos pendentes**, em vez de apenas os pedidos que contêm itens do seu setor.
 
-**Erro**: `PGRST116 - The result contains 0 rows`
+**Cenário:**
+- Usuário `user-a@domhelderpizzaria.com.br` está vinculado ao setor "BANCADA A"
+- Deveria ver apenas pedidos que têm itens atribuídos ao setor "BANCADA A"
+- Atualmente vê todos os pedidos do sistema
 
-## Causa Raiz
+## Análise Técnica
 
-Ambos os hooks usam `.update()` para salvar:
-- `useSettings.ts` → linha 50: `.update(newSettings).eq('id', 'default')`  
-- `useDynamicBufferSettings.ts` → linha 50: `.update({ ...updates }).eq('id', 'default')`
+| Tabela | Campo de Setor |
+|--------|----------------|
+| `orders` | Não tem `sector_id` |
+| `order_items` | `assigned_sector_id` |
 
-Como não existe linha com `id='default'`, o UPDATE não afeta nenhum registro e o `.single()` falha.
+Um pedido pode ter itens de **múltiplos setores** (ex: uma pizza na BANCADA A e um doce na BANCADA B).
 
-## Solução
+## Solução Proposta
 
-**Duas partes:**
+### Abordagem: Filtrar Pedidos por Itens do Setor
 
-### Parte 1: Inserir Dados Iniciais no Banco
+Se o usuário tem setor vinculado, buscar apenas pedidos que tenham pelo menos um `order_item` com `assigned_sector_id = userSector.id`.
 
-Executar SQL migration para criar as linhas padrão:
+### Mudanças Necessárias
 
-```sql
--- Inserir configurações padrão se não existirem
-INSERT INTO app_settings (id)
-VALUES ('default')
-ON CONFLICT (id) DO NOTHING;
+**Arquivo: `src/hooks/useOrders.ts`**
 
-INSERT INTO dynamic_buffer_settings (id)
-VALUES ('default')
-ON CONFLICT (id) DO NOTHING;
-```
-
-### Parte 2: Modificar Hooks para Usar Upsert
-
-Para evitar o problema no futuro, alterar os hooks para usar **upsert** (insert ou update):
-
-**Arquivo: `src/hooks/useSettings.ts`**
+Adicionar parâmetro opcional `sectorId` para filtrar pedidos:
 
 ```typescript
-// ANTES (linha 46-57):
-const saveSettings = useMutation({
-  mutationFn: async (newSettings: Partial<AppSettings>) => {
-    const { data, error } = await supabase
-      .from('app_settings')
-      .update(newSettings)
-      .eq('id', 'default')
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
-  // ...
-});
+interface UseOrdersOptions {
+  sectorId?: string;
+}
 
-// DEPOIS:
-const saveSettings = useMutation({
-  mutationFn: async (newSettings: Partial<AppSettings>) => {
-    const { data, error } = await supabase
-      .from('app_settings')
-      .upsert({ id: 'default', ...newSettings })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
+export function useOrders(options: UseOrdersOptions = {}) {
+  const { sectorId } = options;
+  
+  const { data: orders = [], isLoading, error } = useQuery({
+    queryKey: ['orders', sectorId],
+    queryFn: async () => {
+      let query = supabase
+        .from('orders')
+        .select('*, delivery_groups(*), stores(*)')
+        .order('created_at', { ascending: true });
+
+      // Se tem filtro de setor, buscar apenas pedidos com itens desse setor
+      if (sectorId) {
+        // Buscar IDs de pedidos que têm itens neste setor
+        const { data: itemData } = await supabase
+          .from('order_items')
+          .select('order_id')
+          .eq('assigned_sector_id', sectorId);
+        
+        const orderIds = [...new Set(itemData?.map(i => i.order_id) || [])];
+        
+        if (orderIds.length === 0) {
+          return []; // Nenhum pedido para este setor
+        }
+        
+        query = query.in('id', orderIds);
+      }
+      
+      const { data, error } = await query;
+      if (error) throw error;
+      return data as OrderWithGroup[];
+    },
+  });
   // ...
-});
+}
 ```
 
-**Arquivo: `src/hooks/useDynamicBufferSettings.ts`**
+**Arquivo: `src/components/KDSDashboard.tsx`**
+
+Passar o `filterSectorId` para o hook:
 
 ```typescript
-// ANTES (linha 46-57):
-const updateSettings = useMutation({
-  mutationFn: async (updates: Partial<DynamicBufferSettings>) => {
-    const { data, error } = await supabase
-      .from('dynamic_buffer_settings')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('id', 'default')
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
+export function KDSDashboard({ userSector }: KDSDashboardProps) {
+  const filterSectorId = userSector?.id;
+  
+  // Agora filtrado pelo setor do usuário
+  const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders({
+    sectorId: filterSectorId,
+  });
   // ...
-});
-
-// DEPOIS:
-const updateSettings = useMutation({
-  mutationFn: async (updates: Partial<DynamicBufferSettings>) => {
-    const { data, error } = await supabase
-      .from('dynamic_buffer_settings')
-      .upsert({ 
-        id: 'default', 
-        ...updates, 
-        updated_at: new Date().toISOString() 
-      })
-      .select()
-      .single();
-    if (error) throw error;
-    return data;
-  },
-  // ...
-});
+}
 ```
 
-## Resumo das Mudanças
+## Fluxo Corrigido
 
-| Componente | Ação |
-|------------|------|
-| Database Migration | Inserir linhas `id='default'` nas tabelas |
-| `useSettings.ts` | Trocar `.update()` por `.upsert()` |
-| `useDynamicBufferSettings.ts` | Trocar `.update()` por `.upsert()` |
+```text
+Usuario KDS faz login
+        |
+        v
+Index.tsx detecta userSector.view_type === 'kds'
+        |
+        v
+Renderiza KDSDashboard com userSector prop
+        |
+        v
+useOrders({ sectorId: userSector.id })
+        |
+        v
+Query busca order_items do setor -> extrai order_ids
+        |
+        v
+Query busca orders com IN(order_ids)
+        |
+        v
+Usuario ve APENAS pedidos com itens do seu setor
+```
+
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/hooks/useOrders.ts` | Aceitar `sectorId` opcional e filtrar query |
+| `src/components/KDSDashboard.tsx` | Passar `filterSectorId` para hook |
+
+## Comportamento Final
+
+| Tipo de Usuário | Modo Por Pedido |
+|-----------------|-----------------|
+| Operador (com setor) | Vê apenas pedidos que contêm itens do seu setor |
+| Admin/Owner (sem setor) | Vê todos os pedidos (comportamento atual) |
 
 ## Benefícios
 
-- Erro 406 corrigido imediatamente após migration
-- Sistema resiliente: upsert cria o registro automaticamente se não existir
-- Configurações funcionam corretamente para novos deployments
+- Consistência entre modos "Por Item" e "Por Pedido"
+- Operadores focam apenas nos pedidos relevantes ao seu setor
+- Administradores mantêm visão global para gerenciamento
 
