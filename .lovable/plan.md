@@ -1,63 +1,129 @@
 
+# Restringir Visibilidade de Itens por Setor do Usuario
 
-# Correção: Tela em Branco no Login de Usuário KDS
+## Problema Atual
 
-## Problema Identificado
+Usuarios vinculados a um setor especifico (ex: "BANCADA A") conseguem ver itens de **todos** os setores KDS atraves das abas. Isso quebra a separacao logica de areas de producao.
 
-Ao fazer login com uma conta de usuário KDS (ex: `user-a@domhelderpizzaria.com.br`), a tela fica em branco sem mostrar a interface do KDS.
+## Situacao Identificada
 
-**Causa Raiz:** No componente `KDSItemsDashboard.tsx`, linha 16:
-```tsx
-const kdsSectors = useMemo(
-  () => sectors.filter((s) => s.view_type === 'kds'),
-  [sectors]
-);
-```
+| Usuario | Setor Vinculado | O que deveria ver |
+|---------|-----------------|-------------------|
+| Owner (sem setor) | Nenhum | Dashboard de gerenciamento |
+| user-a@domhelderpizzaria.com.br | BANCADA A | **Somente** itens do setor BANCADA A |
 
-O `sectors` pode ser `undefined` enquanto a query está carregando. O `useMemo` é executado antes do check de `isLoading`, causando o erro `Cannot read properties of undefined (reading 'filter')`.
+## Solucao Proposta
 
----
+Modificar `KDSItemsDashboard` para:
+1. Receber o `userSector` do usuario logado
+2. Se o usuario esta vinculado a um setor, mostrar **apenas** esse setor (sem abas)
+3. Se o usuario nao esta vinculado a nenhum setor (admin/gerente), manter comportamento atual com todas as abas
 
-## Solucao
-
-Adicionar null-safety check no `useMemo`:
-
-**Arquivo:** `src/components/kds/KDSItemsDashboard.tsx`
-
-```typescript
-// Linha 15-18 - ANTES:
-const kdsSectors = useMemo(
-  () => sectors.filter((s) => s.view_type === 'kds'),
-  [sectors]
-);
-
-// DEPOIS:
-const kdsSectors = useMemo(
-  () => sectors?.filter((s) => s.view_type === 'kds') ?? [],
-  [sectors]
-);
-```
-
----
-
-## Fluxo Corrigido
+### Fluxo Atualizado
 
 ```text
-1. Usuario KDS faz login
-2. Index.tsx busca sector do usuario via useUserSector()
-3. userSector.view_type === 'kds' -> renderiza KDSItemsDashboard
-4. useSectors() retorna sectors = undefined enquanto carrega
-5. kdsSectors = sectors?.filter(...) ?? [] -> retorna array vazio (sem crash)
-6. isLoading = true -> mostra loader
-7. Quando sectors carrega, kdsSectors e calculado com dados reais
-8. Interface KDS aparece corretamente
+Usuario faz login
+       |
+       v
+Index.tsx busca userSector via useUserSector()
+       |
+       v
+userSector.view_type === 'kds'?
+    |            |
+   SIM          NAO
+    |            |
+    v            v
+KDSItemsDashboard   Dashboard (gerenciamento)
+com userSector.id
+    |
+    v
+Filtra items APENAS do setor do usuario
 ```
 
----
+## Mudancas Tecnicas
+
+### Arquivo: `src/pages/Index.tsx`
+
+Passar o `userSector` como prop para o `KDSItemsDashboard`:
+
+```tsx
+// ANTES (linha 45):
+{isKDSSector 
+  ? (kdsMode === 'items' ? <KDSItemsDashboard /> : <KDSDashboard />) 
+  : <Dashboard />
+}
+
+// DEPOIS:
+{isKDSSector 
+  ? (kdsMode === 'items' 
+    ? <KDSItemsDashboard userSector={userSector} /> 
+    : <KDSDashboard userSector={userSector} />) 
+  : <Dashboard />
+}
+```
+
+### Arquivo: `src/components/kds/KDSItemsDashboard.tsx`
+
+1. Aceitar prop `userSector`
+2. Se usuario tem setor vinculado, mostrar apenas itens desse setor (sem abas)
+3. Filtrar useOrderItems pelo sectorId do usuario
+
+```tsx
+// Interface para props
+interface KDSItemsDashboardProps {
+  userSector?: Sector | null;
+}
+
+export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
+  // Se usuario tem setor especifico, usar como filtro
+  const filterSectorId = userSector?.id;
+  
+  // Buscar items filtrados pelo setor do usuario
+  const { items, pendingItems, ... } = useOrderItems({ 
+    sectorId: filterSectorId 
+  });
+  
+  // ...
+  
+  // Se usuario esta vinculado a um setor, NAO mostrar abas
+  // Mostrar apenas a fila do seu setor
+  if (filterSectorId) {
+    return (
+      <div className="flex-1">
+        <SectorQueuePanel 
+          sectorId={filterSectorId} 
+          sectorName={userSector?.name || 'Fila de Producao'} 
+        />
+      </div>
+    );
+  }
+  
+  // Comportamento original para admins (sem setor vinculado)
+  // ... manter logica de abas
+}
+```
+
+### Arquivo: `src/components/KDSDashboard.tsx`
+
+Aplicar a mesma logica para o modo "Por Pedido", restringindo pelos pedidos do setor do usuario.
+
+## Comportamento Final
+
+| Tipo de Usuario | Interface |
+|-----------------|-----------|
+| Operador KDS (vinculado a setor) | Ve apenas itens do seu setor, sem abas |
+| Admin/Owner (sem setor vinculado) | Ve todos os setores com abas (comportamento atual) |
+
+## Arquivos a Modificar
+
+| Arquivo | Acao |
+|---------|------|
+| `src/pages/Index.tsx` | Passar userSector como prop |
+| `src/components/kds/KDSItemsDashboard.tsx` | Filtrar por setor do usuario |
+| `src/components/KDSDashboard.tsx` | Aplicar mesma logica |
 
 ## Beneficios
 
-- Interface KDS carrega corretamente para usuarios vinculados a setores KDS
-- Evita crashes durante o carregamento inicial
-- Padroniza o null-safety em todo o projeto
-
+- Operadores veem apenas itens relevantes ao seu setor
+- Evita confusao entre areas de producao
+- Mantém flexibilidade para admins visualizarem todos os setores
