@@ -7,7 +7,6 @@ import {
   Play, 
   Loader2, 
   Flame, 
-  Check, 
   Clock, 
   User,
   XCircle 
@@ -18,7 +17,6 @@ interface KDSItemCardProps {
   onClaim: () => void;
   onRelease: () => void;
   onSendToOven: () => void;
-  onMarkReady: () => void;
   isProcessing: boolean;
   currentUserId?: string;
 }
@@ -28,60 +26,38 @@ export function KDSItemCard({
   onClaim,
   onRelease,
   onSendToOven,
-  onMarkReady,
   isProcessing,
   currentUserId,
 }: KDSItemCardProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
-  const [ovenCountdown, setOvenCountdown] = useState<number | null>(null);
 
   const orderId = item.orders?.cardapioweb_order_id || 
                   item.orders?.external_id || 
                   item.order_id.slice(0, 8);
 
   const isOwnClaim = item.claimed_by === currentUserId;
-  const isClaimed = !!item.claimed_by && item.status === 'in_prep';
+  const isValidStatus = item.status === 'pending' || item.status === 'in_prep';
 
   // Elapsed time for pending/in_prep items
   useEffect(() => {
-    if (item.status === 'pending' || item.status === 'in_prep') {
-      const calculateElapsed = () => {
-        const start = item.status === 'in_prep' && item.claimed_at 
-          ? new Date(item.claimed_at) 
-          : new Date(item.created_at);
-        return Math.floor((Date.now() - start.getTime()) / 1000);
-      };
+    if (!isValidStatus) return;
 
-      setElapsedTime(calculateElapsed());
-      const interval = setInterval(() => setElapsedTime(calculateElapsed()), 1000);
-      return () => clearInterval(interval);
-    }
-  }, [item.status, item.claimed_at, item.created_at]);
+    const calculateElapsed = () => {
+      const start = item.status === 'in_prep' && item.claimed_at 
+        ? new Date(item.claimed_at) 
+        : new Date(item.created_at);
+      return Math.floor((Date.now() - start.getTime()) / 1000);
+    };
 
-  // Countdown for oven items
-  useEffect(() => {
-    if (item.status === 'in_oven' && item.estimated_exit_at) {
-      const calculateRemaining = () => {
-        const exit = new Date(item.estimated_exit_at!).getTime();
-        const remaining = Math.max(0, Math.floor((exit - Date.now()) / 1000));
-        return remaining;
-      };
+    setElapsedTime(calculateElapsed());
+    const interval = setInterval(() => setElapsedTime(calculateElapsed()), 1000);
+    return () => clearInterval(interval);
+  }, [item.status, item.claimed_at, item.created_at, isValidStatus]);
 
-      setOvenCountdown(calculateRemaining());
-      const interval = setInterval(() => {
-        const remaining = calculateRemaining();
-        setOvenCountdown(remaining);
-        
-        // Auto-complete when timer reaches 0
-        if (remaining === 0) {
-          onMarkReady();
-          clearInterval(interval);
-        }
-      }, 1000);
-      
-      return () => clearInterval(interval);
-    }
-  }, [item.status, item.estimated_exit_at, onMarkReady]);
+  // Only render for pending and in_prep statuses
+  if (!isValidStatus) {
+    return null;
+  }
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -90,20 +66,10 @@ export function KDSItemCard({
   };
 
   const getStatusColor = () => {
-    switch (item.status) {
-      case 'pending':
-        return 'bg-amber-500/10 border-amber-500/30';
-      case 'in_prep':
-        return 'bg-blue-500/10 border-blue-500/30';
-      case 'in_oven':
-        return ovenCountdown && ovenCountdown <= 10 
-          ? 'bg-red-500/20 border-red-500 animate-pulse' 
-          : 'bg-orange-500/10 border-orange-500/30';
-      case 'ready':
-        return 'bg-green-500/10 border-green-500/30';
-      default:
-        return 'bg-muted border-border';
+    if (item.status === 'pending') {
+      return 'bg-amber-500/10 border-amber-500/30';
     }
+    return 'bg-blue-500/10 border-blue-500/30'; // in_prep
   };
 
   const renderAction = () => {
@@ -115,76 +81,47 @@ export function KDSItemCard({
       );
     }
 
-    switch (item.status) {
-      case 'pending':
-        return (
-          <Button
-            onClick={onClaim}
-            className="w-full bg-amber-600 hover:bg-amber-700 text-white"
-          >
-            <Play className="h-4 w-4 mr-1" />
-            INICIAR
-          </Button>
-        );
-
-      case 'in_prep':
-        if (isOwnClaim) {
-          return (
-            <div className="flex gap-1">
-              <Button
-                onClick={onSendToOven}
-                className="flex-1 bg-orange-600 hover:bg-orange-700 text-white"
-              >
-                <Flame className="h-4 w-4 mr-1" />
-                FORNO
-              </Button>
-              <Button
-                onClick={onRelease}
-                variant="outline"
-                size="icon"
-                className="border-destructive text-destructive hover:bg-destructive/10"
-              >
-                <XCircle className="h-4 w-4" />
-              </Button>
-            </div>
-          );
-        }
-        return (
-          <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs py-2">
-            <User className="h-3 w-3" />
-            Em preparo...
-          </div>
-        );
-
-      case 'in_oven':
-        return (
-          <Button
-            onClick={onMarkReady}
-            className={cn(
-              "w-full text-white",
-              ovenCountdown && ovenCountdown <= 10
-                ? "bg-red-600 hover:bg-red-700 animate-pulse"
-                : "bg-green-600 hover:bg-green-700"
-            )}
-          >
-            <Check className="h-4 w-4 mr-1" />
-            {ovenCountdown !== null && ovenCountdown > 0 
-              ? formatTime(ovenCountdown) 
-              : 'PRONTO!'}
-          </Button>
-        );
-
-      case 'ready':
-        return (
-          <div className="flex items-center justify-center gap-1 text-green-600 font-medium py-2">
-            <Check className="h-4 w-4" />
-            Pronto
-          </div>
-        );
-
-      default:
-        return null;
+    if (item.status === 'pending') {
+      return (
+        <Button
+          onClick={onClaim}
+          className="w-full bg-amber-600 hover:bg-amber-700"
+        >
+          <Play className="h-4 w-4 mr-1" />
+          INICIAR
+        </Button>
+      );
     }
+
+    // in_prep status
+    if (isOwnClaim) {
+      return (
+        <div className="flex gap-1">
+          <Button
+            onClick={onSendToOven}
+            className="flex-1 bg-orange-600 hover:bg-orange-700"
+          >
+            <Flame className="h-4 w-4 mr-1" />
+            FORNO
+          </Button>
+          <Button
+            onClick={onRelease}
+            variant="outline"
+            size="icon"
+            className="border-destructive text-destructive hover:bg-destructive/10"
+          >
+            <XCircle className="h-4 w-4" />
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <div className="flex items-center justify-center gap-1 text-muted-foreground text-xs py-2">
+        <User className="h-3 w-3" />
+        Em preparo...
+      </div>
+    );
   };
 
   return (
@@ -197,24 +134,10 @@ export function KDSItemCard({
         <Badge variant="outline" className="font-mono text-xs">
           #{orderId}
         </Badge>
-        {(item.status === 'pending' || item.status === 'in_prep') && (
-          <div className="flex items-center gap-1 text-muted-foreground text-xs">
-            <Clock className="h-3 w-3" />
-            {formatTime(elapsedTime)}
-          </div>
-        )}
-        {item.status === 'in_oven' && ovenCountdown !== null && (
-          <Badge 
-            variant={ovenCountdown <= 10 ? "destructive" : "secondary"}
-            className={cn(
-              "font-mono",
-              ovenCountdown <= 10 && "animate-pulse"
-            )}
-          >
-            <Flame className="h-3 w-3 mr-1" />
-            {formatTime(ovenCountdown)}
-          </Badge>
-        )}
+        <div className="flex items-center gap-1 text-muted-foreground text-xs">
+          <Clock className="h-3 w-3" />
+          {formatTime(elapsedTime)}
+        </div>
       </div>
 
       {/* Product Info */}

@@ -193,7 +193,6 @@ export function SectorQueuePanel({
                 onClaim={() => handleClaim(item.id)}
                 onRelease={() => handleRelease(item.id)}
                 onSendToOven={() => handleSendToOven(item.id)}
-                onMarkReady={() => handleMarkReady(item.id)}
                 isProcessing={processingId === item.id}
                 currentUserId={user?.id}
               />
