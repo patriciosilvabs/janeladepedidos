@@ -1,117 +1,73 @@
 
 
-# Corrigir Atribuicao de Setor no Simulador de Pedidos
+# Corrigir Pedidos Existentes Sem Setor Atribuído
 
-## Problema Identificado
+## Diagnóstico
 
-Quando o simulador cria pedidos, os itens sao criados com `assigned_sector_id = NULL`:
+Os pedidos em produção existem no banco de dados, mas todos os itens estão com `assigned_sector_id = NULL`:
 
+| Produto | Setor Atribuído |
+|---------|-----------------|
+| Pizza Margherita | NULL |
+| Pizza Quatro Queijos | NULL |
+| Pizza Portuguesa | NULL |
+
+Quando o operador da Bancada B faz login, o sistema filtra:
 ```
-| product_name          | assigned_sector_id |
-|-----------------------|--------------------|
-| Pizza Margherita      | NULL               |
-| Pizza Quatro Queijos  | NULL               |
-| Pizza Portuguesa      | NULL               |
-```
-
-Como os usuarios de setores (Bancada A, Bancada B) filtram por `assigned_sector_id`, eles **nao veem nenhum item** quando o valor e NULL.
-
-## Causa Raiz
-
-No `OrderSimulator.tsx`, a funcao RPC e chamada com setor null:
-
-```typescript
-await supabase.rpc('create_order_items_from_json', {
-  p_order_id: order.id,
-  p_items: itemsJson,
-  p_default_sector_id: null,  // <-- Problema aqui!
-});
+WHERE assigned_sector_id = 'uuid-bancada-b'
 ```
 
-## Solucao
-
-Adicionar um campo de selecao de **setor padrao** no simulador de pedidos, permitindo que o admin escolha para qual setor os itens serao atribuidos.
+Como todos os itens têm NULL, **nenhum aparece**.
 
 ---
 
-## Mudancas Necessarias
+## Solução em Duas Partes
 
-### Arquivo: `src/components/OrderSimulator.tsx`
+### Parte 1: Corrigir Itens Existentes (Migration SQL)
 
-1. Importar o hook `useSectors`
-2. Adicionar estado `sectorId` para o setor selecionado
-3. Renderizar um `<Select>` para escolher o setor
-4. Passar o `sectorId` na chamada RPC em vez de `null`
+Atualizar os itens que estão com setor NULL para distribuí-los entre os setores existentes. Podemos atribuir todos à Bancada A ou distribuir proporcionalmente:
 
-```typescript
-// Adicionar imports
-import { useSectors } from '@/hooks/useSectors';
+```sql
+-- Opção 1: Atribuir todos os itens sem setor à BANCADA A
+UPDATE order_items 
+SET assigned_sector_id = '92e3f369-a599-4c7e-a0a0-29d8719c2161'
+WHERE assigned_sector_id IS NULL;
 
-// Dentro do componente
-const { sectors } = useSectors();
-const kdsSectors = sectors?.filter(s => s.view_type === 'kds') ?? [];
-const [sectorId, setSectorId] = useState<string | null>(null);
-
-// No handleSubmit, usar o sectorId selecionado
-const { error: itemsError } = await supabase.rpc(
-  'create_order_items_from_json',
-  {
-    p_order_id: order.id,
-    p_items: itemsJson,
-    p_default_sector_id: sectorId,  // <-- Agora usa o setor selecionado
-  }
-);
+-- OU Opção 2: Atribuir à BANCADA B
+UPDATE order_items 
+SET assigned_sector_id = 'bfbd6e97-509a-4597-94b8-84d907332472'
+WHERE assigned_sector_id IS NULL;
 ```
 
----
+### Parte 2: Testar com Novos Pedidos
 
-## Fluxo Corrigido
-
-```text
-Admin abre Simulador de Pedidos
-        |
-        v
-Seleciona setor: "BANCADA A" ou "BANCADA B"
-        |
-        v
-Cria pedido simulado
-        |
-        v
-Itens criados com assigned_sector_id = 'uuid-bancada-a'
-        |
-        v
-Usuario da BANCADA A ve os itens em tempo real!
-```
+Após a correção, o administrador pode usar o **Simulador de Pedidos** que agora tem o campo "Setor de Produção" para criar novos pedidos atribuídos ao setor correto.
 
 ---
 
-## Interface do Usuario
+## Setores Disponíveis
 
-O simulador tera um novo campo "Setor de Producao":
-
-| Campo              | Valor                          |
-|--------------------|--------------------------------|
-| Cliente            | Joao Silva                     |
-| Bairro             | Manaira                        |
-| Loja (opcional)    | Sem loja especifica            |
-| **Setor de Producao** | BANCADA A / BANCADA B / DESPACHO |
-| Itens do Pedido    | Pizza Margherita (1)           |
+| Setor | ID |
+|-------|-----|
+| BANCADA A | 92e3f369-a599-4c7e-a0a0-29d8719c2161 |
+| BANCADA B | bfbd6e97-509a-4597-94b8-84d907332472 |
+| DESPACHO | d440ed0f-86b0-45cb-9c9a-f89d8141c23a |
 
 ---
 
-## Arquivos a Modificar
+## Próximos Passos
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/components/OrderSimulator.tsx` | Adicionar selecao de setor |
+1. **Executar migration** para atribuir os itens existentes a um setor (escolha entre BANCADA A ou BANCADA B)
+2. **Validar** que os operadores das bancadas agora veem os pedidos
+3. **Testar** criando novos pedidos simulados com o seletor de setor
 
 ---
 
 ## Comportamento Final
 
-| Cenario | Resultado |
-|---------|-----------|
-| Admin simula pedido com setor "BANCADA A" | Itens aparecem para usuario da BANCADA A |
-| Admin simula pedido com setor "BANCADA B" | Itens aparecem para usuario da BANCADA B |
-| Admin simula pedido sem setor (null) | Itens aparecem apenas para admins (todos) |
+| Antes | Depois |
+|-------|--------|
+| Operador Bancada A: 0 itens | Operador Bancada A: X itens |
+| Operador Bancada B: 0 itens | Operador Bancada B: Y itens |
+| Admin: Vê todos os itens | Admin: Vê todos os itens |
 
