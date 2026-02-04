@@ -10,9 +10,10 @@ import { useState, useEffect } from 'react';
 
 interface HeaderProps {
   sectorName?: string;
+  children?: React.ReactNode;
 }
 
-export function Header({ sectorName }: HeaderProps) {
+export function Header({ sectorName, children }: HeaderProps) {
   const queryClient = useQueryClient();
   const { user, isOwner, isAdmin, signOut } = useAuth();
   const { toast } = useToast();
@@ -77,6 +78,7 @@ export function Header({ sectorName }: HeaderProps) {
             {sectorName}
           </Badge>
         )}
+        {children}
       </div>
       <div className="flex items-center gap-3">
         {user && (
