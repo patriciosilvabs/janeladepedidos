@@ -227,9 +227,73 @@ export type Database = {
         }
         Relationships: []
       }
+      order_items: {
+        Row: {
+          assigned_sector_id: string | null
+          claimed_at: string | null
+          claimed_by: string | null
+          created_at: string
+          estimated_exit_at: string | null
+          id: string
+          notes: string | null
+          order_id: string
+          oven_entry_at: string | null
+          product_name: string
+          quantity: number
+          ready_at: string | null
+          status: Database["public"]["Enums"]["item_status"]
+        }
+        Insert: {
+          assigned_sector_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string
+          estimated_exit_at?: string | null
+          id?: string
+          notes?: string | null
+          order_id: string
+          oven_entry_at?: string | null
+          product_name: string
+          quantity?: number
+          ready_at?: string | null
+          status?: Database["public"]["Enums"]["item_status"]
+        }
+        Update: {
+          assigned_sector_id?: string | null
+          claimed_at?: string | null
+          claimed_by?: string | null
+          created_at?: string
+          estimated_exit_at?: string | null
+          id?: string
+          notes?: string | null
+          order_id?: string
+          oven_entry_at?: string | null
+          product_name?: string
+          quantity?: number
+          ready_at?: string | null
+          status?: Database["public"]["Enums"]["item_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "order_items_assigned_sector_id_fkey"
+            columns: ["assigned_sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       orders: {
         Row: {
           address: string
+          all_items_ready: boolean | null
           cardapioweb_created_at: string | null
           cardapioweb_notified: boolean | null
           cardapioweb_notified_at: string | null
@@ -252,6 +316,7 @@ export type Database = {
           items: Json | null
           lat: number
           lng: number
+          mixed_origin: boolean | null
           neighborhood: string | null
           notes: string | null
           notification_error: string | null
@@ -266,6 +331,7 @@ export type Database = {
         }
         Insert: {
           address: string
+          all_items_ready?: boolean | null
           cardapioweb_created_at?: string | null
           cardapioweb_notified?: boolean | null
           cardapioweb_notified_at?: string | null
@@ -288,6 +354,7 @@ export type Database = {
           items?: Json | null
           lat: number
           lng: number
+          mixed_origin?: boolean | null
           neighborhood?: string | null
           notes?: string | null
           notification_error?: string | null
@@ -302,6 +369,7 @@ export type Database = {
         }
         Update: {
           address?: string
+          all_items_ready?: boolean | null
           cardapioweb_created_at?: string | null
           cardapioweb_notified?: boolean | null
           cardapioweb_notified_at?: string | null
@@ -324,6 +392,7 @@ export type Database = {
           items?: Json | null
           lat?: number
           lng?: number
+          mixed_origin?: boolean | null
           neighborhood?: string | null
           notes?: string | null
           notification_error?: string | null
@@ -358,25 +427,31 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          is_oven_sector: boolean | null
           name: string
           updated_at: string | null
           view_type: string
+          weight_limit: number | null
         }
         Insert: {
           created_at?: string | null
           description?: string | null
           id?: string
+          is_oven_sector?: boolean | null
           name: string
           updated_at?: string | null
           view_type?: string
+          weight_limit?: number | null
         }
         Update: {
           created_at?: string | null
           description?: string | null
           id?: string
+          is_oven_sector?: boolean | null
           name?: string
           updated_at?: string | null
           view_type?: string
+          weight_limit?: number | null
         }
         Relationships: []
       }
@@ -456,6 +531,19 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      check_order_completion: { Args: { p_order_id: string }; Returns: boolean }
+      claim_order_item: {
+        Args: { p_item_id: string; p_user_id: string }
+        Returns: Json
+      }
+      create_order_items_from_json: {
+        Args: {
+          p_default_sector_id?: string
+          p_items: Json
+          p_order_id: string
+        }
+        Returns: number
+      }
       get_users_with_roles: {
         Args: never
         Returns: {
@@ -474,7 +562,20 @@ export type Database = {
         }
         Returns: boolean
       }
+      mark_item_ready: { Args: { p_item_id: string }; Returns: Json }
       mark_order_ready: { Args: { order_id: string }; Returns: undefined }
+      release_item_claim: {
+        Args: { p_item_id: string; p_user_id: string }
+        Returns: Json
+      }
+      send_to_oven: {
+        Args: {
+          p_item_id: string
+          p_oven_time_seconds?: number
+          p_user_id: string
+        }
+        Returns: Json
+      }
       set_order_dispatched: { Args: { p_order_id: string }; Returns: undefined }
       use_invitation: {
         Args: { invitation_token: string; new_user_id: string }
@@ -491,6 +592,7 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "admin" | "user"
+      item_status: "pending" | "in_prep" | "in_oven" | "ready"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -619,6 +721,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["owner", "admin", "user"],
+      item_status: ["pending", "in_prep", "in_oven", "ready"],
     },
   },
 } as const

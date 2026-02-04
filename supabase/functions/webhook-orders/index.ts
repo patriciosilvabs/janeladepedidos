@@ -133,7 +133,7 @@ async function handleStatusEvent(
 async function handleNewOrder(
   supabase: SupabaseClient,
   order: IncomingOrder
-): Promise<{ success: boolean; data?: unknown; error?: string }> {
+): Promise<{ success: boolean; data?: unknown; error?: string; itemsCreated?: number }> {
   // Validate required fields
   if (!order.customer_name || !order.address || !order.lat || !order.lng) {
     console.error('Invalid order - missing required fields:', {
@@ -179,7 +179,46 @@ async function handleNewOrder(
 
   const insertedOrder = data as { id: string };
   console.log(`Order ${insertedOrder.id} inserted successfully`);
-  return { success: true, data };
+
+  // Create order_items from the items JSON array
+  let itemsCreated = 0;
+  if (order.items && Array.isArray(order.items)) {
+    const { data: itemsResult, error: itemsError } = await supabase.rpc(
+      'create_order_items_from_json',
+      {
+        p_order_id: insertedOrder.id,
+        p_items: order.items,
+        p_default_sector_id: null, // Will be assigned by load balancer
+      }
+    );
+
+    if (itemsError) {
+      console.error('Error creating order items:', itemsError);
+      // Don't fail the whole order, just log the error
+    } else {
+      itemsCreated = itemsResult as number;
+      console.log(`Created ${itemsCreated} items for order ${insertedOrder.id}`);
+    }
+  } else if (order.items && typeof order.items === 'object') {
+    // Handle single item or legacy format - create one item per order
+    const { error: singleItemError } = await supabase
+      .from('order_items')
+      .insert({
+        order_id: insertedOrder.id,
+        product_name: 'Pedido',
+        quantity: 1,
+        notes: order.notes,
+      });
+
+    if (singleItemError) {
+      console.error('Error creating single order item:', singleItemError);
+    } else {
+      itemsCreated = 1;
+      console.log(`Created fallback item for order ${insertedOrder.id}`);
+    }
+  }
+
+  return { success: true, data, itemsCreated };
 }
 
 function isStatusEvent(payload: unknown): payload is StatusEvent {
