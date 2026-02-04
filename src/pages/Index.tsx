@@ -82,8 +82,8 @@ const Index = () => {
         ? (effectiveKdsMode === 'items' 
             ? <KDSItemsDashboard userSector={userSector} /> 
             : <KDSDashboard userSector={userSector} />) 
-        : isDispatchSector
-          ? <Dashboard />
+      : isDispatchSector
+        ? <DispatchDashboard />
           : mainView === 'kds'
             ? <KDSItemsDashboard />
             : <Dashboard />
