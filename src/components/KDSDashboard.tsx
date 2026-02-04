@@ -140,7 +140,9 @@ export function KDSDashboard({ userSector }: KDSDashboardProps) {
   // If user has a sector, use it as filter
   const filterSectorId = userSector?.id;
   
-  const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders();
+  const { orders, isLoading, error, markAsReady, markAsReadyUrgent } = useOrders({
+    sectorId: filterSectorId,
+  });
   const { settings } = useSettings();
   const { toast } = useToast();
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);

@@ -3,7 +3,12 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderWithGroup } from '@/types/orders';
 import { useEffect, useRef, useCallback } from 'react';
 
-export function useOrders() {
+interface UseOrdersOptions {
+  sectorId?: string;
+}
+
+export function useOrders(options: UseOrdersOptions = {}) {
+  const { sectorId } = options;
   const queryClient = useQueryClient();
 
   // Fetch settings
@@ -21,10 +26,36 @@ export function useOrders() {
     staleTime: 1000 * 60 * 5, // 5 minutes
   });
 
-  // Fetch all orders
+  // Fetch orders (optionally filtered by sector)
   const { data: orders = [], isLoading, isFetching, error } = useQuery({
-    queryKey: ['orders'],
+    queryKey: ['orders', sectorId],
     queryFn: async () => {
+      // If filtering by sector, first get order IDs that have items in this sector
+      if (sectorId) {
+        const { data: itemData, error: itemError } = await supabase
+          .from('order_items')
+          .select('order_id')
+          .eq('assigned_sector_id', sectorId);
+        
+        if (itemError) throw itemError;
+        
+        const orderIds = [...new Set(itemData?.map(i => i.order_id) || [])];
+        
+        if (orderIds.length === 0) {
+          return []; // No orders for this sector
+        }
+        
+        const { data, error } = await supabase
+          .from('orders')
+          .select('*, delivery_groups(*), stores(*)')
+          .in('id', orderIds)
+          .order('created_at', { ascending: true });
+        
+        if (error) throw error;
+        return data as OrderWithGroup[];
+      }
+      
+      // No sector filter - fetch all orders
       const { data, error } = await supabase
         .from('orders')
         .select('*, delivery_groups(*), stores(*)')
