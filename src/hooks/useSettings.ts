@@ -47,8 +47,7 @@ export function useSettings() {
     mutationFn: async (newSettings: Partial<AppSettings>) => {
       const { data, error } = await supabase
         .from('app_settings')
-        .update(newSettings)
-        .eq('id', 'default')
+        .upsert({ id: 'default', ...newSettings })
         .select()
         .single();
 

@@ -47,8 +47,11 @@ export function useDynamicBufferSettings() {
     mutationFn: async (updates: Partial<DynamicBufferSettings>) => {
       const { data, error } = await supabase
         .from('dynamic_buffer_settings')
-        .update({ ...updates, updated_at: new Date().toISOString() })
-        .eq('id', 'default')
+        .upsert({ 
+          id: 'default', 
+          ...updates, 
+          updated_at: new Date().toISOString() 
+        })
         .select()
         .single();
 
