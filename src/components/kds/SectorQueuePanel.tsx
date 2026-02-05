@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
-import { KDSItemCard } from './KDSItemCard';
+import { KDSItemCard, FifoSettings } from './KDSItemCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
@@ -25,6 +25,14 @@ export function SectorQueuePanel({
   
   // Get oven time from settings
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+  
+  // FIFO settings
+  const fifoSettings: FifoSettings = useMemo(() => ({
+    enabled: settings?.kds_fifo_visual_enabled ?? false,
+    warningMinutes: settings?.fifo_warning_minutes ?? 3,
+    criticalMinutes: settings?.fifo_critical_minutes ?? 5,
+    lockEnabled: settings?.fifo_lock_enabled ?? false,
+  }), [settings]);
   
   // Get presence info for this sector
   const operatorCount = getOnlineOperatorCount(sectorId);
@@ -106,6 +114,27 @@ export function SectorQueuePanel({
     });
   }, [items]);
 
+  // Calcula a posição na fila para cada item pendente
+  const getQueuePosition = (itemId: string): number | undefined => {
+    const pendingItemsSorted = displayItems.filter(i => i.status === 'pending');
+    const index = pendingItemsSorted.findIndex(i => i.id === itemId);
+    return index >= 0 ? index + 1 : undefined;
+  };
+
+  // Verifica se há algum item em preparo (para lógica de lock)
+  const hasItemsInPrep = displayItems.some(i => i.status === 'in_prep');
+
+  // Determina se um item pode ser iniciado (considerando lock FIFO)
+  const canStartItem = (itemId: string): boolean => {
+    if (!fifoSettings.enabled || !fifoSettings.lockEnabled) {
+      return true;
+    }
+    // Se lock está ativo, só permite iniciar se for o primeiro da fila
+    // OU se já houver itens em preparo (não bloqueia totalmente)
+    const position = getQueuePosition(itemId);
+    return position === 1;
+  };
+
   if (isLoading) {
     return (
       <Card>
@@ -182,6 +211,9 @@ export function SectorQueuePanel({
                 onSendToOven={() => handleSendToOven(item.id)}
                 isProcessing={processingId === item.id}
                 currentUserId={user?.id}
+                fifoSettings={fifoSettings}
+                queuePosition={getQueuePosition(item.id)}
+                canStartItem={canStartItem(item.id)}
               />
             ))}
           </div>
