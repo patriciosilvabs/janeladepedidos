@@ -258,6 +258,83 @@
    return { action: 'deleted', order_id: payload.order_id };
  }
  
+async function fetchOrderFromApi(
+  store: StoreRecord & { cardapioweb_api_url?: string; cardapioweb_api_token?: string },
+  orderId: number
+): Promise<CardapioWebOrder | null> {
+  const baseUrl = store.cardapioweb_api_url || 'https://integracao.cardapioweb.com';
+  const token = store.cardapioweb_api_token;
+  
+  if (!token) {
+    console.error('Store missing API token for fetching order details');
+    return null;
+  }
+  
+  try {
+    console.log(`Fetching order details from API: ${baseUrl}/api/partner/v1/orders/${orderId}`);
+    const response = await fetch(`${baseUrl}/api/partner/v1/orders/${orderId}`, {
+      method: 'GET',
+      headers: {
+        'X-API-KEY': token,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error(`Failed to fetch order ${orderId}: ${response.status}`);
+      return null;
+    }
+    
+    const orderData = await response.json();
+    console.log(`Fetched order data: ${JSON.stringify(orderData).substring(0, 500)}`);
+    
+    // Map API response to CardapioWebOrder format
+    return {
+      id: orderData.id,
+      display_id: orderData.display_id || orderData.code,
+      status: orderData.status || orderData.order_status,
+      order_type: orderData.order_type,
+      customer: orderData.customer,
+      address: orderData.delivery_address ? {
+        formatted: [
+          orderData.delivery_address.street,
+          orderData.delivery_address.number,
+          orderData.delivery_address.neighborhood,
+          orderData.delivery_address.city,
+          orderData.delivery_address.state,
+        ].filter(Boolean).join(', '),
+        street: orderData.delivery_address.street,
+        number: orderData.delivery_address.number,
+        neighborhood: orderData.delivery_address.neighborhood,
+        city: orderData.delivery_address.city,
+        state: orderData.delivery_address.state,
+        country: orderData.delivery_address.country,
+        postal_code: orderData.delivery_address.zipCode,
+        lat: orderData.delivery_address.latitude,
+        lng: orderData.delivery_address.longitude,
+        complement: orderData.delivery_address.complement,
+      } : undefined,
+      items: orderData.items?.map((item: any) => ({
+        name: item.name,
+        quantity: item.quantity || 1,
+        options: item.options || item.additions || [],
+        observation: item.notes || item.observation,
+        unit_price: item.price || item.unit_price,
+        total_price: item.total || item.total_price,
+      })),
+      total: orderData.total,
+      delivery_fee: orderData.delivery_fee,
+      payment_method: orderData.payments?.[0]?.method,
+      observation: orderData.notes,
+      created_at: orderData.created_at,
+    };
+  } catch (error) {
+    console.error(`Error fetching order ${orderId}:`, error);
+    return null;
+  }
+}
+
  async function handleOrderStatusChange(
    supabase: SupabaseClient,
    payload: CardapioWebWebhookPayload
@@ -353,7 +430,7 @@
      }
  
      if (!store) {
-       console.error(`No store found for token: ${apiToken.substring(0, 8)}...`);
+        console.error(`No store found for token: ${apiToken?.substring(0, 8) || 'undefined'}...`);
        return new Response(
          JSON.stringify({ error: 'Unauthorized - Invalid API token' }),
          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -373,6 +450,32 @@
      // Normalize event type for matching (case-insensitive, handle both formats)
      const normalizedEvent = eventType?.toLowerCase().replace(/_/g, '.');
  
+     // If ORDER_CREATED but missing order data, fetch from API
+     if ((normalizedEvent === 'order.created' || normalizedEvent === 'order.placed') && !body.order) {
+       console.log(`Event ${eventType} missing order data, fetching from API...`);
+       
+       // Need to fetch store with API credentials
+       const { data: storeWithCreds } = await supabase
+         .from('stores')
+         .select('id, name, default_city, default_region, default_country, cardapioweb_api_url, cardapioweb_api_token')
+         .eq('id', store.id)
+         .single();
+       
+       if (storeWithCreds) {
+         const fetchedOrder = await fetchOrderFromApi(storeWithCreds as any, body.order_id);
+         if (fetchedOrder) {
+           body.order = fetchedOrder;
+           console.log(`Successfully fetched order data for ${body.order_id}`);
+         } else {
+           console.error(`Failed to fetch order ${body.order_id} from API`);
+           return new Response(
+             JSON.stringify({ success: false, error: 'Could not fetch order details' }),
+             { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+           );
+         }
+       }
+     }
+
      switch (normalizedEvent) {
        case 'order.placed':
        case 'order.confirmed':
