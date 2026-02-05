@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
+import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
 import { StoresManager } from '@/components/StoresManager';
 import { UsersAdminPanel } from '@/components/UsersAdminPanel';
 import { InvitationsPanel } from '@/components/InvitationsPanel';
@@ -39,7 +40,18 @@ export function SettingsDialog() {
   const [foodyTestStatus, setFoodyTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [foodyTestError, setFoodyTestError] = useState('');
   const [foodyUrlWarning, setFoodyUrlWarning] = useState('');
-  
+
+  // Auto-save function for critical settings (KDS, Buffer)
+  const debouncedAutoSave = useDebouncedCallback(
+    useCallback((updates: Partial<AppSettingsType>) => {
+      saveSettings.mutate(updates, {
+        onError: () => toast.error('Erro ao salvar configuração'),
+        onSuccess: () => toast.success('Configuração salva', { duration: 2000 }),
+      });
+    }, [saveSettings]),
+    800
+  );
+
   // Local state for buffer input values to avoid lag
   const [localBufferValues, setLocalBufferValues] = useState<Record<number, number>>({});
   
@@ -546,8 +558,10 @@ export function SettingsDialog() {
                   <Switch
                     checked={(formData as any).urgent_bypass_enabled ?? true}
                     onCheckedChange={(checked) =>
-                      setFormData({ ...formData, urgent_bypass_enabled: checked } as any)
-                    }
+                      {
+                        setFormData({ ...formData, urgent_bypass_enabled: checked } as any);
+                        debouncedAutoSave({ urgent_bypass_enabled: checked });
+                      }}
                   />
                 </div>
 
@@ -563,8 +577,11 @@ export function SettingsDialog() {
                     max={120}
                     value={(formData as any).urgent_production_timeout_minutes ?? 25}
                     onChange={(e) =>
-                      setFormData({ ...formData, urgent_production_timeout_minutes: parseInt(e.target.value) || 25 } as any)
-                    }
+                      {
+                        const value = parseInt(e.target.value) || 25;
+                        setFormData({ ...formData, urgent_production_timeout_minutes: value } as any);
+                        debouncedAutoSave({ urgent_production_timeout_minutes: value });
+                      }}
                     className="w-24"
                   />
                 </div>
@@ -633,8 +650,10 @@ export function SettingsDialog() {
                   <RadioGroup
                     value={(formData as any).kds_default_mode || 'items'}
                     onValueChange={(value) =>
-                      setFormData({ ...formData, kds_default_mode: value as 'items' | 'orders' } as any)
-                    }
+                      {
+                        setFormData({ ...formData, kds_default_mode: value as 'items' | 'orders' } as any);
+                        debouncedAutoSave({ kds_default_mode: value as 'items' | 'orders' });
+                      }}
                     className="space-y-3"
                   >
                     <div className="flex items-start space-x-3 p-4 rounded-lg border border-border/50 bg-muted/30">
@@ -688,8 +707,11 @@ export function SettingsDialog() {
                           max={600}
                           value={(formData as any).oven_time_seconds ?? 120}
                           onChange={(e) =>
-                            setFormData({ ...formData, oven_time_seconds: parseInt(e.target.value) || 120 } as any)
-                          }
+                            {
+                              const value = parseInt(e.target.value) || 120;
+                              setFormData({ ...formData, oven_time_seconds: value } as any);
+                              debouncedAutoSave({ oven_time_seconds: value });
+                            }}
                           className="w-24"
                         />
                         <span className="text-sm text-muted-foreground">
