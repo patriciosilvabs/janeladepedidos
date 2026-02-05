@@ -6,5 +6,5 @@ verify_jwt = false
 [functions.webhook-orders]
 verify_jwt = false
 
-[functions.qz-sign]
+[functions.printnode]
 verify_jwt = false
