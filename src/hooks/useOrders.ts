@@ -102,16 +102,23 @@ export function useOrders(options: UseOrdersOptions = {}) {
   }, [queryClient, debouncedInvalidate]);
 
   // Mark order as ready - simplified without group logic
-  // IMPORTANTE: Usa RPC para garantir que ready_at usa timestamp do servidor (não do browser)
+  // IMPORTANTE: Usa nova RPC que marca TODOS os items como ready, unificando fluxo Dashboard/KDS
   const markAsReady = useMutation({
     mutationFn: async (orderId: string) => {
-      // Usar o timestamp do servidor via SQL para evitar problemas de timezone do browser
-      const { error } = await supabase.rpc('mark_order_ready' as any, {
-        order_id: orderId,
+      // Nova RPC que marca todos os items como ready e deixa o trigger mover o pedido
+      const { data, error } = await supabase.rpc('mark_order_items_ready' as any, {
+        p_order_id: orderId,
       });
 
-      if (error) throw error;
-      return { orderId };
+      if (error) {
+        console.error('[markAsReady] RPC error:', error);
+        throw error;
+      }
+
+      const result = data as { success: boolean; items_marked: number; order_id: string };
+      console.log('[markAsReady] Marked', result.items_marked, 'items for order:', orderId);
+      
+      return result;
     },
     onMutate: async (orderId) => {
       await queryClient.cancelQueries({ queryKey: ['orders'] });

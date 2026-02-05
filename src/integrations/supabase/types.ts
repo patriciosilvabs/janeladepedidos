@@ -626,6 +626,7 @@ export type Database = {
         Returns: boolean
       }
       mark_item_ready: { Args: { p_item_id: string }; Returns: Json }
+      mark_order_items_ready: { Args: { p_order_id: string }; Returns: Json }
       mark_order_ready: { Args: { order_id: string }; Returns: undefined }
       redistribute_offline_sector_items: {
         Args: { p_offline_sector_id: string }
