@@ -428,6 +428,41 @@ export type Database = {
           },
         ]
       }
+      sector_presence: {
+        Row: {
+          created_at: string
+          id: string
+          is_online: boolean
+          last_seen_at: string
+          sector_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_online?: boolean
+          last_seen_at?: string
+          sector_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_online?: boolean
+          last_seen_at?: string
+          sector_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sector_presence_sector_id_fkey"
+            columns: ["sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sectors: {
         Row: {
           created_at: string | null
@@ -542,6 +577,7 @@ export type Database = {
         Args: { p_item_id: string; p_user_id: string }
         Returns: Json
       }
+      cleanup_stale_presence: { Args: never; Returns: number }
       create_order_items_from_json: {
         Args: {
           p_default_sector_id?: string
@@ -551,6 +587,11 @@ export type Database = {
         Returns: number
       }
       distribute_unassigned_items: { Args: never; Returns: number }
+      get_available_sectors: { Args: never; Returns: string[] }
+      get_least_loaded_sector: {
+        Args: { p_available_sectors: string[] }
+        Returns: string
+      }
       get_users_with_roles: {
         Args: never
         Returns: {
@@ -571,9 +612,17 @@ export type Database = {
       }
       mark_item_ready: { Args: { p_item_id: string }; Returns: Json }
       mark_order_ready: { Args: { order_id: string }; Returns: undefined }
+      redistribute_offline_sector_items: {
+        Args: { p_offline_sector_id: string }
+        Returns: number
+      }
       release_item_claim: {
         Args: { p_item_id: string; p_user_id: string }
         Returns: Json
+      }
+      remove_sector_presence: {
+        Args: { p_sector_id: string; p_user_id: string }
+        Returns: undefined
       }
       send_to_oven: {
         Args: {
@@ -584,6 +633,10 @@ export type Database = {
         Returns: Json
       }
       set_order_dispatched: { Args: { p_order_id: string }; Returns: undefined }
+      upsert_sector_presence: {
+        Args: { p_sector_id: string; p_user_id: string }
+        Returns: undefined
+      }
       use_invitation: {
         Args: { invitation_token: string; new_user_id: string }
         Returns: boolean
