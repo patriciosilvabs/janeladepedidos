@@ -602,6 +602,7 @@ export type Database = {
           cardapioweb_api_token: string | null
           cardapioweb_api_url: string | null
           cardapioweb_enabled: boolean | null
+          cardapioweb_store_code: string | null
           created_at: string
           default_city: string | null
           default_country: string | null
@@ -614,6 +615,7 @@ export type Database = {
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null
           cardapioweb_enabled?: boolean | null
+          cardapioweb_store_code?: string | null
           created_at?: string
           default_city?: string | null
           default_country?: string | null
@@ -626,6 +628,7 @@ export type Database = {
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null
           cardapioweb_enabled?: boolean | null
+          cardapioweb_store_code?: string | null
           created_at?: string
           default_city?: string | null
           default_country?: string | null
