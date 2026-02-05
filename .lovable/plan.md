@@ -1,137 +1,158 @@
 
+# Plano: Integrar Webhook do CardapioWeb para Pedidos de Mesa em Tempo Real
 
-# Plano: Balanceamento Dinamico de Carga por Item
+## Contexto
 
-## Problema Identificado
+Atualmente, pedidos de mesa (`closed_table`, `dine_in`) so aparecem na API de polling do CardapioWeb **apos serem finalizados**. Para capturar pedidos de mesa em tempo real (enquanto ainda estao abertos), precisamos configurar um webhook que receba eventos diretamente do CardapioWeb.
 
-A funcao `create_order_items_from_json` atualmente:
+## Estrutura do Webhook CardapioWeb
 
-1. **Calcula o setor APENAS UMA VEZ** (linhas 30-51) antes de processar os itens
-2. **Nao considera operadores online** - pode enviar para bancada vazia
-3. **Todos os itens do pedido vao para o mesmo setor** independente da quantidade
+Baseado na documentacao fornecida, o CardapioWeb envia eventos via webhook com a seguinte estrutura:
 
-### Resultado Atual
+```text
+Eventos Relevantes:
+- order.placed      -> Pedido criado (todos os tipos, incluindo mesa)
+- order.confirmed   -> Pedido confirmado
+- order.cancelled   -> Pedido cancelado
+- order.closed      -> Pedido finalizado
 ```
-Pedido com 5 pizzas chega
+
+O payload inclui os dados completos do pedido, permitindo criar o pedido no sistema imediatamente.
+
+## Arquitetura Proposta
+
+```text
+CardapioWeb                     Sistema
+    |                              |
+    |-- order.placed (Mesa) ------>|
+    |                              |-- webhook-orders recebe
+    |                              |-- Identifica store por token
+    |                              |-- Cria pedido + items no KDS
+    |                              |
+    |                         [Tablet mostra pedido]
+    |                              |
+    |-- order.closed (Mesa) ------>|
+    |                              |-- Remove pedido (ja concluido)
+```
+
+## Mudancas Necessarias
+
+### 1. Atualizar Edge Function `webhook-orders`
+
+| Aspecto | Atual | Proposto |
+|---------|-------|----------|
+| Formato do payload | Generico (IncomingOrder) | Payload CardapioWeb nativo |
+| Identificacao de loja | Token unico global | Token por loja (stores table) |
+| Eventos suportados | Status events basicos | Todos os eventos order.* |
+| Criacao de items | Formato interno | Formato CardapioWeb (items[]) |
+
+### 2. Nova Logica de Processamento
+
+```text
+POST /webhook-orders
     |
-    v
-Sistema verifica: "Bancada A tem 2 itens, Bancada B tem 3"
+    +-- Extrair header X-API-KEY ou X-Webhook-Token
     |
-    v
-Escolhe Bancada A UMA VEZ
+    +-- Buscar loja pelo token na tabela "stores"
+    |       (SELECT * FROM stores WHERE cardapioweb_api_token = token)
     |
-    v
-TODAS as 5 pizzas vao para Bancada A (agora com 7 itens!)
-```
-
-### Resultado Esperado
-```
-Pedido com 5 pizzas chega
+    +-- Identificar tipo de evento
+    |       |
+    |       +-- order.placed / order.confirmed
+    |       |       +-- Criar pedido + order_items via RPC
+    |       |
+    |       +-- order.cancelled / order.closed
+    |       |       +-- Remover pedido existente
+    |       |
+    |       +-- Outros eventos (ignorar)
     |
-    v
-Pizza 1: Bancada A (2 itens) -> A fica com 3
-Pizza 2: Bancada B (3 itens) -> B fica com 4
-Pizza 3: Bancada A (3 itens) -> A fica com 4
-Pizza 4: Bancada A (4 itens) = B (4 itens) -> A fica com 5
-Pizza 5: Bancada B (4 itens) -> B fica com 5
-    |
-    v
-Distribuicao equilibrada: A=5, B=5
+    +-- Responder 200 OK
 ```
 
-## Solucao Proposta
+### 3. Payload CardapioWeb Esperado
 
-Modificar a funcao SQL `create_order_items_from_json` para:
-
-1. **Recalcular o setor para CADA item** dentro do loop
-2. **Filtrar apenas setores com operadores online**
-3. **Fallback para setores offline** se nenhum operador estiver disponivel
-
-## Mudancas no Banco de Dados
-
-### Nova Versao da Funcao `create_order_items_from_json`
-
-| Aspecto | Antes | Depois |
-|---------|-------|--------|
-| Calculo do setor | 1x antes do loop | Nx dentro do loop |
-| Considera presenca | Nao | Sim (last_seen_at > 30s) |
-| Fallback | Primeiro setor KDS | Setor com menor carga (online ou offline) |
-
-### Codigo da Nova Logica (dentro do loop, antes do INSERT)
-
-```sql
--- NOVA LOGICA: Recalcular setor para cada item (balanceamento dinamico)
-IF p_default_sector_id IS NULL THEN
-  -- Primeiro tenta setores COM operadores online
-  SELECT s.id INTO v_sector_id
-  FROM sectors s
-  JOIN sector_presence sp ON sp.sector_id = s.id
-  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
-    AND oi.status IN ('pending', 'in_prep')
-  WHERE s.view_type = 'kds'
-    AND sp.is_online = true
-    AND sp.last_seen_at > NOW() - INTERVAL '30 seconds'
-    AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
-  GROUP BY s.id
-  ORDER BY COUNT(oi.id) ASC
-  LIMIT 1;
-  
-  -- Fallback: se nenhum operador online, usar qualquer setor KDS
-  IF v_sector_id IS NULL THEN
-    SELECT s.id INTO v_sector_id
-    FROM sectors s
-    LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
-      AND oi.status IN ('pending', 'in_prep')
-    WHERE s.view_type = 'kds'
-      AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
-    GROUP BY s.id
-    ORDER BY COUNT(oi.id) ASC
-    LIMIT 1;
-  END IF;
-END IF;
+```json
+{
+  "event_type": "order.placed",
+  "order_id": 12345678,
+  "merchant_id": 999,
+  "created_at": "2026-02-05T10:30:00Z",
+  "order": {
+    "id": 12345678,
+    "display_id": 8001,
+    "status": "confirmed",
+    "order_type": "closed_table",
+    "customer": {
+      "name": "Mesa 05",
+      "phone": null
+    },
+    "items": [
+      {
+        "name": "Pizza Margherita",
+        "quantity": 2,
+        "options": [
+          { "name": "Borda Recheada", "group": "Bordas" }
+        ],
+        "observation": "Sem cebola"
+      }
+    ],
+    "total": 89.90
+  }
+}
 ```
 
-## Fluxo Pos-Mudanca
+### 4. Configuracao de Seguranca
 
-```
-Pedido importado
-     |
-     v
-Para cada item:
-     |
-     +--> Verificar setores com operadores online
-     |         |
-     |         +--> Ordenar por menor carga (pending + in_prep)
-     |         |
-     |         +--> Selecionar o primeiro (menor carga)
-     |
-     +--> Se nenhum online: fallback para qualquer setor KDS
-     |
-     +--> Inserir item com assigned_sector_id calculado
-     |
-     v
-Proximo item (recalcula carga atualizada)
-```
-
-## Consideracoes Importantes
-
-1. **Performance**: O recalculo por item adiciona queries, mas como pedidos tipicamente tem poucos itens (1-5), o impacto e minimo
-
-2. **Consistencia**: Itens do mesmo pedido podem ir para bancadas diferentes - isso e intencional para balancear carga
-
-3. **Itens com Borda**: Continuam indo para o setor de bordas primeiro, mas o `next_sector_id` tambem sera calculado dinamicamente
-
-4. **Redistribuicao**: A funcao `redistribute_offline_sector_items` continua funcionando para quando operadores ficam offline apos a distribuicao inicial
+O webhook usara o mesmo token de API da loja (`cardapioweb_api_token`) para autenticacao, permitindo:
+- Multiplas lojas com webhooks independentes
+- Roteamento automatico para a loja correta
 
 ## Arquivos a Modificar
 
-| Arquivo | Tipo | Mudanca |
-|---------|------|---------|
-| Nova migration SQL | Database | Atualizar funcao `create_order_items_from_json` |
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/webhook-orders/index.ts` | Reescrever para suportar payload CardapioWeb nativo |
+| `supabase/config.toml` | Adicionar `verify_jwt = false` para webhook-orders |
+
+## URL do Webhook
+
+Apos implementacao, voce precisara configurar no painel do CardapioWeb:
+
+```text
+URL: https://cpxuluerkzpynlcdnxcq.supabase.co/functions/v1/webhook-orders
+Header: X-API-KEY: [token da loja]
+```
+
+## Fluxo Completo Pos-Implementacao
+
+```text
+1. Cliente faz pedido de Mesa no CardapioWeb
+        |
+        v
+2. CardapioWeb dispara webhook "order.placed"
+        |
+        v
+3. webhook-orders recebe e identifica loja pelo token
+        |
+        v
+4. Sistema cria pedido + items no banco
+        |
+        v
+5. Realtime atualiza o tablet INSTANTANEAMENTE
+        |
+        v
+6. Operador ve o pedido de Mesa no KDS
+```
+
+## Consideracoes Tecnicas
+
+1. **Idempotencia**: Verificar se pedido ja existe antes de criar (evitar duplicatas do polling)
+2. **Fallback**: Manter polling ativo como backup caso webhook falhe
+3. **Logs**: Adicionar logging detalhado para debug
+4. **Retry**: CardapioWeb pode reenviar webhooks em caso de falha - tratar duplicatas
 
 ## Resultado Esperado
 
-- Itens distribuidos proporcionalmente entre bancadas com operadores online
-- Nenhuma bancada fica sobrecarregada enquanto outra esta ociosa
-- Sistema continua funcionando mesmo sem operadores online (fallback)
-
+- Pedidos de Mesa aparecem no tablet **instantaneamente** (sem esperar fechamento)
+- Pedidos de Delivery/Retirada tambem podem usar webhook (mais rapido que polling)
+- Sistema robusto com fallback para polling
