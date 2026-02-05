@@ -1,20 +1,20 @@
 
-# Plano: Posição Fixa dos Cards (Sem Mudança ao INICIAR)
+# Plano: Corrigir Mudança de Posição dos Cards
 
-## Problema Identificado
+## Problema Raiz Identificado
 
-Quando um funcionário toca em INICIAR, dois problemas visuais ocorrem:
+O problema não está na ordenação do `displayItems`, mas sim em **como o React Query gerencia as atualizações**:
 
-1. **Números da fila mudam** - A função `getQueuePosition` só conta itens `pending`, então quando um item vira `in_prep`, os números recalculam
-2. **Badge de posição some** - O badge só aparece em itens `pending`
-
-Isso pode causar confusão quando múltiplos funcionários usam o mesmo tablet.
+1. **Optimistic Update**: Quando clica INICIAR, o `claimItem` muda o status para `in_prep` otimisticamente
+2. **Invalidate Query**: Logo após, `onSettled` chama `invalidateQueries`, que refaz a query
+3. **Re-render**: O novo array de `items` causa recálculo de `displayItems`
+4. **Problema de Timing**: Durante a transição, os dados podem momentaneamente vir em ordem diferente
 
 ---
 
 ## Solução
 
-Manter a posição de fila **fixa baseada na ordem de criação**, independente do status. O badge de posição continuará visível mesmo após iniciar.
+Adicionar uma **chave estável** para manter a posição dos cards usando o `id` do item como referência, e garantir ordenação consistente com fallback para `id`.
 
 ---
 
@@ -22,93 +22,100 @@ Manter a posição de fila **fixa baseada na ordem de criação**, independente 
 
 ### Arquivo 1: `src/components/kds/SectorQueuePanel.tsx`
 
-**Mudança na função `getQueuePosition`** (linhas 113-118):
-
-| Antes | Depois |
-|-------|--------|
-| Filtra apenas `pending` | Usa todos os itens (`displayItems`) |
-| Posição muda ao iniciar | Posição permanece fixa |
+**Adicionar ordenação secundária por ID para estabilidade absoluta**:
 
 ```tsx
-// ANTES
-const getQueuePosition = (itemId: string): number | undefined => {
-  const pendingItemsSorted = displayItems.filter(i => i.status === 'pending');
-  const index = pendingItemsSorted.findIndex(i => i.id === itemId);
-  return index >= 0 ? index + 1 : undefined;
-};
+// ANTES (linhas 105-111)
+const displayItems = useMemo(() => {
+  return [...items].sort((a, b) => {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+}, [items]);
 
 // DEPOIS
-const getQueuePosition = (itemId: string): number | undefined => {
-  // Posição baseada na ordem de criação, independente do status
-  const index = displayItems.findIndex(i => i.id === itemId);
-  return index >= 0 ? index + 1 : undefined;
-};
+const displayItems = useMemo(() => {
+  return [...items].sort((a, b) => {
+    const timeA = new Date(a.created_at).getTime();
+    const timeB = new Date(b.created_at).getTime();
+    // Ordenação primária por created_at
+    if (timeA !== timeB) return timeA - timeB;
+    // Ordenação secundária por ID para estabilidade absoluta
+    return a.id.localeCompare(b.id);
+  });
+}, [items]);
 ```
 
 ---
 
-### Arquivo 2: `src/components/kds/KDSItemCard.tsx`
+### Arquivo 2: `src/hooks/useOrderItems.ts`
 
-**Mudança na condição do badge** (linha 194):
-
-| Antes | Depois |
-|-------|--------|
-| `item.status === 'pending'` | Mostrar sempre (remover condição de status) |
+**Manter o item no mesmo lugar durante optimistic update** (não remove durante a transição):
 
 ```tsx
-// ANTES
-{isFifoEnabled && queuePosition && item.status === 'pending' && (
-  <div className="absolute -top-3 -left-3 ...">
-    #{queuePosition}
-  </div>
-)}
+// Modificar onMutate do claimItem (linhas 110-127)
+// Adicionar preservação de ordem durante update
 
-// DEPOIS
-{isFifoEnabled && queuePosition && (
-  <div className="absolute -top-3 -left-3 ...">
-    #{queuePosition}
-  </div>
-)}
+onMutate: async (itemId) => {
+  await queryClient.cancelQueries({ queryKey: ['order-items'] });
+  const previousItems = queryClient.getQueryData<OrderItemWithOrder[]>(['order-items', sectorId, status]);
+
+  // Atualizar in-place mantendo a mesma posição no array
+  queryClient.setQueryData<OrderItemWithOrder[]>(['order-items', sectorId, status], (old) => {
+    if (!old) return [];
+    // Criar novo array mantendo a ordem exata
+    return old.map((item) =>
+      item.id === itemId
+        ? {
+            ...item,
+            status: 'in_prep' as const,
+            claimed_by: user?.id || null,
+            claimed_at: new Date().toISOString(),
+          }
+        : item
+    );
+  });
+
+  return { previousItems };
+},
+```
+
+**Adicionar debounce maior no invalidate para evitar flicker**:
+
+```tsx
+// Modificar onSettled do claimItem (linha 134-136)
+onSettled: () => {
+  // Delay para evitar flicker visual durante transição
+  setTimeout(() => {
+    queryClient.invalidateQueries({ queryKey: ['order-items'] });
+  }, 100);
+},
 ```
 
 ---
 
-## Comportamento Após Mudança
+## Resumo das Mudanças
 
-| Ação | Número na Fila | Posição do Card |
-|------|----------------|-----------------|
-| Card criado como #3 | #3 | Terceira posição |
-| Clica INICIAR | #3 (mantém) | Terceira posição (mantém) |
-| Clica FORNO | Card sai | Cards abaixo sobem |
+| Arquivo | Mudança | Motivo |
+|---------|---------|--------|
+| `SectorQueuePanel.tsx` | Adicionar ordenação secundária por ID | Garante ordem determinística mesmo com timestamps iguais |
+| `useOrderItems.ts` | Delay no invalidateQueries do claimItem | Evita flicker durante transição otimística |
 
 ---
 
-## Fluxo Visual
+## Por que isso resolve
+
+1. **Ordenação determinística**: Com `id` como fallback, mesmo que dois items tenham o mesmo `created_at`, a ordem será sempre a mesma
+2. **Menos re-renders**: O delay no invalidate permite que a UI estabilize antes de buscar novos dados
+3. **Posição fixa**: O card mantém sua posição visual durante toda a operação
+
+---
+
+## Fluxo Corrigido
 
 ```text
-ANTES de clicar INICIAR:         DEPOIS de clicar INICIAR:
-+------------------+             +------------------+
-| #1               |             | #1               |
-| Pizza Calabresa  |             | Pizza Calabresa  |
-| [INICIAR]        |             | [FORNO] [X]      |
-+------------------+             +------------------+
-| #2               |             | #2               |  <-- Mantém #2!
-| Pizza Queijos    |             | Pizza Queijos    |
-| [INICIAR]        |             | [INICIAR]        |
-+------------------+             +------------------+
-| #3               |             | #3               |  <-- Mantém #3!
-| Pizza Margher    |             | Pizza Margher    |
-| [INICIAR]        |             | [INICIAR]        |
-+------------------+             +------------------+
-
-Cards NÃO mudam de posição até ir para o FORNO
+1. Usuário clica INICIAR no Card #2
+2. Optimistic update: Card #2 muda para azul (in_prep), MANTÉM posição
+3. Após 100ms: Query invalida e refaz
+4. Dados retornam ordenados por created_at + id
+5. Card #2 continua na mesma posição (#2)
 ```
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/components/kds/SectorQueuePanel.tsx` | Posição baseada em todos os itens, não apenas pending |
-| `src/components/kds/KDSItemCard.tsx` | Mostrar badge de posição em todos os status |
