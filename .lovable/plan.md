@@ -1,103 +1,125 @@
 
-# Plano: Corrigir Erro 400 na API do CardapioWeb
+
+# Plano: Corrigir Erro "Não foi possível marcar item como pronto"
 
 ## Problema Identificado
 
-A modificacao anterior causou erro 400 na API do CardapioWeb:
+O erro ocorre em situações de **race condition** quando:
+1. Usuário clica em "PRONTO" no painel do forno
+2. O item é marcado como `ready` no banco de dados
+3. Antes da UI atualizar, o usuário clica novamente (ou há outra tab/dispositivo)
+4. A segunda chamada falha porque o item já não está mais `in_oven`
 
-```
-{"code":4000,"message":"Parametros invalidos.","details":"status contem valores invalidos"}
-```
-
-Os valores `open` e `pending` nao sao aceitos pela API. Isso quebrou completamente o polling - nenhum pedido esta sendo importado agora.
-
----
+A função `mark_item_ready` retorna `{success: false, error: 'not_in_oven'}`, mas o código trata isso como erro genérico.
 
 ## Causa Raiz
 
-A API do CardapioWeb nao aceita os status que tentamos usar:
-- `open` - NAO ACEITO
-- `pending` - NAO ACEITO
-- `confirmed` - ACEITO (funcionava antes)
-
----
-
-## Solucao em 2 Etapas
-
-### Etapa 1: Correcao Imediata (Restaurar Funcionamento)
-
-Voltar ao filtro que funcionava (`confirmed`) para restaurar o polling de pedidos de Delivery/Retirada/Balcao.
-
-### Etapa 2: Busca Sem Filtro (Descobrir Status Validos)
-
-Fazer uma chamada a API **sem o parametro status** para:
-1. Receber todos os pedidos disponiveis
-2. Verificar nos logs quais valores de `status` existem nos pedidos de Mesa
-3. Usar esses valores reais em uma proxima iteracao
-
----
-
-## Mudanca Proposta
-
-**Arquivo**: `supabase/functions/poll-orders/index.ts`
-
-### Opcao A: Remover filtro de status (buscar todos)
-
 ```typescript
-// Buscar todos os pedidos sem filtrar por status
-// Isso permite descobrir quais status reais a API retorna para pedidos de Mesa
-const ordersResponse = await fetch(
-  `${baseUrl}/api/partner/v1/orders`,
-  {
-    method: 'GET',
-    headers: {
-      'X-API-KEY': token,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
-  }
-);
+// useOrderItems.ts - Linha 228-229
+if (!result.success) {
+  throw new Error('Não foi possível marcar o item como pronto');
+}
 ```
 
-### Opcao B: Voltar apenas para `confirmed` (seguro, mas sem Mesas)
+O código não considera que `not_in_oven` pode significar que o item **já foi processado com sucesso** por outra requisição.
+
+## Solução
+
+Tratar o caso `not_in_oven` como sucesso silencioso, já que significa que o item já foi marcado como pronto.
+
+---
+
+## Mudanças
+
+### Arquivo 1: `src/hooks/useOrderItems.ts`
+
+**Atualizar a mutação `markItemReady`:**
 
 ```typescript
-// Voltar ao filtro anterior que funcionava
-const ordersResponse = await fetch(
-  `${baseUrl}/api/partner/v1/orders?status[]=confirmed`,
-  {
-    method: 'GET',
-    headers: {
-      'X-API-KEY': token,
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    },
+// Mark as ready
+const markItemReady = useMutation({
+  mutationFn: async (itemId: string) => {
+    const { data, error } = await supabase.rpc('mark_item_ready', {
+      p_item_id: itemId,
+    });
+
+    if (error) throw error;
+    
+    const result = data as unknown as { success: boolean; error?: string };
+    
+    // Tratar 'not_in_oven' como sucesso silencioso
+    // Isso significa que o item já foi marcado como pronto por outra requisição
+    if (!result.success && result.error === 'not_in_oven') {
+      console.log(`[markItemReady] Item ${itemId} já foi marcado como pronto`);
+      return { success: true, already_processed: true };
+    }
+    
+    if (!result.success) {
+      throw new Error(result.error || 'Não foi possível marcar o item como pronto');
+    }
+
+    return result;
+  },
+  // ... resto permanece igual
+});
+```
+
+### Arquivo 2: `src/components/kds/OvenTimerPanel.tsx`
+
+**Adicionar verificação antes de processar:**
+
+```typescript
+const handleMarkReady = async (itemId: string) => {
+  // Evitar cliques duplos
+  if (processingId) return;
+  
+  setProcessingId(itemId);
+  try {
+    const item = sortedItems.find(i => i.id === itemId);
+    
+    await markItemReady.mutateAsync(itemId);
+    
+    // Imprimir apenas se o item existir e não for já processado
+    if (item) {
+      printOrderReceipt(item);
+    }
+  } catch (error) {
+    console.error('Erro ao marcar item como pronto:', error);
+  } finally {
+    setProcessingId(null);
   }
-);
+};
 ```
 
 ---
 
-## Recomendacao
+## Melhoria Adicional (Opcional)
 
-**Opcao A (Remover filtro)** e a melhor escolha porque:
-1. Restaura o funcionamento imediato
-2. Permite descobrir todos os pedidos disponiveis, incluindo Mesas
-3. Os logs mostrarao o `order_type` e `status` real de cada pedido
-4. Com essa informacao, podemos ajustar o filtro corretamente
+Para evitar completamente cliques duplos, desabilitar o botão enquanto qualquer item está sendo processado:
+
+```typescript
+<Button
+  onClick={onMarkReady}
+  disabled={isProcessing || processingId !== null}  // Desabilitar durante qualquer processamento
+  // ...
+>
+```
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/poll-orders/index.ts` | Remover filtro de status ou adicionar log para debug |
+| `src/hooks/useOrderItems.ts` | Tratar `not_in_oven` como sucesso silencioso |
+| `src/components/kds/OvenTimerPanel.tsx` | Adicionar proteção contra cliques duplos |
 
 ---
 
 ## Resultado Esperado
 
-1. Polling volta a funcionar imediatamente
-2. Todos os tipos de pedido (Delivery, Retirada, Mesa) serao capturados
-3. Logs mostrarao os status reais para ajustes futuros
+1. Cliques duplos não causam mais erros no console
+2. O fluxo continua funcionando normalmente
+3. A impressão só ocorre uma vez por item
+4. Múltiplos dispositivos/tabs não conflitam
+
