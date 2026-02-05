@@ -42,7 +42,7 @@ export function useSettings() {
       if (error) throw error;
       return data as AppSettings | null;
     },
-    staleTime: 1000 * 60 * 5, // 5 minutes
+    staleTime: 1000 * 30, // 30 seconds for faster config updates
   });
 
   const saveSettings = useMutation({
