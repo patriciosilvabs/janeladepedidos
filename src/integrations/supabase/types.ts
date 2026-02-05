@@ -36,7 +36,9 @@ export type Database = {
           grouping_radius_km: number | null
           id: string
           kds_default_mode: string | null
+          kds_edge_keywords: string | null
           kds_fifo_visual_enabled: boolean | null
+          kds_flavor_keywords: string | null
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
@@ -65,7 +67,9 @@ export type Database = {
           grouping_radius_km?: number | null
           id?: string
           kds_default_mode?: string | null
+          kds_edge_keywords?: string | null
           kds_fifo_visual_enabled?: boolean | null
+          kds_flavor_keywords?: string | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
@@ -94,7 +98,9 @@ export type Database = {
           grouping_radius_km?: number | null
           id?: string
           kds_default_mode?: string | null
+          kds_edge_keywords?: string | null
           kds_fifo_visual_enabled?: boolean | null
+          kds_flavor_keywords?: string | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null

@@ -29,6 +29,8 @@ export interface AppSettings {
   fifo_warning_minutes: number;
   fifo_critical_minutes: number;
   fifo_lock_enabled: boolean;
+  kds_edge_keywords: string;
+  kds_flavor_keywords: string;
 }
 
 export function useSettings() {
