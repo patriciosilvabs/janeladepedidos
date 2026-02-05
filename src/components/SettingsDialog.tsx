@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
@@ -813,6 +813,65 @@ export function SettingsDialog() {
                         </div>
                       </div>
                     )}
+                  </div>
+
+                  {/* Item Classification Keywords */}
+                  <div className="border-t border-border/50 pt-4 mt-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Tags className="h-4 w-4 text-primary" />
+                      <Label className="text-base font-medium">Classificação de Itens</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Define como o sistema identifica bordas e sabores nos pedidos importados.
+                    </p>
+                    
+                    <div className="space-y-4">
+                      {/* Keywords para Bordas */}
+                      <div className="space-y-2">
+                        <Label htmlFor="edge-keywords" className="flex items-center gap-2">
+                          <span className="w-3 h-3 bg-orange-600 rounded-sm"></span>
+                          Palavras-chave para BORDAS
+                        </Label>
+                        <Input
+                          id="edge-keywords"
+                          value={(formData as any).kds_edge_keywords ?? '#, Borda'}
+                          onChange={(e) => {
+                            setFormData({ ...formData, kds_edge_keywords: e.target.value } as any);
+                            debouncedAutoSave({ kds_edge_keywords: e.target.value });
+                          }}
+                          placeholder="#, Borda, Recheio"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Itens que contenham estas palavras aparecem com tarja laranja piscante. Separar por vírgula.
+                        </p>
+                      </div>
+                      
+                      {/* Keywords para Sabores */}
+                      <div className="space-y-2">
+                        <Label htmlFor="flavor-keywords" className="flex items-center gap-2">
+                          <span className="text-lg font-bold leading-none">A</span>
+                          Palavras-chave para SABORES
+                        </Label>
+                        <Input
+                          id="flavor-keywords"
+                          value={(formData as any).kds_flavor_keywords ?? '(G), (M), (P), Sabor'}
+                          onChange={(e) => {
+                            setFormData({ ...formData, kds_flavor_keywords: e.target.value } as any);
+                            debouncedAutoSave({ kds_flavor_keywords: e.target.value });
+                          }}
+                          placeholder="(G), (M), (P), Sabor"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Itens que contenham estas palavras aparecem com fonte grande em destaque. Separar por vírgula.
+                        </p>
+                      </div>
+
+                      <div className="p-3 rounded-lg bg-muted/50 border border-border/50">
+                        <p className="text-xs text-muted-foreground">
+                          <strong>Exemplo:</strong> Se sua API envia "Recheio Cheddar" ao invés de "Borda Cheddar", adicione "Recheio" às palavras-chave de bordas.
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </TabsContent>
