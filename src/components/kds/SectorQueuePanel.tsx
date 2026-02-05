@@ -103,13 +103,9 @@ export function SectorQueuePanel({
 
   // Filter items by status for display
   const displayItems = useMemo(() => {
-    // Show pending first, then in_prep
+   // Ordenar APENAS por created_at para manter posição fixa
+   // Cards só saem da tela ao ir para o forno (status muda para 'in_oven')
     return [...items].sort((a, b) => {
-      const statusOrder = { pending: 0, in_prep: 1, in_oven: 2, ready: 3 };
-      const orderA = statusOrder[a.status] ?? 99;
-      const orderB = statusOrder[b.status] ?? 99;
-      if (orderA !== orderB) return orderA - orderB;
-      // Then by created_at
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
     });
   }, [items]);
