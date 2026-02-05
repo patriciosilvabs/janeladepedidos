@@ -132,7 +132,10 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
       }
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['order-items'] });
+      // Delay para evitar flicker visual durante transição otimística
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['order-items'] });
+      }, 100);
     },
   });
 
