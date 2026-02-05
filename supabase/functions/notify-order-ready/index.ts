@@ -41,8 +41,11 @@ async function notifyCardapioWebReady(
   console.log(`Calling CardápioWeb READY for order ${externalId} (type: ${orderType || 'unknown'}): ${endpoint}`);
 
   try {
-    // Testando enviar body JSON vazio - o KDS do CardápioWeb marca como "waiting_to_catch"
-    // sem disparar Foody, talvez o body JSON mude o comportamento da API
+    // Testando flags de controle para evitar auto-despacho
+    // O KDS do CardápioWeb marca como "waiting_to_catch" sem disparar Foody
+    // Enviando flags para tentar replicar esse comportamento via API
+    console.log(`Order type: ${orderType} - Se delivery, API pode disparar logística automaticamente`);
+    
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -50,7 +53,12 @@ async function notifyCardapioWebReady(
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({}),
+      // Flags de controle para tentar desabilitar auto-despacho
+      body: JSON.stringify({ 
+        dispatch: false,
+        auto_dispatch: false,
+        notify: false
+      }),
     });
 
     const responseText = await response.text();
