@@ -17,7 +17,7 @@ const Index = () => {
   const { settings, isLoading: settingsLoading } = useSettings();
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('kds');
+  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
 
   // Determine view types early for use in effects
   const isKDSSector = userSector?.view_type === 'kds';
@@ -27,14 +27,8 @@ const Index = () => {
   useEffect(() => {
     if (settings?.kds_default_mode) {
       setKdsMode(settings.kds_default_mode);
-      // For admins without sector, set mainView based on config
-      if (!isKDSSector && !isDispatchSector) {
-        if (settings.kds_default_mode === 'items') {
-          setMainView('kds');
-        }
-      }
     }
-  }, [settings?.kds_default_mode, isKDSSector, isDispatchSector]);
+  }, [settings?.kds_default_mode]);
 
   // Track presence for KDS operators
   useSectorPresence({ 
@@ -77,11 +71,11 @@ const Index = () => {
         {showMainViewTabs && !isFullscreen && (
           <Tabs value={mainView} onValueChange={(v) => setMainView(v as 'dashboard' | 'kds')}>
             <TabsList className="h-8">
-              <TabsTrigger value="kds" className="text-xs px-3">
-                KDS Produção
-              </TabsTrigger>
               <TabsTrigger value="dashboard" className="text-xs px-3">
                 Despacho
+              </TabsTrigger>
+              <TabsTrigger value="kds" className="text-xs px-3">
+                KDS Produção
               </TabsTrigger>
             </TabsList>
           </Tabs>
