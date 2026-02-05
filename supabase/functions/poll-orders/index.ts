@@ -157,6 +157,15 @@ async function pollStoreOrders(
       const orderCode = orderDetails.display_id?.toString() || orderDetails.code || order.display_id?.toString() || String(order.id);
       console.log(`[poll-orders] Final order code to save: ${orderCode}`);
 
+       // NOVO: Ignorar pedidos já finalizados na API do CardapioWeb
+       const apiStatus = (orderDetails.status || order.status || '').toLowerCase();
+       const ignoredStatuses = ['closed', 'canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
+ 
+       if (ignoredStatuses.includes(apiStatus)) {
+         console.log(`[poll-orders] Skipping order ${cardapiowebOrderId} - status "${apiStatus}" (already finalized)`);
+         continue;
+       }
+ 
       // Verificar se é delivery para extrair endereço
       const isDelivery = order.order_type === 'delivery';
       const address = isDelivery ? (orderDetails.delivery_address || {}) : {};
