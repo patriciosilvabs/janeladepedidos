@@ -1,158 +1,79 @@
 
-# Plano: Integrar Webhook do CardapioWeb para Pedidos de Mesa em Tempo Real
+# Plano: Corrigir Webhook para Suportar `ORDER_NEW` do CardápioWeb
 
-## Contexto
+## Diagnóstico do Problema
 
-Atualmente, pedidos de mesa (`closed_table`, `dine_in`) so aparecem na API de polling do CardapioWeb **apos serem finalizados**. Para capturar pedidos de mesa em tempo real (enquanto ainda estao abertos), precisamos configurar um webhook que receba eventos diretamente do CardapioWeb.
+A análise dos logs e da documentação revelou a causa raiz:
 
-## Estrutura do Webhook CardapioWeb
+1. **Evento esperado:** A documentação do CardápioWeb indica que novos pedidos disparam o evento `ORDER_NEW`
+2. **Código atual:** O switch case trata apenas `order.placed`, `order.confirmed`, `order.created`
+3. **Normalização:** `ORDER_NEW` é normalizado para `order.new`, que não é reconhecido
+4. **Resultado:** O webhook ignora pedidos de mesa porque o evento não é mapeado corretamente
 
-Baseado na documentacao fornecida, o CardapioWeb envia eventos via webhook com a seguinte estrutura:
+### Evidência dos Logs
+- O evento `ORDER_CREATED` (10:09:01) foi recebido, mas o pedido 180706302 era tipo `takeout` (Retirada), não Mesa
+- Pedidos de Mesa provavelmente usam evento `ORDER_NEW` conforme documentação
 
-```text
-Eventos Relevantes:
-- order.placed      -> Pedido criado (todos os tipos, incluindo mesa)
-- order.confirmed   -> Pedido confirmado
-- order.cancelled   -> Pedido cancelado
-- order.closed      -> Pedido finalizado
-```
+---
 
-O payload inclui os dados completos do pedido, permitindo criar o pedido no sistema imediatamente.
+## Solução Proposta
 
-## Arquitetura Proposta
+### 1. Adicionar suporte ao evento `ORDER_NEW`
 
-```text
-CardapioWeb                     Sistema
-    |                              |
-    |-- order.placed (Mesa) ------>|
-    |                              |-- webhook-orders recebe
-    |                              |-- Identifica store por token
-    |                              |-- Cria pedido + items no KDS
-    |                              |
-    |                         [Tablet mostra pedido]
-    |                              |
-    |-- order.closed (Mesa) ------>|
-    |                              |-- Remove pedido (ja concluido)
-```
+Incluir `'order.new'` no switch case que trata novos pedidos:
 
-## Mudancas Necessarias
-
-### 1. Atualizar Edge Function `webhook-orders`
-
-| Aspecto | Atual | Proposto |
-|---------|-------|----------|
-| Formato do payload | Generico (IncomingOrder) | Payload CardapioWeb nativo |
-| Identificacao de loja | Token unico global | Token por loja (stores table) |
-| Eventos suportados | Status events basicos | Todos os eventos order.* |
-| Criacao de items | Formato interno | Formato CardapioWeb (items[]) |
-
-### 2. Nova Logica de Processamento
-
-```text
-POST /webhook-orders
-    |
-    +-- Extrair header X-API-KEY ou X-Webhook-Token
-    |
-    +-- Buscar loja pelo token na tabela "stores"
-    |       (SELECT * FROM stores WHERE cardapioweb_api_token = token)
-    |
-    +-- Identificar tipo de evento
-    |       |
-    |       +-- order.placed / order.confirmed
-    |       |       +-- Criar pedido + order_items via RPC
-    |       |
-    |       +-- order.cancelled / order.closed
-    |       |       +-- Remover pedido existente
-    |       |
-    |       +-- Outros eventos (ignorar)
-    |
-    +-- Responder 200 OK
-```
-
-### 3. Payload CardapioWeb Esperado
-
-```json
-{
-  "event_type": "order.placed",
-  "order_id": 12345678,
-  "merchant_id": 999,
-  "created_at": "2026-02-05T10:30:00Z",
-  "order": {
-    "id": 12345678,
-    "display_id": 8001,
-    "status": "confirmed",
-    "order_type": "closed_table",
-    "customer": {
-      "name": "Mesa 05",
-      "phone": null
-    },
-    "items": [
-      {
-        "name": "Pizza Margherita",
-        "quantity": 2,
-        "options": [
-          { "name": "Borda Recheada", "group": "Bordas" }
-        ],
-        "observation": "Sem cebola"
-      }
-    ],
-    "total": 89.90
-  }
+```typescript
+switch (normalizedEvent) {
+  case 'order.placed':
+  case 'order.confirmed':
+  case 'order.created':
+  case 'order.new':  // ← Adicionar este caso
+    result = await handleOrderPlaced(supabase, body, store);
+    break;
+  // ...
 }
 ```
 
-### 4. Configuracao de Seguranca
+### 2. Expandir a condição de fetch da API
 
-O webhook usara o mesmo token de API da loja (`cardapioweb_api_token`) para autenticacao, permitindo:
-- Multiplas lojas com webhooks independentes
-- Roteamento automatico para a loja correta
+Garantir que `ORDER_NEW` também dispare o fetch de detalhes:
 
-## Arquivos a Modificar
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/webhook-orders/index.ts` | Reescrever para suportar payload CardapioWeb nativo |
-| `supabase/config.toml` | Adicionar `verify_jwt = false` para webhook-orders |
-
-## URL do Webhook
-
-Apos implementacao, voce precisara configurar no painel do CardapioWeb:
-
-```text
-URL: https://cpxuluerkzpynlcdnxcq.supabase.co/functions/v1/webhook-orders
-Header: X-API-KEY: [token da loja]
+```typescript
+if (['order.created', 'order.placed', 'order.new'].includes(normalizedEvent) && !body.order) {
+  // Fetch order from API...
+}
 ```
 
-## Fluxo Completo Pos-Implementacao
+### 3. Melhorar logging para debug
 
-```text
-1. Cliente faz pedido de Mesa no CardapioWeb
-        |
-        v
-2. CardapioWeb dispara webhook "order.placed"
-        |
-        v
-3. webhook-orders recebe e identifica loja pelo token
-        |
-        v
-4. Sistema cria pedido + items no banco
-        |
-        v
-5. Realtime atualiza o tablet INSTANTANEAMENTE
-        |
-        v
-6. Operador ve o pedido de Mesa no KDS
+Adicionar log específico para identificar tipo de pedido recebido:
+
+```typescript
+console.log(`Event: ${eventType}, normalized: ${normalizedEvent}, order_id: ${body.order_id}`);
 ```
 
-## Consideracoes Tecnicas
+---
 
-1. **Idempotencia**: Verificar se pedido ja existe antes de criar (evitar duplicatas do polling)
-2. **Fallback**: Manter polling ativo como backup caso webhook falhe
-3. **Logs**: Adicionar logging detalhado para debug
-4. **Retry**: CardapioWeb pode reenviar webhooks em caso de falha - tratar duplicatas
+## Arquivo a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `supabase/functions/webhook-orders/index.ts` | Adicionar `order.new` nos handlers de novos pedidos |
+
+---
 
 ## Resultado Esperado
 
-- Pedidos de Mesa aparecem no tablet **instantaneamente** (sem esperar fechamento)
-- Pedidos de Delivery/Retirada tambem podem usar webhook (mais rapido que polling)
-- Sistema robusto com fallback para polling
+Após a implementação:
+- Eventos `ORDER_NEW` serão reconhecidos e processados
+- Pedidos de Mesa (`onsite`/`closed_table`) serão criados no KDS automaticamente
+- Detalhes do pedido serão buscados via API quando o payload vier sem dados completos
+
+---
+
+## Teste de Validação
+
+1. Deploy da função atualizada
+2. Criar um novo pedido de Mesa no CardápioWeb
+3. Verificar logs do webhook para confirmar recebimento de `ORDER_NEW`
+4. Confirmar que o pedido aparece no tablet/preview como tipo `dine_in`
