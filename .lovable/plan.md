@@ -1,151 +1,58 @@
 
-# Plano: Roteamento Inteligente para Bordas Recheadas
+# Plano: Corrigir Erro de Carregamento de Itens na BANCADA - BORDAS
 
-## Problema
-Pizzas com borda recheada vão diretamente para BANCADA A/B, mas o funcionário que recheia a borda fica distante. O item precisa passar primeiro pela **BANCADA - BORDAS** para recheio, e só depois ir para montagem.
+## Problema Identificado
 
-## Fluxo Proposto
+A query do `useOrderItems.ts` falha com erro **PGRST201** porque a tabela `order_items` agora possui **duas** chaves estrangeiras para a tabela `sectors`:
 
-```text
-                    ┌─────────────────┐
-                    │  Novo Pedido    │
-                    │  (com borda)    │
-                    └────────┬────────┘
-                             │
-                             ▼
-                    ┌─────────────────┐
-                    │ BANCADA BORDAS  │◄── Operador recheia a borda
-                    │ (setor inicial) │
-                    └────────┬────────┘
-                             │ Marca "Pronto"
-                             ▼
-                    ┌─────────────────┐
-                    │  BANCADA A/B    │◄── Operador monta a pizza
-                    │ (setor destino) │
-                    └────────┬────────┘
-                             │ Envia ao Forno
-                             ▼
-                    ┌─────────────────┐
-                    │    DESPACHO     │
-                    └─────────────────┘
-```
+1. `assigned_sector_id` - setor onde o item esta atualmente
+2. `next_sector_id` - proximo setor (para roteamento de bordas)
 
-## Detalhes Técnicos
+O Supabase nao consegue determinar automaticamente qual relacionamento usar e retorna status **300** (Multiple Choices).
 
-### 1. Nova Coluna na Tabela order_items
+## Solucao
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| `next_sector_id` | uuid (nullable) | Setor para onde o item vai após ficar pronto no setor atual |
-
-### 2. Nova Configuracao em app_settings
-
-| Coluna | Tipo | Default | Descrição |
-|--------|------|---------|-----------|
-| `kds_edge_sector_id` | uuid (nullable) | null | Setor que processa bordas recheadas primeiro |
-
-### 3. Logica de Roteamento (funcao SQL)
-
-A funcao `create_order_items_from_json` sera atualizada:
+Especificar explicitamente qual foreign key usar no select do Supabase:
 
 ```text
-Para cada item:
-  SE tem edge_type (borda recheada):
-    SE kds_edge_sector_id configurado:
-      assigned_sector_id = kds_edge_sector_id (BANCADA BORDAS)
-      next_sector_id = setor com menor carga (BANCADA A ou B)
-    SENAO:
-      Comportamento atual (vai direto para bancada)
-  SENAO:
-    Vai para bancada normal (sem next_sector_id)
+Antes:  sectors(id, name)
+Depois: sectors!order_items_assigned_sector_id_fkey(id, name)
 ```
 
-### 4. Novo Comportamento ao Marcar "Pronto" na Bancada Bordas
-
-Quando operador marca item como pronto na BANCADA BORDAS:
-
-```text
-SE item.next_sector_id existe:
-  - Move item para next_sector_id
-  - Reseta status para 'pending' (reaparece na nova bancada)
-  - Limpa next_sector_id (para nao criar loop)
-SENAO:
-  - Comportamento atual (envia ao forno)
-```
-
-### 5. Interface nas Configuracoes
-
-Nova opcao na aba KDS:
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  🎯 Roteamento de Bordas Recheadas                          │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ⚠️ Quando ativo, pizzas com borda recheada vao primeiro   │
-│     para o setor selecionado antes de ir para producao.    │
-│                                                             │
-│  Setor de Bordas:                                           │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │ [Dropdown] BANCADA - BORDAS                       ▼   │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                                                             │
-│  Desabilitar roteamento: Selecione "(Nenhum)"               │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Mudancas por Arquivo
+## Mudancas Necessarias
 
 | Arquivo | Mudanca |
 |---------|---------|
-| Migracao SQL | Adicionar coluna `next_sector_id` em `order_items` |
-| Migracao SQL | Adicionar coluna `kds_edge_sector_id` em `app_settings` |
-| Migracao SQL | Atualizar `create_order_items_from_json` para roteamento |
-| Migracao SQL | Criar funcao `complete_edge_preparation` para mover item |
-| `src/hooks/useSettings.ts` | Adicionar `kds_edge_sector_id` na interface |
-| `src/types/orderItems.ts` | Adicionar `next_sector_id` no tipo |
-| `src/hooks/useOrderItems.ts` | Atualizar mutacao de "marcar pronto" |
-| `src/components/SettingsDialog.tsx` | Adicionar dropdown de setor de bordas |
-| `src/components/kds/KDSItemCard.tsx` | Mostrar botao "Enviar para Montagem" ao inves de "Forno" |
+| `src/hooks/useOrderItems.ts` | Alterar a query para especificar a foreign key correta |
 
-## Experiencia do Usuario
+## Codigo Atualizado
 
-1. **Admin** configura o setor de bordas nas Configuracoes KDS
-2. **Novo pedido** com borda recheada aparece na BANCADA BORDAS
-3. **Operador bordas** prepara o recheio e clica "Enviar para Montagem"
-4. **Item** reaparece automaticamente na BANCADA A ou B
-5. **Operador bancada** monta a pizza e envia ao forno
-6. **Fluxo normal** continua (forno, despacho)
-
-## Diferenciacao Visual na Bancada Bordas
-
-O card do item mostrara:
-
-```text
-┌─────────────────────────────────┐
-│ #123 - Pizza Grande (G)         │
-│                                 │
-│ ┌─────────────────────────────┐ │
-│ │ 🟠 # Borda de Cheddar       │ │◄── Tarja laranja (ja existe)
-│ └─────────────────────────────┘ │
-│                                 │
-│ 🍕 Calabresa (G)               │
-│                                 │
-│ [▶ Iniciar]                    │◄── Inicia preparo da borda
-└─────────────────────────────────┘
-
-Apos iniciar:
-
-┌─────────────────────────────────┐
-│ #123 - Pizza Grande (G)         │
-│                                 │
-│ ┌─────────────────────────────┐ │
-│ │ 🟠 # Borda de Cheddar       │ │
-│ └─────────────────────────────┘ │
-│                                 │
-│ ┌─────────────────────────────┐ │
-│ │  📦 Enviar para BANCADA A  │ │◄── Botao diferenciado
-│ └─────────────────────────────┘ │
-└─────────────────────────────────┘
+```typescript
+// Linha 31-43 de useOrderItems.ts
+let query = supabase
+  .from('order_items')
+  .select(`
+    *,
+    orders!inner(
+      id,
+      customer_name,
+      cardapioweb_order_id,
+      external_id,
+      neighborhood,
+      address,
+      stores(id, name)
+    ),
+    sectors!order_items_assigned_sector_id_fkey(id, name)
+  `)
+  .order('created_at', { ascending: true });
 ```
+
+## Por que isso funciona
+
+O Supabase PostgREST usa o nome da foreign key constraint para desambiguar relacionamentos. Ao especificar `sectors!order_items_assigned_sector_id_fkey`, informamos explicitamente que queremos usar a relacao via `assigned_sector_id`.
+
+## Impacto
+
+- **Corrige** o erro "Erro ao carregar itens" na BANCADA - BORDAS
+- **Corrige** o mesmo erro em todos os outros setores KDS
+- **Nao afeta** a logica de roteamento de bordas ja implementada
