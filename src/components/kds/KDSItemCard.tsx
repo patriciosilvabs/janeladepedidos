@@ -207,18 +207,29 @@ export function KDSItemCard({
         </div>
       </div>
 
-      {/* Product Info */}
+      {/* Product Info - texto menor, secundário */}
       <div className="mb-3">
-        <h3 className="text-3xl font-bold text-foreground leading-tight">
+        <span className="text-sm text-muted-foreground">
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
           {item.product_name}
-        </h3>
+        </span>
       </div>
 
-      {/* Complementos/Sabores - Lista simples (sem destaque) */}
-      {item.complements && (
-        <div className="mb-2 text-sm text-muted-foreground whitespace-pre-line">
-          {item.complements}
+      {/* Borda - Tarja LARANJA piscante */}
+      {item.edge_type && (
+        <div className="mb-2 p-2 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+          <p className="text-sm text-white font-bold whitespace-pre-line">
+            {item.edge_type}
+          </p>
+        </div>
+      )}
+
+      {/* Sabores - FONTE GRANDE, destaque principal */}
+      {item.flavors && (
+        <div className="mb-3">
+          <div className="text-2xl font-bold text-foreground whitespace-pre-line leading-tight">
+            {item.flavors}
+          </div>
         </div>
       )}
 
@@ -230,10 +241,17 @@ export function KDSItemCard({
         />
       )}
 
+      {/* Complementos - Lista simples (massas, adicionais) */}
+      {item.complements && (
+        <div className="mb-2 text-sm text-muted-foreground whitespace-pre-line">
+          {item.complements}
+        </div>
+      )}
+
       {/* Observação do cliente - Tarja vermelha piscante */}
       {item.notes && (
         <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-          <p className="text-xs text-white font-bold uppercase">
+          <p className="text-sm text-white font-bold uppercase">
             ⚠️ OBS: {item.notes}
           </p>
         </div>

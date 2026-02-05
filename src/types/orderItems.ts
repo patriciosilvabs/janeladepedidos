@@ -7,6 +7,8 @@ export interface OrderItem {
   quantity: number;
   notes: string | null;
   complements: string | null;
+  edge_type: string | null;
+  flavors: string | null;
   status: ItemStatus;
   assigned_sector_id: string | null;
   claimed_by: string | null;
