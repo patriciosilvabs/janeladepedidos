@@ -68,8 +68,11 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
   }, [queryClient]);
 
   useEffect(() => {
+    // Gerar nome único para esta instância do hook - evita conflitos entre dispositivos/tabs
+    const channelName = `order-items-${crypto.randomUUID()}`;
+    
     const channel = supabase
-      .channel('order-items-realtime')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'order_items' },

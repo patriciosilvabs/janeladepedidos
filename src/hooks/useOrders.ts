@@ -81,8 +81,11 @@ export function useOrders(options: UseOrdersOptions = {}) {
   }, [queryClient]);
 
   useEffect(() => {
+    // Gerar nome único para esta instância do hook - evita conflitos entre dispositivos/tabs
+    const channelName = `orders-${crypto.randomUUID()}`;
+    
     const channel = supabase
-      .channel('orders-realtime')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'orders' },
