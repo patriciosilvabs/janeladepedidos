@@ -112,8 +112,8 @@ export function SectorQueuePanel({
 
   // Calcula a posição na fila para cada item pendente
   const getQueuePosition = (itemId: string): number | undefined => {
-    const pendingItemsSorted = displayItems.filter(i => i.status === 'pending');
-    const index = pendingItemsSorted.findIndex(i => i.id === itemId);
+    // Posição baseada na ordem de criação, independente do status
+    const index = displayItems.findIndex(i => i.id === itemId);
     return index >= 0 ? index + 1 : undefined;
   };
 
