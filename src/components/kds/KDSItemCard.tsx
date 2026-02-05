@@ -187,15 +187,16 @@ export function KDSItemCard({
     <div className={cn(
       "rounded-lg border-2 p-3 transition-all duration-300 relative",
       isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
-      isFifoEnabled && isFirstInQueue && item.status === 'pending' && "scale-105 shadow-lg shadow-primary/20 z-10"
+      isFifoEnabled && isFirstInQueue && item.status === 'pending' && 
+        "scale-110 shadow-xl shadow-primary/30 z-20 bg-gradient-to-br from-primary/10 to-transparent border-primary"
     )}>
       {/* Badge de posição na fila (modo FIFO) */}
       {isFifoEnabled && queuePosition && item.status === 'pending' && (
         <div className={cn(
-          "absolute -top-2 -left-2 w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-lg",
+          "absolute -top-3 -left-3 rounded-full flex items-center justify-center font-extrabold shadow-xl",
           isFirstInQueue 
-            ? "bg-primary text-primary-foreground" 
-            : "bg-muted-foreground/80 text-background"
+            ? "w-10 h-10 text-lg bg-primary text-primary-foreground ring-2 ring-primary/50 animate-pulse" 
+            : "w-8 h-8 text-sm bg-muted-foreground/80 text-background"
         )}>
           #{queuePosition}
         </div>
