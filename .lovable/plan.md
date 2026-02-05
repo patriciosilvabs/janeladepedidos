@@ -1,168 +1,164 @@
 
+# Plano: Palavras-chave Configuraveis para Classificacao KDS
 
-# Plano: Ajustar Hierarquia Visual do Card KDS
+## Problema Atual
 
-## Estrutura Visual Desejada (Baseado na Imagem)
+As palavras-chave para identificar bordas e sabores estao fixas no codigo SQL:
 
-```
-Pizza Grande por 35,00 - 2 Sabores     (texto pequeno, secundario)
+| Categoria | Regra Fixa (SQL) |
+|-----------|------------------|
+| Bordas | Comeca com `#` OU contem "Borda" |
+| Sabores | Contem `(G)`, `(M)`, `(P)` OU grupo contem "Sabor" |
 
-┌─────────────────────────────────────────────┐
-│ # Borda de Chocolate Preto                  │  ← Tarja LARANJA piscante
-└─────────────────────────────────────────────┘
-
-- CEARENSE (G)                                   ← FONTE GRANDE, destaque principal
-- PEPPERONI E CATUPIRY (G)
-
-- Pizza Chocolate Pequena 25cm por R$ 19,90    ← Lista simples (itens adicionais)
-
-┌─────────────────────────────────────────────┐
-│ SEM CEBOLA                                  │  ← Tarja VERMELHA piscante
-└─────────────────────────────────────────────┘
-```
+Se a pizzaria usar outros termos (ex: "Recheio" ao inves de "Borda", ou "(GR)" ao inves de "(G)"), o sistema classifica errado.
 
 ---
 
-## Solucao em 2 Partes
+## Solucao
 
-### Parte 1: Separar Dados no Banco de Dados
+Criar uma secao nas **Configuracoes KDS** para que o usuario defina suas proprias palavras-chave:
 
-Atualizar a funcao `create_order_items_from_json` para identificar e separar:
-
-| Categoria | Identificador | Campo Destino | Exibicao |
-|-----------|---------------|---------------|----------|
-| **Bordas** | Comeca com `#` ou contem "Borda" | `edge_type` (novo) | Tarja laranja piscante |
-| **Sabores** | Contem `(G)`, `(M)`, `(P)` ou grupo "Sabor" | `flavors` (novo) | Fonte grande, destaque |
-| **Outros** | Demais itens (massas, adicionais) | `complements` | Lista simples |
-| **Observacao** | Campo `observation` da API | `notes` | Tarja vermelha piscante |
-
-### Parte 2: Atualizar Interface do Card
-
-Modificar `KDSItemCard.tsx` para exibir na ordem correta com os estilos apropriados.
+```text
+┌─────────────────────────────────────────────────────────┐
+│  🔤 Classificacao de Itens                              │
+├─────────────────────────────────────────────────────────┤
+│                                                         │
+│  Palavras-chave para BORDAS (tarja laranja):           │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ #, Borda, Recheio                               │   │
+│  └─────────────────────────────────────────────────┘   │
+│  Separar por virgula. Ex: #, Borda, Recheio            │
+│                                                         │
+│  Palavras-chave para SABORES (fonte grande):            │
+│  ┌─────────────────────────────────────────────────┐   │
+│  │ (G), (M), (P), Sabor                            │   │
+│  └─────────────────────────────────────────────────┘   │
+│  Separar por virgula. Ex: (G), (M), (P), Sabor         │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## Mudancas Detalhadas
 
-### 1. Migracao SQL - Novos Campos
+### 1. Migracao SQL - Novas Colunas
 
 ```sql
--- Adicionar colunas para separar tipos de dados
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS edge_type text;
-ALTER TABLE order_items ADD COLUMN IF NOT EXISTS flavors text;
+-- Adicionar colunas para palavras-chave configuraveis
+ALTER TABLE app_settings 
+ADD COLUMN IF NOT EXISTS kds_edge_keywords text DEFAULT '#, Borda',
+ADD COLUMN IF NOT EXISTS kds_flavor_keywords text DEFAULT '(G), (M), (P), Sabor';
 ```
 
 ### 2. Atualizar Funcao SQL
 
-A funcao vai processar cada `option` e classificar:
+A funcao `create_order_items_from_json` sera atualizada para:
+- Buscar as palavras-chave da tabela `app_settings`
+- Usar essas palavras para classificar cada option
 
 ```sql
+-- Buscar keywords configuradas
+SELECT kds_edge_keywords, kds_flavor_keywords 
+INTO v_edge_keywords, v_flavor_keywords
+FROM app_settings WHERE id = 'default';
+
 -- Para cada option:
-v_option_name := v_option->>'name';
-
--- 1. Bordas: comecam com # ou contem "Borda"
-IF v_option_name LIKE '#%' OR v_option_name ILIKE '%borda%' THEN
-  -- Adicionar a v_edge_type
-  
--- 2. Sabores: contem (G), (M), (P) ou grupo "Sabor"
-ELSIF v_option_name ~ '\([GMP]\)' OR v_option_group ILIKE '%sabor%' THEN
-  -- Adicionar a v_flavors (com quebra de linha)
-  
--- 3. Outros: massas, adicionais, etc
-ELSE
-  -- Adicionar a v_complements
-END IF;
-
--- Salvar separadamente
-INSERT INTO order_items (..., notes, complements, edge_type, flavors)
-VALUES (..., v_observation, v_complements, v_edge_type, v_flavors);
+-- 1. Verificar se contem alguma keyword de borda
+-- 2. Se nao, verificar se contem alguma keyword de sabor
+-- 3. Se nao, vai para complementos
 ```
 
-### 3. Atualizar Types
+### 3. Atualizar Interface de Configuracoes
 
-```typescript
-// src/types/orderItems.ts
-export interface OrderItem {
-  // ... campos existentes
-  edge_type: string | null;   // Borda (tarja laranja)
-  flavors: string | null;     // Sabores (fonte grande)
-  complements: string | null; // Outros itens (lista simples)
-}
-```
-
-### 4. Atualizar KDSItemCard
+Adicionar nova secao na aba KDS do `SettingsDialog.tsx`:
 
 ```tsx
-{/* Nome do produto - texto menor, secundario */}
-<div className="mb-2">
-  <span className="text-sm text-muted-foreground">
-    {item.quantity > 1 && `${item.quantity}x `}
-    {item.product_name}
-  </span>
-</div>
-
-{/* Borda - Tarja LARANJA piscante */}
-{item.edge_type && (
-  <div className="mb-2 p-2 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-    <p className="text-sm text-white font-bold">
-      {item.edge_type}
-    </p>
+{/* Classificacao de Itens */}
+<div className="border-t border-border/50 pt-4 mt-6">
+  <div className="flex items-center gap-2 mb-4">
+    <Tags className="h-4 w-4 text-primary" />
+    <Label className="text-base font-medium">Classificacao de Itens</Label>
   </div>
-)}
-
-{/* Sabores - FONTE GRANDE, destaque principal */}
-{item.flavors && (
-  <div className="mb-3">
-    <div className="text-2xl font-bold text-foreground whitespace-pre-line leading-tight">
-      {item.flavors}
+  <p className="text-sm text-muted-foreground mb-4">
+    Define como o sistema identifica bordas e sabores nos pedidos importados.
+  </p>
+  
+  <div className="space-y-4">
+    {/* Keywords para Bordas */}
+    <div className="space-y-2">
+      <Label htmlFor="edge-keywords" className="flex items-center gap-2">
+        <span className="w-3 h-3 bg-orange-600 rounded-sm"></span>
+        Palavras-chave para BORDAS
+      </Label>
+      <Input
+        id="edge-keywords"
+        value={formData.kds_edge_keywords || '#, Borda'}
+        onChange={(e) => {
+          setFormData({ ...formData, kds_edge_keywords: e.target.value });
+          debouncedAutoSave({ kds_edge_keywords: e.target.value });
+        }}
+        placeholder="#, Borda, Recheio"
+      />
+      <p className="text-xs text-muted-foreground">
+        Itens que contenham estas palavras aparecem com tarja laranja piscante
+      </p>
+    </div>
+    
+    {/* Keywords para Sabores */}
+    <div className="space-y-2">
+      <Label htmlFor="flavor-keywords" className="flex items-center gap-2">
+        <span className="text-lg font-bold">A</span>
+        Palavras-chave para SABORES
+      </Label>
+      <Input
+        id="flavor-keywords"
+        value={formData.kds_flavor_keywords || '(G), (M), (P), Sabor'}
+        onChange={(e) => {
+          setFormData({ ...formData, kds_flavor_keywords: e.target.value });
+          debouncedAutoSave({ kds_flavor_keywords: e.target.value });
+        }}
+        placeholder="(G), (M), (P), Sabor"
+      />
+      <p className="text-xs text-muted-foreground">
+        Itens que contenham estas palavras aparecem com fonte grande em destaque
+      </p>
     </div>
   </div>
-)}
+</div>
+```
 
-{/* Complementos - Lista simples (massas, adicionais) */}
-{item.complements && (
-  <div className="mb-2 text-sm text-muted-foreground whitespace-pre-line">
-    {item.complements}
-  </div>
-)}
+### 4. Atualizar Types
 
-{/* Observacao do cliente - Tarja VERMELHA piscante */}
-{item.notes && (
-  <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-    <p className="text-sm text-white font-bold uppercase">
-      OBS: {item.notes}
-    </p>
-  </div>
-)}
+```typescript
+// src/hooks/useSettings.ts
+export interface AppSettings {
+  // ... campos existentes
+  kds_edge_keywords: string;    // "#, Borda"
+  kds_flavor_keywords: string;  // "(G), (M), (P), Sabor"
+}
 ```
 
 ---
 
-## Resultado Visual Final
+## Logica de Classificacao Atualizada
 
-```
-#1234                                    0:45
+A funcao SQL vai:
 
-Pizza Grande por 35,00 - 2 Sabores      (pequeno, cinza)
+1. **Parsear keywords** (separar por virgula, remover espacos)
+2. **Para cada option**:
+   - Se o nome comeca com `#` → Borda (case especial mantido)
+   - Se o nome contem qualquer keyword de borda → Borda
+   - Se o nome contem qualquer keyword de sabor → Sabor
+   - Se o grupo contem qualquer keyword de sabor → Sabor
+   - Senao → Complemento
 
-┌─────────────────────────────────────────────┐
-│ # Borda de Chocolate Preto                  │  LARANJA PISCANTE
-└─────────────────────────────────────────────┘
+```sql
+-- Exemplo de matching
+v_option_name = 'CEARENSE (G)'
+v_flavor_keywords = '(G), (M), (P), Sabor'
 
-- CEARENSE (G)                                   FONTE GRANDE
-- PEPPERONI E CATUPIRY (G)                       DESTAQUE
-
-- Massa Tradicional                              (lista simples)
-- Pizza Chocolate Pequena 25cm
-
-┌─────────────────────────────────────────────┐
-│ OBS: SEM CEBOLA                             │  VERMELHA PISCANTE
-└─────────────────────────────────────────────┘
-
-Pizzaria Central • Bancada 1
-Joao Silva • Centro
-
-         [ INICIAR ]
+-- Resultado: Match em "(G)" → vai para flavors
 ```
 
 ---
@@ -171,17 +167,28 @@ Joao Silva • Centro
 
 | Arquivo | Mudanca |
 |---------|---------|
-| Migration SQL | Adicionar colunas `edge_type` e `flavors`, atualizar funcao |
-| `src/types/orderItems.ts` | Adicionar campos `edge_type` e `flavors` |
-| `src/components/kds/KDSItemCard.tsx` | Reorganizar layout com nova hierarquia visual |
+| Migration SQL | Adicionar colunas `kds_edge_keywords` e `kds_flavor_keywords` |
+| Migration SQL | Atualizar funcao para usar keywords dinamicas |
+| `src/hooks/useSettings.ts` | Adicionar novos campos na interface |
+| `src/components/SettingsDialog.tsx` | Adicionar inputs na aba KDS |
 
 ---
 
-## Impacto
+## Valores Padrao
 
-- Sabores em destaque (fonte grande) para facilitar visualizacao
-- Bordas com tarja laranja piscante para atencao especial
-- Observacoes com tarja vermelha piscante (apenas cliente)
-- Nome do produto em segundo plano (texto menor)
-- Estrutura mais organizada e legivel para operadores
+Os valores padrao manterao o comportamento atual:
 
+| Campo | Valor Padrao |
+|-------|--------------|
+| `kds_edge_keywords` | `#, Borda` |
+| `kds_flavor_keywords` | `(G), (M), (P), Sabor` |
+
+---
+
+## Experiencia do Usuario
+
+1. Usuario acessa **Configuracoes → KDS**
+2. Encontra secao **Classificacao de Itens**
+3. Edita palavras-chave conforme nomenclatura da sua API
+4. Alteracoes salvam automaticamente (auto-save 800ms)
+5. Novos pedidos importados usarao as novas regras
