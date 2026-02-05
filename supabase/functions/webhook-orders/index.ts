@@ -443,15 +443,17 @@ async function fetchOrderFromApi(
      const eventType = body.event_type;
  
      console.log(`Event: ${eventType}, order_id: ${body.order_id}`);
-     console.log(`Full payload: ${JSON.stringify(body).substring(0, 500)}`);
- 
-     let result: { action: string; [key: string]: unknown };
  
      // Normalize event type for matching (case-insensitive, handle both formats)
-     const normalizedEvent = eventType?.toLowerCase().replace(/_/g, '.');
+      const normalizedEvent = eventType?.toLowerCase().replace(/_/g, '.');
+      
+      console.log(`Normalized event: ${normalizedEvent}`);
+      console.log(`Full payload: ${JSON.stringify(body).substring(0, 500)}...`);
+
+      let result: { action: string; [key: string]: unknown };
  
      // If ORDER_CREATED but missing order data, fetch from API
-     if ((normalizedEvent === 'order.created' || normalizedEvent === 'order.placed') && !body.order) {
+      if (['order.created', 'order.placed', 'order.new'].includes(normalizedEvent) && !body.order) {
        console.log(`Event ${eventType} missing order data, fetching from API...`);
        
        // Need to fetch store with API credentials
@@ -480,6 +482,7 @@ async function fetchOrderFromApi(
        case 'order.placed':
        case 'order.confirmed':
        case 'order.created':
+        case 'order.new':
          result = await handleOrderPlaced(supabase, body, store as StoreRecord);
          break;
  
