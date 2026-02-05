@@ -1,23 +1,24 @@
 export type ItemStatus = 'pending' | 'in_prep' | 'in_oven' | 'ready';
 
-export interface OrderItem {
-  id: string;
-  order_id: string;
-  product_name: string;
-  quantity: number;
-  notes: string | null;
-  complements: string | null;
-  edge_type: string | null;
-  flavors: string | null;
-  status: ItemStatus;
-  assigned_sector_id: string | null;
-  claimed_by: string | null;
-  claimed_at: string | null;
-  oven_entry_at: string | null;
-  estimated_exit_at: string | null;
-  ready_at: string | null;
-  created_at: string;
-}
+ export interface OrderItem {
+   id: string;
+   order_id: string;
+   product_name: string;
+   quantity: number;
+   notes: string | null;
+   complements: string | null;
+   edge_type: string | null;
+   flavors: string | null;
+   status: ItemStatus;
+   assigned_sector_id: string | null;
+   next_sector_id: string | null;
+   claimed_by: string | null;
+   claimed_at: string | null;
+   oven_entry_at: string | null;
+   estimated_exit_at: string | null;
+   ready_at: string | null;
+   created_at: string;
+ }
 
 export interface OrderItemWithOrder extends OrderItem {
   orders?: {
