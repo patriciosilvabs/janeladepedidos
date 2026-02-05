@@ -1,86 +1,90 @@
 
-
-# Plano: Incluir Pedidos de Mesa Abertos no Polling
+# Plano: Corrigir Erro 400 na API do CardapioWeb
 
 ## Problema Identificado
 
-O polling atual consulta apenas pedidos com status `confirmed`:
+A modificacao anterior causou erro 400 na API do CardapioWeb:
 
-```typescript
-// poll-orders/index.ts - Linha 85
-const ordersResponse = await fetch(`${baseUrl}/api/partner/v1/orders?status[]=confirmed`, {
+```
+{"code":4000,"message":"Parametros invalidos.","details":"status contem valores invalidos"}
 ```
 
-No CardápioWeb, pedidos de **Mesa** têm status "Aberta" (`open`), não "confirmed". Por isso nunca são capturados pelo sistema.
-
-**Evidência da imagem:**
-- MESA 17, Pedido #6250 mostra status "**Aberta**"
-- Este pedido não aparece no KDS porque o filtro ignora status `open`
+Os valores `open` e `pending` nao sao aceitos pela API. Isso quebrou completamente o polling - nenhum pedido esta sendo importado agora.
 
 ---
 
-## Solucao
+## Causa Raiz
 
-Expandir o filtro de status para incluir todos os status relevantes:
-- `confirmed` - Delivery/Retirada/Balcao confirmados
-- `open` - Mesas abertas em consumo
-- `pending` - Pedidos aguardando confirmacao (se aplicavel)
+A API do CardapioWeb nao aceita os status que tentamos usar:
+- `open` - NAO ACEITO
+- `pending` - NAO ACEITO
+- `confirmed` - ACEITO (funcionava antes)
 
 ---
 
-## Mudanca
+## Solucao em 2 Etapas
+
+### Etapa 1: Correcao Imediata (Restaurar Funcionamento)
+
+Voltar ao filtro que funcionava (`confirmed`) para restaurar o polling de pedidos de Delivery/Retirada/Balcao.
+
+### Etapa 2: Busca Sem Filtro (Descobrir Status Validos)
+
+Fazer uma chamada a API **sem o parametro status** para:
+1. Receber todos os pedidos disponiveis
+2. Verificar nos logs quais valores de `status` existem nos pedidos de Mesa
+3. Usar esses valores reais em uma proxima iteracao
+
+---
+
+## Mudanca Proposta
 
 **Arquivo**: `supabase/functions/poll-orders/index.ts`
 
-### Antes (linha 85)
+### Opcao A: Remover filtro de status (buscar todos)
 
 ```typescript
-const ordersResponse = await fetch(`${baseUrl}/api/partner/v1/orders?status[]=confirmed`, {
-```
-
-### Depois
-
-```typescript
-// Incluir todos os status relevantes para diferentes tipos de pedido:
-// - confirmed: Delivery, Retirada, Balcao confirmados
-// - open: Mesas abertas em consumo
-// - pending: Pedidos aguardando confirmacao
+// Buscar todos os pedidos sem filtrar por status
+// Isso permite descobrir quais status reais a API retorna para pedidos de Mesa
 const ordersResponse = await fetch(
-  `${baseUrl}/api/partner/v1/orders?status[]=confirmed&status[]=open&status[]=pending`,
+  `${baseUrl}/api/partner/v1/orders`,
   {
+    method: 'GET',
+    headers: {
+      'X-API-KEY': token,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+  }
+);
+```
+
+### Opcao B: Voltar apenas para `confirmed` (seguro, mas sem Mesas)
+
+```typescript
+// Voltar ao filtro anterior que funcionava
+const ordersResponse = await fetch(
+  `${baseUrl}/api/partner/v1/orders?status[]=confirmed`,
+  {
+    method: 'GET',
+    headers: {
+      'X-API-KEY': token,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    },
+  }
+);
 ```
 
 ---
 
-## Fluxo Corrigido
+## Recomendacao
 
-```text
-CardapioWeb API
-      |
-      v
-poll-orders (Edge Function)
-      |
-      +--> GET /orders?status[]=confirmed  (Delivery, Retirada, Balcao)
-      |               &status[]=open       (Mesas abertas) <-- NOVO
-      |               &status[]=pending    (Aguardando)    <-- NOVO
-      |
-      v
-Todos os tipos de pedido sao capturados
-      |
-      v
-Aparecem no KDS com badge correto
-```
-
----
-
-## Consideracao Adicional
-
-Para pedidos de mesa que estao "abertos", o cliente pode continuar adicionando itens. Uma opcao futura seria:
-
-1. **Abordagem atual (mais simples)**: Importar todos os itens de uma vez e processar
-2. **Abordagem avancada**: Verificar se ha novos itens em pedidos de mesa ja importados e adiciona-los incrementalmente
-
-Por ora, a abordagem simples resolve o problema imediato.
+**Opcao A (Remover filtro)** e a melhor escolha porque:
+1. Restaura o funcionamento imediato
+2. Permite descobrir todos os pedidos disponiveis, incluindo Mesas
+3. Os logs mostrarao o `order_type` e `status` real de cada pedido
+4. Com essa informacao, podemos ajustar o filtro corretamente
 
 ---
 
@@ -88,13 +92,12 @@ Por ora, a abordagem simples resolve o problema imediato.
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/poll-orders/index.ts` | Adicionar `status[]=open` e `status[]=pending` ao endpoint de consulta |
+| `supabase/functions/poll-orders/index.ts` | Remover filtro de status ou adicionar log para debug |
 
 ---
 
 ## Resultado Esperado
 
-- Pedidos de Mesa com status "Aberta" serao capturados pelo polling
-- Aparecerao no Dashboard e nas bancadas KDS com badge verde (Mesa)
-- O pedido MESA 17 (#6250) sera importado na proxima sincronizacao
-
+1. Polling volta a funcionar imediatamente
+2. Todos os tipos de pedido (Delivery, Retirada, Mesa) serao capturados
+3. Logs mostrarao os status reais para ajustes futuros
