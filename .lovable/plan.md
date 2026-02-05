@@ -1,171 +1,165 @@
 
-
-# Plano: Corrigir Atualização em Tempo Real - Canais Únicos
+# Plano: Corrigir Aplicação da Configuração `kds_default_mode`
 
 ## Problema Identificado
 
-O sistema não está atualizando em tempo real em todos os dispositivos porque os canais de Realtime estão usando **nomes fixos** (hardcoded):
+A configuração `kds_default_mode` definida como `'items'` no painel de configurações **não está sendo aplicada corretamente** em todos os cenários.
 
-- `useOrderItems.ts`: `.channel('order-items-realtime')`
-- `useOrders.ts`: `.channel('orders-realtime')`
+### Análise do Código Atual
 
-Quando múltiplas instâncias do hook são montadas (diferentes componentes, diferentes tabs, diferentes dispositivos), **todos tentam usar o mesmo canal**. O Supabase **não cria novas subscriptions** para canais com o mesmo nome - ele reutiliza o existente. Isso causa:
+**Arquivo: `src/pages/Index.tsx`**
 
-1. Apenas a primeira instância recebe eventos
-2. Novas instâncias podem não receber nenhuma atualização
-3. Diferentes dispositivos (tablet A vs tablet B) podem ter comportamento inconsistente
+```typescript
+// Linha 52 - Determina o modo efetivo
+const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
+
+// Linhas 88-96 - Renderização condicional
+{isKDSSector 
+  ? (effectiveKdsMode === 'items' 
+      ? <KDSItemsDashboard userSector={userSector} /> 
+      : <KDSDashboard userSector={userSector} />) 
+: isDispatchSector
+  ? <DispatchDashboard />
+    : mainView === 'kds'
+      ? <KDSItemsDashboard />   // ← BUG: Ignora effectiveKdsMode!
+      : <Dashboard />
+}
+```
+
+### Bugs Encontrados
+
+1. **Para admins sem setor KDS**: Quando clicam em "KDS Produção", o sistema mostra `<KDSItemsDashboard />` diretamente, **ignorando a configuração** `kds_default_mode`.
+
+2. **Para admins com setor KDS**: O estado local `kdsMode` começa como `'items'`, mas não sincroniza com a configuração do banco quando o componente monta.
+
+3. **Cache desatualizado**: O `staleTime` de 5 minutos pode fazer com que mudanças na configuração demorem a refletir.
+
+---
 
 ## Solução
 
-Gerar **nomes de canais únicos** usando identificadores únicos (UUID ou timestamp) para cada instância do hook. Cada subscription deve ter seu próprio canal exclusivo.
+### Mudanças no `src/pages/Index.tsx`
+
+1. **Sincronizar estado local com configuração do banco**:
+   - Quando `settings` carregar, inicializar `kdsMode` com o valor do banco
+   - Usar `useEffect` para sincronizar
+
+2. **Aplicar `effectiveKdsMode` em TODOS os cenários**:
+   - Quando admin sem setor clica em "KDS Produção", respeitar a configuração
+
+3. **Reduzir `staleTime` das configurações**:
+   - Mudar de 5 minutos para 30 segundos para refletir mudanças mais rápido
 
 ---
 
-## Alterações Técnicas
+## Código Corrigido
 
-### Arquivo: `src/hooks/useOrderItems.ts`
-
-**Mudança na linha 71:**
+### `src/pages/Index.tsx`
 
 ```typescript
-// ANTES (problemático)
-const channel = supabase
-  .channel('order-items-realtime')
-  .on(...)
+const Index = () => {
+  const { user, loading: authLoading, isAdmin } = useAuth();
+  const { userSector, isLoading: sectorLoading } = useUserSector(user?.id);
+  const { settings, isLoading: settingsLoading } = useSettings();
+  
+  // Estado local inicializado com fallback, será sincronizado com settings
+  const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
 
-// DEPOIS (corrigido)
-const channelName = `order-items-${crypto.randomUUID()}`;
-const channel = supabase
-  .channel(channelName)
-  .on(...)
+  // NOVO: Sincronizar kdsMode com configuração do banco quando settings carregar
+  useEffect(() => {
+    if (settings?.kds_default_mode) {
+      setKdsMode(settings.kds_default_mode);
+    }
+  }, [settings?.kds_default_mode]);
+
+  // ... resto do código ...
+
+  // KDS mode: usar configuração do settings como base
+  // Admin pode sobrescrever via tabs, operadores usam sempre o settings
+  const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
+  
+  // ... resto do código ...
+
+  // RENDERIZAÇÃO CORRIGIDA:
+  return (
+    <div className="min-h-screen bg-background">
+      <Header sectorName={userSector?.name} isFullscreen={isFullscreen}>
+        {/* ... tabs ... */}
+      </Header>
+      
+      {/* CORRIGIDO: Aplicar effectiveKdsMode em todos os cenários */}
+      {isKDSSector 
+        ? (effectiveKdsMode === 'items' 
+            ? <KDSItemsDashboard userSector={userSector} /> 
+            : <KDSDashboard userSector={userSector} />) 
+        : isDispatchSector
+          ? <DispatchDashboard />
+          : mainView === 'kds'
+            ? (effectiveKdsMode === 'items'   // ← CORREÇÃO: Respeitar configuração
+                ? <KDSItemsDashboard />
+                : <KDSDashboard />)
+            : <Dashboard />
+      }
+    </div>
+  );
+};
 ```
 
-### Arquivo: `src/hooks/useOrders.ts`
-
-**Mudança na linha 84:**
+### `src/hooks/useSettings.ts`
 
 ```typescript
-// ANTES (problemático)
-const channel = supabase
-  .channel('orders-realtime')
-  .on(...)
-
-// DEPOIS (corrigido)
-const channelName = `orders-${crypto.randomUUID()}`;
-const channel = supabase
-  .channel(channelName)
-  .on(...)
+// Reduzir staleTime para refletir mudanças mais rápido
+const { data: settings, isLoading, error } = useQuery({
+  queryKey: ['app-settings'],
+  queryFn: async () => {
+    // ... query ...
+  },
+  staleTime: 1000 * 30, // 30 segundos ao invés de 5 minutos
+});
 ```
 
 ---
 
-## Por que isso funciona
+## Resumo das Mudanças
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Index.tsx` | Adicionar `useEffect` para sincronizar `kdsMode` com `settings` |
+| `src/pages/Index.tsx` | Aplicar `effectiveKdsMode` quando admin clica em "KDS Produção" |
+| `src/hooks/useSettings.ts` | Reduzir `staleTime` de 5min para 30s |
+
+---
+
+## Fluxo Após Correção
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                         ANTES (BUG)                                      │
+│                         FLUXO CORRIGIDO                                  │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                         │
-│  Tablet A (Dashboard)    Tablet B (KDS)      Tablet C (Despacho)        │
-│       ↓                       ↓                     ↓                   │
-│  channel('orders')      channel('orders')    channel('orders')          │
-│       │                       │                     │                   │
-│       └───────────────────────┴─────────────────────┘                   │
-│                              │                                          │
-│                    Supabase: "Já existe channel 'orders',               │
-│                              vou reutilizar o primeiro"                 │
-│                              │                                          │
-│                    Resultado: Apenas Tablet A recebe eventos!           │
+│  1. Admin altera configuração para "Por Item" nas configurações         │
+│     ↓                                                                   │
+│  2. Banco salva: kds_default_mode = 'items'                            │
+│     ↓                                                                   │
+│  3. Query invalida cache → settings recarrega (30s máx)                │
+│     ↓                                                                   │
+│  4. useEffect sincroniza: setKdsMode('items')                          │
+│     ↓                                                                   │
+│  5. effectiveKdsMode = 'items'                                         │
+│     ↓                                                                   │
+│  6. Qualquer visão KDS mostra: KDSItemsDashboard ✓                     │
 │                                                                         │
 └─────────────────────────────────────────────────────────────────────────┘
-
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         DEPOIS (CORRIGIDO)                               │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  Tablet A (Dashboard)    Tablet B (KDS)      Tablet C (Despacho)        │
-│       ↓                       ↓                     ↓                   │
-│  channel('orders-abc')  channel('orders-xyz') channel('orders-123')     │
-│       │                       │                     │                   │
-│       ↓                       ↓                     ↓                   │
-│  Supabase cria 3 canais INDEPENDENTES                                   │
-│                                                                         │
-│  Resultado: TODOS os tablets recebem eventos em tempo real!             │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Código Completo das Mudanças
-
-### `src/hooks/useOrderItems.ts` (linhas 70-86)
-
-```typescript
-useEffect(() => {
-  // Gerar nome único para esta instância do hook
-  const channelName = `order-items-${crypto.randomUUID()}`;
-  
-  const channel = supabase
-    .channel(channelName)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'order_items' },
-      debouncedInvalidate
-    )
-    .subscribe();
-
-  return () => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    supabase.removeChannel(channel);
-  };
-}, [debouncedInvalidate]);
-```
-
-### `src/hooks/useOrders.ts` (linhas 83-99)
-
-```typescript
-useEffect(() => {
-  // Gerar nome único para esta instância do hook
-  const channelName = `orders-${crypto.randomUUID()}`;
-  
-  const channel = supabase
-    .channel(channelName)
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'orders' },
-      debouncedInvalidate
-    )
-    .subscribe();
-
-  return () => {
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-    supabase.removeChannel(channel);
-  };
-}, [queryClient, debouncedInvalidate]);
 ```
 
 ---
 
 ## Benefícios
 
-| Problema Atual | Após Correção |
-|----------------|---------------|
-| Pedidos não aparecem sem refresh | Atualização instantânea em todos os dispositivos |
-| Canais duplicados causam conflitos | Cada instância tem canal exclusivo |
-| Latência alta e inconsistente | Latência < 100ms garantida |
-| Dependência de nomes hardcoded | Nomes dinâmicos e únicos |
-
----
-
-## Testes Recomendados
-
-1. Abrir Dashboard no computador e KDS no tablet simultaneamente
-2. Simular um pedido no computador
-3. Verificar se aparece instantaneamente no tablet (sem refresh)
-4. Testar com 3+ dispositivos simultâneos
-
+| Antes | Depois |
+|-------|--------|
+| Configuração ignorada para admins sem setor | Configuração respeitada em todos os cenários |
+| Mudanças demoram 5 min para refletir | Mudanças refletem em até 30 segundos |
+| Estado local não sincroniza com banco | Estado local sincroniza automaticamente |
