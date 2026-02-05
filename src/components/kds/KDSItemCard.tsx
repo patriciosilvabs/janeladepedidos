@@ -30,6 +30,7 @@ interface KDSItemCardProps {
   fifoSettings?: FifoSettings;
   queuePosition?: number;
   canStartItem?: boolean;
+  isFirstPending?: boolean;
 }
 
 export function KDSItemCard({
@@ -42,6 +43,7 @@ export function KDSItemCard({
   fifoSettings,
   queuePosition,
   canStartItem = true,
+  isFirstPending = false,
 }: KDSItemCardProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -53,7 +55,6 @@ export function KDSItemCard({
   const isValidStatus = item.status === 'pending' || item.status === 'in_prep';
   
   const isFifoEnabled = fifoSettings?.enabled ?? false;
-  const isFirstInQueue = queuePosition === 1;
 
   // Elapsed time for pending/in_prep items
   useEffect(() => {
@@ -140,7 +141,7 @@ export function KDSItemCard({
           className={cn(
             "w-full transition-all",
             canStartItem 
-              ? isFifoEnabled && isFirstInQueue
+              ? isFifoEnabled && isFirstPending
                 ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400 ring-offset-2 ring-offset-background animate-pulse"
                 : "bg-amber-600 hover:bg-amber-700"
               : "bg-muted text-muted-foreground cursor-not-allowed"
@@ -189,7 +190,7 @@ export function KDSItemCard({
       isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
     )}>
       {/* Badge de posição na fila (modo FIFO) */}
-      {isFifoEnabled && isFirstInQueue && item.status === 'pending' && (
+      {isFifoEnabled && isFirstPending && item.status === 'pending' && (
         <div className="absolute -top-3 -left-3 px-2 py-1 rounded-md flex items-center justify-center text-xs font-extrabold bg-primary text-primary-foreground shadow-lg">
           FILA
         </div>

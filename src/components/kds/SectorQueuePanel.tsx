@@ -113,6 +113,12 @@ export function SectorQueuePanel({
     });
   }, [items]);
 
+  // Identifica o primeiro item pendente para exibir o badge "FILA"
+  const firstPendingId = useMemo(() => {
+    const firstPending = displayItems.find(i => i.status === 'pending');
+    return firstPending?.id ?? null;
+  }, [displayItems]);
+
   // Calcula a posição na fila para cada item pendente
   const getQueuePosition = (itemId: string): number | undefined => {
     // Posição baseada na ordem de criação, independente do status
@@ -213,6 +219,7 @@ export function SectorQueuePanel({
                 fifoSettings={fifoSettings}
                 queuePosition={getQueuePosition(item.id)}
                 canStartItem={canStartItem(item.id)}
+              isFirstPending={item.id === firstPendingId}
               />
             ))}
           </div>
