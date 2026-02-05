@@ -1,10 +1,9 @@
 import { useMemo } from 'react';
-import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSectors, Sector } from '@/hooks/useSectors';
 import { SectorQueuePanel } from './SectorQueuePanel';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, CheckCircle2, Clock, Users } from 'lucide-react';
+import { Loader2, CheckCircle2 } from 'lucide-react';
 
 interface KDSItemsDashboardProps {
   userSector?: Sector | null;
@@ -15,9 +14,6 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
   const filterSectorId = userSector?.id;
   
   const { sectors, isLoading: sectorsLoading } = useSectors();
-  const { items, pendingItems, inPrepItems, inOvenItems, readyItems, isLoading } = useOrderItems({
-    sectorId: filterSectorId,
-  });
 
   // Filter KDS sectors (view_type = 'kds') - only for admins without sector
   const kdsSectors = useMemo(
@@ -25,11 +21,7 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
     [sectors]
   );
 
-  // Stats
-  const totalPending = pendingItems.length;
-  const totalInPrep = inPrepItems.length;
-
-  if (isLoading || sectorsLoading) {
+  if (sectorsLoading) {
     return (
       <div className="flex h-[calc(100vh-5rem)] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -43,16 +35,6 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">KDS - Itens</h1>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="gap-1">
-              <Clock className="h-3 w-3" />
-              {totalPending} pendentes
-            </Badge>
-            <Badge variant="outline" className="gap-1 bg-blue-500/10">
-              <Users className="h-3 w-3" />
-              {totalInPrep} em preparo
-            </Badge>
-          </div>
         </div>
       </div>
 
@@ -65,21 +47,16 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
           />
         </div>
       ) : (
-        /* Admins/owners without sector see all sectors with tabs */
+        /* Admins/owners without sector see each sector in separate tabs - NO "All" option */
         kdsSectors.length > 1 ? (
-          <Tabs defaultValue="all" className="flex-1 flex flex-col">
+          <Tabs defaultValue={kdsSectors[0]?.id} className="flex-1 flex flex-col">
             <TabsList>
-              <TabsTrigger value="all">Todos</TabsTrigger>
               {kdsSectors.map((sector) => (
                 <TabsTrigger key={sector.id} value={sector.id}>
                   {sector.name}
                 </TabsTrigger>
               ))}
             </TabsList>
-            
-            <TabsContent value="all" className="flex-1 mt-4">
-              <SectorQueuePanel sectorName="Todos os Setores" />
-            </TabsContent>
             
             {kdsSectors.map((sector) => (
               <TabsContent key={sector.id} value={sector.id} className="flex-1 mt-4">
@@ -90,22 +67,22 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
               </TabsContent>
             ))}
           </Tabs>
-        ) : (
+        ) : kdsSectors.length === 1 ? (
           <div className="flex-1">
-            <SectorQueuePanel sectorName="Fila de Produção" />
+            <SectorQueuePanel 
+              sectorId={kdsSectors[0].id} 
+              sectorName={kdsSectors[0].name} 
+            />
+          </div>
+        ) : (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center text-muted-foreground">
+              <CheckCircle2 className="h-16 w-16 mx-auto mb-4 opacity-30" />
+              <p className="text-xl font-medium">Nenhum setor KDS configurado</p>
+              <p className="text-sm mt-2">Configure setores com tipo "KDS" nas configurações</p>
+            </div>
           </div>
         )
-      )}
-
-      {/* Empty state */}
-      {items.length === 0 && (
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center text-muted-foreground">
-            <CheckCircle2 className="h-16 w-16 mx-auto mb-4 opacity-30" />
-            <p className="text-xl font-medium">Nenhum item em produção</p>
-            <p className="text-sm mt-2">Novos itens aparecerão automaticamente</p>
-          </div>
-        </div>
       )}
     </div>
   );
