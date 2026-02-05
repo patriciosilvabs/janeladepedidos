@@ -43,6 +43,8 @@ export type Database = {
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
+          qz_print_enabled: boolean | null
+          qz_printer_name: string | null
           updated_at: string | null
           urgent_bypass_enabled: boolean | null
           urgent_production_timeout_minutes: number | null
@@ -75,6 +77,8 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          qz_print_enabled?: boolean | null
+          qz_printer_name?: string | null
           updated_at?: string | null
           urgent_bypass_enabled?: boolean | null
           urgent_production_timeout_minutes?: number | null
@@ -107,6 +111,8 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          qz_print_enabled?: boolean | null
+          qz_printer_name?: string | null
           updated_at?: string | null
           urgent_bypass_enabled?: boolean | null
           urgent_production_timeout_minutes?: number | null
