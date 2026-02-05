@@ -1,84 +1,99 @@
 
 
-## Plano: Impressão Automática no Despacho
+## Plano: Filtrar Pedidos Aguardando Pagamento
 
-### Objetivo
+### Problema Identificado
 
-Adicionar uma configuração para ativar/desativar a impressão automática quando um item é marcado como "PRONTO" no painel do forno (setor de despacho). Quando ativo, o sistema imprimirá automaticamente um ticket com as informações do item/pedido.
+O sistema está importando pedidos para o KDS/tablet antes do cliente confirmar o pagamento. No CardápioWeb, pedidos que ainda estão "Aguardando pagamento" chegam com status como `waiting_confirmation` ou `pending`, e o sistema atual os importa imediatamente.
 
----
-
-### Parte 1: Adicionar Campo de Configuração no Banco
-
-**Migração SQL:**
-
-```sql
-ALTER TABLE app_settings 
-ADD COLUMN IF NOT EXISTS printnode_dispatch_enabled boolean DEFAULT false;
-```
-
-Este campo controla especificamente se a impressão ocorre ao marcar itens como prontos no despacho.
+Pelas imagens:
+- Dashboard mostra pedido #5130 com badge "Aguardando pagamento"
+- Mesmo pedido já aparece no tablet de produção prontos para iniciar
 
 ---
 
-### Parte 2: Atualizar Interface de Configurações
+### Solução
 
-**Arquivo:** `src/hooks/useSettings.ts`
-
-Adicionar o novo campo à interface `AppSettings`:
-```typescript
-printnode_dispatch_enabled: boolean;
-```
-
-**Arquivo:** `src/components/PrinterSettings.tsx`
-
-Adicionar uma nova opção de switch na seção de configurações:
-- Label: "Imprimir ao Marcar Pronto no Despacho"
-- Descrição: "Quando ativo, um ticket será impresso automaticamente ao clicar em PRONTO no painel do forno"
-- Comportamento: auto-save com debounce (mesmo padrão usado atualmente)
+Modificar as duas funções de importação para **ignorar pedidos que ainda não foram confirmados/pagos**. Apenas pedidos com status `confirmed`, `preparing`, `ready`, `released` ou similares devem entrar no fluxo de produção.
 
 ---
 
-### Parte 3: Criar Função de Formatação do Ticket
+### Parte 1: Atualizar Webhook (webhook-orders)
 
-**Novo arquivo:** `src/utils/printTicket.ts`
+**Arquivo:** `supabase/functions/webhook-orders/index.ts`
 
-Função utilitária para gerar o conteúdo do ticket em texto simples:
+**Alterações:**
 
-```typescript
-export function formatDispatchTicket(item: OrderItemWithOrder): string {
-  // Retorna texto formatado com:
-  // - Número do pedido
-  // - Nome do cliente
-  // - Endereço/bairro
-  // - Nome do produto
-  // - Quantidade
-  // - Observações (se houver)
-  // - Complementos (se houver)
-  // - Borda (se houver)
-  // - Sabores (se houver)
-  // - Data/hora
-}
-```
+1. Modificar o switch case (linhas 481-520) para **NÃO** processar eventos com status `pending` ou `waiting_confirmation`
 
----
+2. Adicionar lógica no bloco default (linha 509):
 
-### Parte 4: Integrar Impressão no OvenTimerPanel
-
-**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
-
-Modificações:
-
-1. Importar `usePrintNode` e `useSettings`
-2. Buscar configurações: `printnode_enabled`, `printnode_dispatch_enabled`, `printnode_printer_id`
-3. Na função `handleMarkReady`:
-   - Após marcar o item como pronto com sucesso
-   - Verificar se `printnode_enabled && printnode_dispatch_enabled && printnode_printer_id`
-   - Se ativo, chamar `printRaw()` com o ticket formatado
-
-Fluxo:
 ```text
-Clique PRONTO → markItemReady() → sucesso → verificar configs → printRaw()
+Antes:  if (status === 'confirmed' || status === 'pending' || status === 'waiting_confirmation')
+Depois: if (status === 'confirmed')
+```
+
+3. Criar handler específico para `order.confirmed` que é quando o pagamento foi aceito
+
+4. Ignorar `order.placed` e `order.created` com status não confirmado - esses eventos acontecem antes do pagamento
+
+---
+
+### Parte 2: Atualizar Polling (poll-orders)
+
+**Arquivo:** `supabase/functions/poll-orders/index.ts`
+
+**Alterações:**
+
+1. Expandir lista de status ignorados (linha 136) para incluir status de pré-pagamento:
+
+```typescript
+// Antes
+const ignoredStatuses = ['canceled', 'cancelled', 'rejected'];
+
+// Depois  
+const ignoredStatuses = [
+  'canceled', 
+  'cancelled', 
+  'rejected',
+  'pending',
+  'waiting_confirmation',
+  'awaiting_payment',
+  'placed'  // Pedido realizado mas não confirmado
+];
+```
+
+2. Criar lista de status permitidos (abordagem mais segura):
+
+```typescript
+const allowedStatuses = [
+  'confirmed',
+  'preparing', 
+  'ready',
+  'dispatched',
+  'released',
+  'on_the_way',
+  'delivered'
+];
+
+// Filtrar apenas pedidos com status permitido
+const activeOrders = ordersData.filter(order => {
+  const status = (order.status || '').toLowerCase();
+  return allowedStatuses.includes(status);
+});
+```
+
+---
+
+### Fluxo Correto Após Alterações
+
+```text
+CardápioWeb                    Sistema
+-----------                    -------
+Pedido criado (pending)   -->  Ignorado
+Aguardando pagamento      -->  Ignorado  
+Pagamento confirmado      -->  IMPORTA para KDS
+(status: confirmed)            (aparece nos tablets)
 ```
 
 ---
@@ -87,19 +102,15 @@ Clique PRONTO → markItemReady() → sucesso → verificar configs → printRaw
 
 | Arquivo | Alteração |
 |---------|-----------|
-| **Migração SQL** | Adicionar coluna `printnode_dispatch_enabled` |
-| `src/hooks/useSettings.ts` | Adicionar campo na interface |
-| `src/components/PrinterSettings.tsx` | Adicionar switch de configuração |
-| `src/utils/printTicket.ts` | Criar função de formatação do ticket |
-| `src/components/kds/OvenTimerPanel.tsx` | Integrar chamada de impressão |
+| `supabase/functions/webhook-orders/index.ts` | Aceitar apenas `order.confirmed`, ignorar `pending` e `waiting_confirmation` |
+| `supabase/functions/poll-orders/index.ts` | Adicionar filtro por status permitidos (confirmed, preparing, etc.) |
 
 ---
 
-### Detalhes Técnicos
+### Considerações
 
-- A impressão é silenciosa (não bloqueia UI)
-- Erros de impressão são logados mas não impedem o fluxo
-- O ticket usa formato texto simples (compatível com impressoras térmicas)
-- A configuração `printnode_enabled` é o "master switch" - precisa estar ativo para qualquer impressão funcionar
-- A nova configuração `printnode_dispatch_enabled` controla especificamente a impressão no despacho
+- **Pedidos de mesa (closed_table)**: Mantêm comportamento especial atual - são importados quando fechados
+- **Fallback**: Se um pedido nunca receber evento `confirmed`, será capturado pelo polling quando mudar de status
+- **Logs**: Adicionar log quando pedido é ignorado por status de pagamento para facilitar debug
+- **Backward compatibility**: Pedidos já importados não são afetados
 
