@@ -1,254 +1,125 @@
 
-# Plano: Impressão Remota via Supabase Realtime
+# Correção: Listener de Impressão Remota Desconectando
 
-## Cenário Atual
+## Problema Identificado
 
-Atualmente, quando o operador do **tablet (KDS de bancada)** clica em "PRONTO", a impressão ocorre **localmente no próprio tablet**. Isso é um problema porque:
+O listener da fila de impressão (`usePrintJobQueue`) está sendo inicializado **dentro do componente `PrinterSettings`**, que só existe quando o diálogo de configurações está aberto.
 
-1. O tablet não tem impressora térmica conectada
-2. O QZ Tray não está instalado no tablet
-3. A impressora está no **computador da gestão/despacho**
+**Fluxo atual (problemático):**
+1. Usuário abre Configurações → `PrinterSettings` monta → Subscription criada ✅
+2. Usuário fecha Configurações → `PrinterSettings` desmonta → Subscription fechada ❌
+3. Tablet envia job → Ninguém escutando → Job fica pendente eternamente ❌
 
----
-
-## Solução: Fila de Impressão com Realtime
-
-A solução é criar uma **fila de trabalhos de impressão** no banco de dados. Quando o tablet marca um item como pronto, ele **insere um registro** na fila. O computador com QZ Tray **escuta essa fila em tempo real** e executa a impressão.
-
-```text
-┌──────────────────┐                     ┌──────────────────┐
-│    TABLET        │                     │   COMPUTADOR     │
-│  (KDS Bancada)   │                     │   (Despacho)     │
-│                  │                     │   + QZ Tray      │
-│  Clica PRONTO ───┼─────┐               │   + Impressora   │
-│                  │     │               │                  │
-└──────────────────┘     │               │  Escuta Realtime │
-                         │               │        │         │
-                         ▼               │        ▼         │
-              ┌────────────────────┐     │  Recebe job      │
-              │     SUPABASE       │     │        │         │
-              │  ┌──────────────┐  │     │        ▼         │
-              │  │  print_jobs  │──┼─────┼──► Imprime       │
-              │  └──────────────┘  │     │        │         │
-              └────────────────────┘     │        ▼         │
-                                         │  Marca 'printed' │
-                                         └──────────────────┘
+**Evidência nos logs:**
+```
+[PrintQueue] Subscription status: SUBSCRIBED
+[PrintQueue] Subscription status: CLOSED   ← Fechou quando diálogo fechou!
 ```
 
 ---
 
-## Arquivos a Criar/Modificar
+## Solução
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| Migração SQL | **Criar** | Tabela `print_jobs` com Realtime habilitado |
-| `src/hooks/usePrintJobQueue.ts` | **Criar** | Hook para escutar e processar jobs de impressão |
-| `src/hooks/useQZTray.ts` | **Modificar** | Adicionar função `queuePrintJob` para inserir na fila |
-| `src/components/kds/OvenTimerPanel.tsx` | **Modificar** | Usar nova lógica: local se tem QZ, remoto se não tem |
-| `src/components/PrinterSettings.tsx` | **Modificar** | Adicionar toggle para "Modo Receptor de Impressão" |
-| `src/App.tsx` ou `Layout` | **Modificar** | Inicializar listener de impressão quando em modo receptor |
+Mover a inicialização do `usePrintJobQueue` para um **componente de nível superior** que permanece montado enquanto a aplicação está ativa.
+
+O local ideal é o `Index.tsx`, pois:
+- É o componente principal da aplicação autenticada
+- Permanece montado durante toda a sessão do usuário
+- Já tem acesso às settings via `useSettings`
 
 ---
 
-## Estrutura da Tabela `print_jobs`
+## Arquivos a Modificar
 
-```sql
-CREATE TABLE print_jobs (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  order_item_id uuid REFERENCES order_items(id) ON DELETE CASCADE,
-  item_data jsonb NOT NULL,           -- Dados completos para impressão
-  status text DEFAULT 'pending',      -- pending, printing, printed, failed
-  created_at timestamptz DEFAULT now(),
-  printed_at timestamptz,
-  printer_name text,                  -- Qual impressora processou
-  error_message text                  -- Se falhou, motivo
-);
-
--- Habilitar Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE print_jobs;
-```
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Index.tsx` | Adicionar chamada ao `usePrintJobQueue` |
+| `src/components/PrinterSettings.tsx` | Remover chamada duplicada do hook |
 
 ---
 
-## Lógica de Decisão: Local vs Remoto
+## Implementação Detalhada
 
-```text
-┌─────────────────────────────────────────────────────┐
-│            Clicou "PRONTO" no item                  │
-└─────────────────────────────────────────────────────┘
-                       │
-                       ▼
-        ┌──────────────────────────────┐
-        │ QZ Tray conectado localmente?│
-        └──────────────────────────────┘
-               │                 │
-              SIM               NÃO
-               │                 │
-               ▼                 ▼
-    ┌─────────────────┐  ┌─────────────────────┐
-    │ Imprime local   │  │ Insere print_job    │
-    │ (direto no QZ)  │  │ (impressão remota)  │
-    └─────────────────┘  └─────────────────────┘
-```
+### 1. Modificar `Index.tsx`
 
----
-
-## Hook: `usePrintJobQueue`
-
-Este hook será usado no **computador receptor** para:
-
-1. Escutar novos jobs via Realtime
-2. Processar cada job com QZ Tray
-3. Atualizar status para `printed` ou `failed`
+Adicionar o hook de print queue que fica ativo enquanto o usuário está logado:
 
 ```typescript
-// Pseudocódigo
-export function usePrintJobQueue(enabled: boolean) {
-  const { printReceipt, isConnected } = useQZTray();
+import { usePrintJobQueue } from '@/hooks/usePrintJobQueue';
+import { useQZTray } from '@/hooks/useQZTray';
+
+const Index = () => {
+  // ... existing code ...
   
-  useEffect(() => {
-    if (!enabled || !isConnected) return;
-    
-    // Subscribe to print_jobs where status = 'pending'
-    const channel = supabase
-      .channel('print-jobs')
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'print_jobs',
-        filter: 'status=eq.pending'
-      }, async (payload) => {
-        const job = payload.new;
-        
-        try {
-          // Update to 'printing'
-          await updateJobStatus(job.id, 'printing');
-          
-          // Execute print
-          await printReceipt(job.item_data);
-          
-          // Update to 'printed'
-          await updateJobStatus(job.id, 'printed');
-        } catch (error) {
-          await updateJobStatus(job.id, 'failed', error.message);
-        }
-      })
-      .subscribe();
-      
-    return () => supabase.removeChannel(channel);
-  }, [enabled, isConnected]);
-}
-```
-
----
-
-## Modificações no useQZTray
-
-Adicionar função `queuePrintJob` que:
-
-1. Verifica se QZ está conectado localmente
-2. Se sim: imprime direto
-3. Se não: insere na tabela `print_jobs`
-
-```typescript
-const queuePrintJob = async (item: OrderItemWithOrder) => {
-  // Se QZ está conectado localmente, imprime direto
-  if (isConnected && selectedPrinter) {
-    await printReceipt(item);
-    return;
-  }
+  // Get QZ Tray state for print queue
+  const { isConnected: isQZConnected, selectedPrinter, isReceiverEnabled } = useQZTray();
   
-  // Caso contrário, envia para fila remota
-  await supabase.from('print_jobs').insert({
-    order_item_id: item.id,
-    item_data: item,
-    status: 'pending'
+  // Initialize print job queue listener (stays active while app is mounted)
+  usePrintJobQueue({
+    enabled: isReceiverEnabled,
+    printerName: selectedPrinter,
+    isQZConnected: isQZConnected,
   });
+  
+  // ... rest of component ...
 };
 ```
 
----
+### 2. Modificar `PrinterSettings.tsx`
 
-## Configuração no PrinterSettings
+Remover a chamada do hook (já será gerenciado pelo Index):
 
-Adicionar nova seção:
-
-```text
-┌─────────────────────────────────────────────────────┐
-│ 🖨️ Modo de Operação                                │
-├─────────────────────────────────────────────────────┤
-│                                                     │
-│ ○ Impressão Local                                   │
-│   Imprime neste computador quando EU clicar PRONTO  │
-│                                                     │
-│ ● Receptor de Impressão Remota                [ON]  │
-│   Recebe comandos de impressão de tablets/bancadas  │
-│   Status: 3 jobs processados hoje                   │
-│                                                     │
-└─────────────────────────────────────────────────────┘
+```typescript
+// REMOVER estas linhas:
+// usePrintJobQueue({
+//   enabled: isReceiverEnabled,
+//   printerName: selectedPrinter,
+//   isQZConnected: isConnected,
+// });
 ```
 
 ---
 
-## Fluxo Completo
+## Fluxo Corrigido
 
-1. **Tablet (Bancada)**:
-   - Operador clica PRONTO no item
-   - Sistema detecta que QZ não está conectado
-   - Insere registro em `print_jobs`
-
-2. **Computador (Despacho)**:
-   - Está com "Receptor de Impressão" ativado
-   - Recebe o job via Realtime
-   - Executa impressão no QZ Tray
-   - Atualiza status para `printed`
-
-3. **Fallback**:
-   - Se nenhum receptor estiver online
-   - Job fica pendente até alguém processar
-   - Pode mostrar alerta visual de jobs pendentes
-
----
-
-## Configurações Adicionais no Banco
-
-Adicionar em `app_settings`:
-
-```sql
-ALTER TABLE app_settings 
-ADD COLUMN IF NOT EXISTS print_receiver_enabled boolean DEFAULT false;
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Index.tsx                              │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ usePrintJobQueue({ enabled: true, ... })            │   │
+│  │   → Subscription ATIVA enquanto app está aberta     │   │
+│  └─────────────────────────────────────────────────────┘   │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Dashboard    │  │ KDSDashboard │  │ DispatchDashboard│  │
+│  └──────────────┘  └──────────────┘  └──────────────────┘  │
+│                                                             │
+│  ┌─────────────────────────────────────────────────────┐   │
+│  │ SettingsDialog (abre/fecha)                         │   │
+│  │   └── PrinterSettings (UI de configuração apenas)   │   │
+│  └─────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
+**Resultado:**
+- Subscription permanece ativa enquanto a aplicação está aberta
+- PrinterSettings apenas gerencia configurações (UI)
+- Jobs de impressão são processados mesmo com diálogo fechado
+
 ---
 
-## Limpeza Automática
+## Verificação Pós-Implementação
 
-Jobs antigos (>24h) serão limpos automaticamente:
-
-```sql
--- Trigger ou cron job para limpar jobs antigos
-DELETE FROM print_jobs 
-WHERE created_at < now() - interval '24 hours'
-  AND status IN ('printed', 'failed');
+Após a correção, os logs devem mostrar:
+```
+[PrintQueue] Subscription status: SUBSCRIBED
+// Deve permanecer SUBSCRIBED, sem CLOSED
 ```
 
----
-
-## Benefícios
-
-1. **Sem dependência de rede local** - Funciona via internet
-2. **Múltiplos tablets** - Todos enviam para mesma fila
-3. **Múltiplos receptores** - Pode ter backup de impressoras
-4. **Auditoria** - Histórico de impressões no banco
-5. **Resiliente** - Jobs não se perdem se PC reiniciar
-
----
-
-## Resumo das Mudanças
-
-| Componente | Mudança |
-|------------|---------|
-| **Banco** | Nova tabela `print_jobs` + coluna `print_receiver_enabled` |
-| **Tablet/KDS** | Insere na fila ao invés de imprimir local |
-| **Computador** | Escuta fila e processa impressões |
-| **UI Settings** | Toggle para ativar modo receptor |
+E os jobs pendentes serão processados:
+```
+[PrintQueue] Processing 1 pending jobs
+[PrintQueue] Job processed successfully: 32c7abb6-...
+[QZ Tray] Print successful for order: 6300
+```
