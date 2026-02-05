@@ -31,7 +31,7 @@ export function Dashboard() {
   const { getTodayBufferTimeout } = useBufferSettings();
   const { settings: dynamicSettings, calculateDynamicTimer } = useDynamicBufferSettings();
   const { toast } = useToast();
-  const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(30000);
+  const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(20000);
   const { inOvenItems } = useOrderItems({ status: 'in_oven' });
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
