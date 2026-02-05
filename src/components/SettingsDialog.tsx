@@ -39,7 +39,7 @@ export function SettingsDialog() {
    const kdsSectors = sectors?.filter(s => s.view_type === 'kds') || [];
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
-  const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
+  
   const [showFoodyToken, setShowFoodyToken] = useState(false);
   const [webhookCopied, setWebhookCopied] = useState(false);
   const [foodyWebhookCopied, setFoodyWebhookCopied] = useState(false);
@@ -263,46 +263,23 @@ export function SettingsDialog() {
                 />
               </div>
 
-              <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-muted-foreground mt-0.5" />
-                  <p className="text-sm text-muted-foreground">
-                    Configure os tokens API de cada loja na aba <strong>Lojas</strong>. Aqui ficam apenas as configurações globais de webhook.
-                  </p>
+              <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+                <div className="flex items-start gap-3">
+                  <Store className="h-5 w-5 text-primary mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium">Configuração por Loja</p>
+                    <p className="text-sm text-muted-foreground">
+                      Configure o <strong>Token API</strong> e <strong>Código da Loja</strong> individualmente na aba <strong>Lojas</strong>.
+                      A identificação de cada loja é feita automaticamente pelo header X-API-KEY.
+                    </p>
+                  </div>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="cardapio-webhook">Token Webhook (X-Webhook-Token)</Label>
+                <Label>URL do Webhook (mesma para todas as lojas)</Label>
                 <p className="text-sm text-muted-foreground">
-                  Token global para validar webhooks recebidos do Cardápio Web
-                </p>
-                <div className="relative">
-                  <Input
-                    id="cardapio-webhook"
-                    type={showCardapioWebhook ? 'text' : 'password'}
-                    value={formData.cardapioweb_webhook_token || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, cardapioweb_webhook_token: e.target.value })
-                    }
-                    placeholder="Token para validar webhooks recebidos"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="absolute right-0 top-0 h-full"
-                    onClick={() => setShowCardapioWebhook(!showCardapioWebhook)}
-                  >
-                    {showCardapioWebhook ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-border/50">
-                <Label>URL do Webhook</Label>
-                <p className="text-sm text-muted-foreground mb-2">
-                  Configure esta URL no painel do Cardápio Web para receber pedidos automaticamente
+                  Configure esta URL no painel do CardápioWeb. A loja é identificada pelo token no header.
                 </p>
                 <div className="flex gap-2">
                   <Input
@@ -324,6 +301,9 @@ export function SettingsDialog() {
                     )}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground mt-2">
+                  No CardápioWeb, configure o header <code className="bg-muted px-1 py-0.5 rounded">X-API-KEY</code> com o mesmo token cadastrado na loja.
+                </p>
               </div>
             </TabsContent>
 
