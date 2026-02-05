@@ -41,12 +41,16 @@ async function notifyCardapioWebReady(
   console.log(`Calling CardápioWeb READY for order ${externalId} (type: ${orderType || 'unknown'}): ${endpoint}`);
 
   try {
+    // Testando enviar body JSON vazio - o KDS do CardápioWeb marca como "waiting_to_catch"
+    // sem disparar Foody, talvez o body JSON mude o comportamento da API
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'X-API-KEY': store.cardapioweb_api_token,
         'Accept': 'application/json',
+        'Content-Type': 'application/json',
       },
+      body: JSON.stringify({}),
     });
 
     const responseText = await response.text();
