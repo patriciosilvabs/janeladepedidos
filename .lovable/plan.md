@@ -1,156 +1,119 @@
 
-# Plano: Corrigir Criação de Itens no Polling
+
+# Plano: Corrigir Mapeamento de Tipos de Pedido
 
 ## Problema Identificado
 
-A função `poll-orders` **não cria itens de produção** (order_items) quando recebe pedidos do CardápioWeb.
+A API do CardápioWeb retorna tipos de pedido diferentes do que o código espera:
 
-**Evidência:**
-- Tabela `orders`: 4 pedidos com dados JSON de itens
-- Tabela `order_items`: **VAZIA** (0 registros)
+| API CardápioWeb | Código Atual | Deveria Ser |
+|-----------------|--------------|-------------|
+| `takeout` | (não mapeado) | Retirada |
+| `counter` | Balcão | OK |
+| `dine_in` | Mesa | OK |
+| `delivery` | Delivery | OK |
 
-**Causa raiz:**
-O código `poll-orders` insere o pedido mas **não chama** o RPC `create_order_items_from_json`:
-
-```typescript
-// poll-orders/index.ts - Linha 168-192
-const { error: insertError } = await supabase.from('orders').insert({
-  // ... campos do pedido
-  items: orderDetails.items || [],  // Salva JSON, mas não cria registros
-});
-// FALTA: Chamada ao RPC para criar order_items
-```
-
-Enquanto `webhook-orders` faz corretamente:
-
-```typescript
-// webhook-orders/index.ts - Linha 186-193
-const { data: itemsResult } = await supabase.rpc(
-  'create_order_items_from_json',
-  { p_order_id: insertedOrder.id, p_items: order.items }
-);
-```
-
----
-
-## Solucao
-
-Adicionar chamada ao RPC `create_order_items_from_json` após inserir o pedido na função `poll-orders`.
-
----
-
-## Mudanca
-
-**Arquivo**: `supabase/functions/poll-orders/index.ts`
-
-### Antes (linhas 167-199)
-
-```typescript
-const { error: insertError } = await supabase.from('orders').insert({
-  // ... campos
-});
-
-if (insertError) {
-  console.error(`[poll-orders] Error inserting order:`, insertError);
-} else {
-  result.newOrders++;
-  console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId}`);
+**Evidência dos logs:**
+```json
+{
+  "order_type": "takeout",  // API retorna "takeout"
+  ...
 }
 ```
 
-### Depois
+**Resultado no banco:**
+```
+address: "takeout"  // Deveria ser "Retirada"
+order_type: "takeout"  // Não é reconhecido pelo badge
+```
+
+O pedido aparece com badge de Delivery (azul) porque `takeout` não está mapeado e o fallback é `delivery`.
+
+---
+
+## Solução
+
+Adicionar `takeout` aos mapeamentos em dois arquivos:
+
+1. **Edge Function** - para exibir endereço correto
+2. **OrderCard** - para exibir badge correto
+
+---
+
+## Mudanças
+
+### Arquivo 1: `supabase/functions/poll-orders/index.ts`
+
+**Linha 8-16 - Função getOrderTypeLabel:**
 
 ```typescript
-const { data: insertedOrder, error: insertError } = await supabase
-  .from('orders')
-  .insert({
-    // ... campos
-  })
-  .select('id')
-  .single();
-
-if (insertError) {
-  console.error(`[poll-orders] Error inserting order:`, insertError);
-} else {
-  result.newOrders++;
-  console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId}`);
-
-  // NOVO: Criar order_items para KDS
-  if (orderDetails.items && Array.isArray(orderDetails.items)) {
-    const { data: itemsResult, error: itemsError } = await supabase.rpc(
-      'create_order_items_from_json',
-      {
-        p_order_id: insertedOrder.id,
-        p_items: orderDetails.items,
-        p_default_sector_id: null, // Distribuicao automatica
-      }
-    );
-
-    if (itemsError) {
-      console.error(`[poll-orders] Error creating order items:`, itemsError);
-    } else {
-      console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
-    }
-  }
+function getOrderTypeLabel(orderType: string): string {
+  const labels: Record<string, string> = {
+    'delivery': 'Delivery',
+    'dine_in': 'Mesa',
+    'takeaway': 'Retirada',
+    'takeout': 'Retirada',    // NOVO: API retorna "takeout"
+    'counter': 'Balcão',
+    'table': 'Mesa',
+  };
+  return labels[orderType] || orderType;
 }
 ```
 
----
+**Lógica isDelivery (linha ~158):**
 
-## Fluxo Corrigido
-
-```text
-CardapioWeb API
-      |
-      v
-poll-orders (Edge Function)
-      |
-      +--> INSERT orders (pedido)
-      |
-      +--> RPC create_order_items_from_json  <-- NOVO
-             |
-             v
-      order_items (itens individuais)
-             |
-             v
-      Distribuido para BANCADA A / BANCADA B
-             |
-             v
-      Aparece no tablet KDS
+```typescript
+// Verificar se é delivery para extrair endereço
+const isDelivery = order.order_type === 'delivery';
+// takeout/takeaway/counter/dine_in não têm endereço de entrega
 ```
 
 ---
 
-## Correção de Pedidos Existentes
+### Arquivo 2: `src/components/OrderCard.tsx`
 
-Após corrigir o código, será necessário reprocessar os pedidos já inseridos que não têm itens. Uma opção é chamar manualmente:
+**Linha 8-17 - Função getOrderTypeBadge:**
 
-```sql
--- Para cada pedido pendente sem itens
-SELECT create_order_items_from_json(
-  o.id, 
-  o.items, 
-  NULL
-) 
-FROM orders o 
-WHERE o.status = 'pending'
-  AND NOT EXISTS (
-    SELECT 1 FROM order_items oi WHERE oi.order_id = o.id
-  );
+```typescript
+const getOrderTypeBadge = (type?: string) => {
+  const config: Record<string, { label: string; className: string }> = {
+    'delivery': { label: '🛵 Delivery', className: 'bg-blue-500 hover:bg-blue-500' },
+    'dine_in': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
+    'takeaway': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },
+    'takeout': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },  // NOVO
+    'counter': { label: '🏪 Balcão', className: 'bg-purple-500 hover:bg-purple-500' },
+    'table': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
+  };
+  return config[type || 'delivery'] || config['delivery'];
+};
 ```
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/poll-orders/index.ts` | Adicionar chamada RPC para criar order_items apos inserir pedido |
 
 ---
 
 ## Resultado Esperado
 
-- Pedidos recebidos via polling terao itens criados na tabela `order_items`
-- Itens serao distribuidos entre BANCADA A e BANCADA B automaticamente
-- Tablets KDS mostrarao os itens pendentes para producao
+Após a correção:
+
+| Tipo API | Badge | Cor | Endereço |
+|----------|-------|-----|----------|
+| `delivery` | 🛵 Delivery | Azul | Endereço completo |
+| `takeout` | 📦 Retirada | Laranja | "Retirada" |
+| `takeaway` | 📦 Retirada | Laranja | "Retirada" |
+| `counter` | 🏪 Balcão | Roxo | "Balcão" |
+| `dine_in` | 🍽️ Mesa | Verde | "Mesa" |
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/poll-orders/index.ts` | Adicionar `takeout` ao mapeamento de labels |
+| `src/components/OrderCard.tsx` | Adicionar `takeout` ao mapeamento de badges |
+
+---
+
+## Pedidos Existentes
+
+Os 6 pedidos já importados com `order_type: 'takeout'` passarão a exibir o badge correto (laranja) automaticamente após a atualização do frontend. O campo `address` mostra "takeout" mas após a correção novos pedidos mostrarão "Retirada".
+
