@@ -43,6 +43,7 @@ export type Database = {
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
+          print_receiver_enabled: boolean | null
           qz_print_enabled: boolean | null
           qz_printer_name: string | null
           updated_at: string | null
@@ -77,6 +78,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          print_receiver_enabled?: boolean | null
           qz_print_enabled?: boolean | null
           qz_printer_name?: string | null
           updated_at?: string | null
@@ -111,6 +113,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          print_receiver_enabled?: boolean | null
           qz_print_enabled?: boolean | null
           qz_printer_name?: string | null
           updated_at?: string | null
@@ -481,6 +484,47 @@ export type Database = {
             columns: ["store_id"]
             isOneToOne: false
             referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      print_jobs: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          item_data: Json
+          order_item_id: string | null
+          printed_at: string | null
+          printer_name: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          item_data: Json
+          order_item_id?: string | null
+          printed_at?: string | null
+          printer_name?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          item_data?: Json
+          order_item_id?: string | null
+          printed_at?: string | null
+          printer_name?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "print_jobs_order_item_id_fkey"
+            columns: ["order_item_id"]
+            isOneToOne: false
+            referencedRelation: "order_items"
             referencedColumns: ["id"]
           },
         ]
