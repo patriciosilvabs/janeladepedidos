@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
@@ -722,6 +722,97 @@ export function SettingsDialog() {
                         Valores comuns: 90s (1m30s), 120s (2m), 150s (2m30s), 180s (3m)
                       </p>
                     </div>
+                  </div>
+
+                  {/* FIFO Visual System */}
+                  <div className="border-t border-border/50 pt-4 mt-6">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Target className="h-4 w-4 text-primary" />
+                      <Label className="text-base font-medium">Sistema Visual FIFO</Label>
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-4">
+                      Destaca visualmente os itens por ordem de entrada, com cores de urgência e badges de sequência.
+                    </p>
+
+                    <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30 mb-4">
+                      <div className="space-y-0.5">
+                        <Label>Habilitar Priorização Visual FIFO</Label>
+                        <p className="text-sm text-muted-foreground">
+                          Semáforo de cores, badges de sequência (#1, #2) e barra de progresso
+                        </p>
+                      </div>
+                      <Switch
+                        checked={(formData as any).kds_fifo_visual_enabled ?? false}
+                        onCheckedChange={(checked) => {
+                          setFormData({ ...formData, kds_fifo_visual_enabled: checked } as any);
+                          debouncedAutoSave({ kds_fifo_visual_enabled: checked });
+                        }}
+                      />
+                    </div>
+
+                    {/* Configurações adicionais quando FIFO está ativo */}
+                    {(formData as any).kds_fifo_visual_enabled && (
+                      <div className="space-y-4 pl-4 border-l-2 border-primary/30">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="fifo-warning">Alerta amarelo (min)</Label>
+                            <Input
+                              id="fifo-warning"
+                              type="number"
+                              min={1}
+                              max={30}
+                              value={(formData as any).fifo_warning_minutes ?? 3}
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value) || 3;
+                                setFormData({ ...formData, fifo_warning_minutes: value } as any);
+                                debouncedAutoSave({ fifo_warning_minutes: value });
+                              }}
+                              className="w-20"
+                            />
+                            <p className="text-xs text-muted-foreground">Verde → Amarelo</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="fifo-critical">Alerta vermelho (min)</Label>
+                            <Input
+                              id="fifo-critical"
+                              type="number"
+                              min={1}
+                              max={60}
+                              value={(formData as any).fifo_critical_minutes ?? 5}
+                              onChange={(e) => {
+                                const value = parseInt(e.target.value) || 5;
+                                setFormData({ ...formData, fifo_critical_minutes: value } as any);
+                                debouncedAutoSave({ fifo_critical_minutes: value });
+                              }}
+                              className="w-20"
+                            />
+                            <p className="text-xs text-muted-foreground">Amarelo → Vermelho</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
+                          <div className="space-y-0.5">
+                            <Label>Bloquear seleção fora de ordem</Label>
+                            <p className="text-sm text-muted-foreground">
+                              Só permite iniciar o próximo item após o anterior estar em preparo
+                            </p>
+                          </div>
+                          <Switch
+                            checked={(formData as any).fifo_lock_enabled ?? false}
+                            onCheckedChange={(checked) => {
+                              setFormData({ ...formData, fifo_lock_enabled: checked } as any);
+                              debouncedAutoSave({ fifo_lock_enabled: checked });
+                            }}
+                          />
+                        </div>
+
+                        <div className="p-3 rounded-lg bg-primary/10 border border-primary/20">
+                          <p className="text-xs text-muted-foreground">
+                            <strong>Comportamento:</strong> Cards mostrarão borda verde (novo), amarela (atenção) ou vermelha pulsando (atrasado). O item #1 fica destacado com botão brilhante.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </TabsContent>

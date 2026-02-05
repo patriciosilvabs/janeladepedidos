@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { 
   Play, 
@@ -12,6 +13,13 @@ import {
   XCircle 
 } from 'lucide-react';
 
+export interface FifoSettings {
+  enabled: boolean;
+  warningMinutes: number;
+  criticalMinutes: number;
+  lockEnabled: boolean;
+}
+
 interface KDSItemCardProps {
   item: OrderItemWithOrder;
   onClaim: () => void;
@@ -19,6 +27,9 @@ interface KDSItemCardProps {
   onSendToOven: () => void;
   isProcessing: boolean;
   currentUserId?: string;
+  fifoSettings?: FifoSettings;
+  queuePosition?: number;
+  canStartItem?: boolean;
 }
 
 export function KDSItemCard({
@@ -28,6 +39,9 @@ export function KDSItemCard({
   onSendToOven,
   isProcessing,
   currentUserId,
+  fifoSettings,
+  queuePosition,
+  canStartItem = true,
 }: KDSItemCardProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -37,6 +51,9 @@ export function KDSItemCard({
 
   const isOwnClaim = item.claimed_by === currentUserId;
   const isValidStatus = item.status === 'pending' || item.status === 'in_prep';
+  
+  const isFifoEnabled = fifoSettings?.enabled ?? false;
+  const isFirstInQueue = queuePosition === 1;
 
   // Elapsed time for pending/in_prep items
   useEffect(() => {
@@ -65,11 +82,45 @@ export function KDSItemCard({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const getStatusColor = () => {
-    if (item.status === 'pending') {
-      return 'bg-amber-500/10 border-amber-500/30';
+  // Função para cores baseadas no status (modo padrão)
+  const getDefaultStatusColor = () => {
+    if (item.status === 'in_prep') {
+      return 'border-blue-500/50 bg-blue-500/10';
     }
-    return 'bg-blue-500/10 border-blue-500/30'; // in_prep
+    return 'border-amber-500/50 bg-amber-500/10';
+  };
+
+  // Função para cores baseadas no tempo (modo FIFO)
+  const getUrgencyColor = () => {
+    if (item.status === 'in_prep') {
+      return 'border-blue-500 bg-blue-500/10';
+    }
+    
+    const minutes = elapsedTime / 60;
+    const warningMinutes = fifoSettings?.warningMinutes ?? 3;
+    const criticalMinutes = fifoSettings?.criticalMinutes ?? 5;
+    
+    if (minutes <= warningMinutes) {
+      return 'border-green-500 bg-green-500/10';
+    }
+    if (minutes <= criticalMinutes) {
+      return 'border-amber-500 bg-amber-500/10';
+    }
+    return 'border-red-500 bg-red-500/10 animate-pulse';
+  };
+
+  // Calcula porcentagem de progresso para a barra (modo FIFO)
+  const getProgressPercent = () => {
+    const criticalMinutes = fifoSettings?.criticalMinutes ?? 5;
+    const targetSeconds = criticalMinutes * 60;
+    return Math.min((elapsedTime / targetSeconds) * 100, 100);
+  };
+
+  const getProgressColor = () => {
+    const percent = getProgressPercent();
+    if (percent < 60) return '[&>div]:bg-green-500';
+    if (percent < 100) return '[&>div]:bg-amber-500';
+    return '[&>div]:bg-red-500';
   };
 
   const renderAction = () => {
@@ -85,7 +136,15 @@ export function KDSItemCard({
       return (
         <Button
           onClick={onClaim}
-          className="w-full bg-amber-600 hover:bg-amber-700"
+          disabled={!canStartItem}
+          className={cn(
+            "w-full transition-all",
+            canStartItem 
+              ? isFifoEnabled && isFirstInQueue
+                ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400 ring-offset-2 ring-offset-background animate-pulse"
+                : "bg-amber-600 hover:bg-amber-700"
+              : "bg-muted text-muted-foreground cursor-not-allowed"
+          )}
         >
           <Play className="h-4 w-4 mr-1" />
           INICIAR
@@ -126,9 +185,22 @@ export function KDSItemCard({
 
   return (
     <div className={cn(
-      "rounded-lg border-2 p-3 transition-all duration-300",
-      getStatusColor()
+      "rounded-lg border-2 p-3 transition-all duration-300 relative",
+      isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
+      isFifoEnabled && isFirstInQueue && item.status === 'pending' && "scale-105 shadow-lg shadow-primary/20 z-10"
     )}>
+      {/* Badge de posição na fila (modo FIFO) */}
+      {isFifoEnabled && queuePosition && item.status === 'pending' && (
+        <div className={cn(
+          "absolute -top-2 -left-2 w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-lg",
+          isFirstInQueue 
+            ? "bg-primary text-primary-foreground" 
+            : "bg-muted-foreground/80 text-background"
+        )}>
+          #{queuePosition}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <Badge variant="outline" className="font-mono text-xs">
@@ -147,6 +219,14 @@ export function KDSItemCard({
           {item.product_name}
         </h3>
       </div>
+
+      {/* Barra de progresso (modo FIFO, apenas para pending) */}
+      {isFifoEnabled && item.status === 'pending' && (
+        <Progress 
+          value={getProgressPercent()} 
+          className={cn("h-1.5 mb-2", getProgressColor())}
+        />
+      )}
 
       {/* Observações com destaque visual */}
       {item.notes && (

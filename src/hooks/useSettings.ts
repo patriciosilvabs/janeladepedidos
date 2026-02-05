@@ -25,6 +25,10 @@ export interface AppSettings {
   urgent_bypass_enabled: boolean;
   kds_default_mode: 'items' | 'orders';
   oven_time_seconds: number;
+  kds_fifo_visual_enabled: boolean;
+  fifo_warning_minutes: number;
+  fifo_critical_minutes: number;
+  fifo_lock_enabled: boolean;
 }
 
 export function useSettings() {

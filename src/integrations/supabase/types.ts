@@ -27,12 +27,16 @@ export type Database = {
           default_region: string | null
           dispatched_order_sort_desc: boolean | null
           dispatched_visibility_minutes: number | null
+          fifo_critical_minutes: number | null
+          fifo_lock_enabled: boolean | null
+          fifo_warning_minutes: number | null
           foody_api_token: string | null
           foody_api_url: string | null
           foody_enabled: boolean | null
           grouping_radius_km: number | null
           id: string
           kds_default_mode: string | null
+          kds_fifo_visual_enabled: boolean | null
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
@@ -52,12 +56,16 @@ export type Database = {
           default_region?: string | null
           dispatched_order_sort_desc?: boolean | null
           dispatched_visibility_minutes?: number | null
+          fifo_critical_minutes?: number | null
+          fifo_lock_enabled?: boolean | null
+          fifo_warning_minutes?: number | null
           foody_api_token?: string | null
           foody_api_url?: string | null
           foody_enabled?: boolean | null
           grouping_radius_km?: number | null
           id?: string
           kds_default_mode?: string | null
+          kds_fifo_visual_enabled?: boolean | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
@@ -77,12 +85,16 @@ export type Database = {
           default_region?: string | null
           dispatched_order_sort_desc?: boolean | null
           dispatched_visibility_minutes?: number | null
+          fifo_critical_minutes?: number | null
+          fifo_lock_enabled?: boolean | null
+          fifo_warning_minutes?: number | null
           foody_api_token?: string | null
           foody_api_url?: string | null
           foody_enabled?: boolean | null
           grouping_radius_km?: number | null
           id?: string
           kds_default_mode?: string | null
+          kds_fifo_visual_enabled?: boolean | null
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
