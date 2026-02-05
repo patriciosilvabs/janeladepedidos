@@ -9,7 +9,7 @@ interface PollingState {
   error: string | null;
 }
 
-export function usePolling(intervalMs: number = 30000) {
+export function usePolling(intervalMs: number = 20000) {
   const { settings } = useSettings();
   const [state, setState] = useState<PollingState>({
     isPolling: false,
