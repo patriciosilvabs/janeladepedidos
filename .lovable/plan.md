@@ -1,305 +1,130 @@
 
 
-# Plano: Corrigir Observacoes e Exibir Sabores no KDS
+# Plano: Ajustar Layout do Card KDS
 
-## Problema Identificado
+## Problema Atual
 
-A API do CardapioWeb envia os dados em uma estrutura diferente do esperado:
+O sistema está juntando sabores e observações no mesmo campo `notes`, e exibindo **tudo** com tarja vermelha piscante. O modelo de referência mostra que:
 
-| Campo na API | Campo esperado | Atual | Correcao |
-|--------------|----------------|-------|----------|
-| `observation` | `notes` | Buscando `notes` (nao existe) | Usar `observation` |
-| `options[].name` | - | Nao extraido | Extrair sabores e complementos |
+- **Complementos/Sabores**: Lista simples com bullets (sem destaque)
+- **Observação do cliente**: Apenas esta deve ter tarja vermelha piscante
 
-### Exemplo de Dados Recebidos
+## Solução em 2 Partes
 
-```json
-{
-  "name": "Pizza Grande por 35,00 - 1 Sabor",
-  "observation": "SEM GOIABA",
-  "options": [
-    {"name": "# Massa Tradicional", "option_group_name": "Massas & Bordas"},
-    {"name": "MILHO VERDE (G)", "option_group_name": "Escolha 1 Sabor"}
-  ]
-}
-```
+### Parte 1: Separar Dados no Banco
 
-### Resultado Esperado no KDS
+Atualizar a função `create_order_items_from_json` para armazenar separadamente:
 
-```
-Pizza Grande - 1 Sabor
-Sabor: MILHO VERDE (G)
-Massa: Tradicional
-OBS: SEM GOIABA
-```
+| Campo | Conteúdo | Destino |
+|-------|----------|---------|
+| `notes` | Observação do cliente (`observation`) | Campo existente (tarja vermelha) |
+| `complements` | Sabores/bordas/opções (`options[]`) | **Novo campo** (lista simples) |
 
----
+### Parte 2: Atualizar Interface do Card
 
-## Solucao em 2 Partes
+Modificar `KDSItemCard.tsx` para:
 
-### Parte 1: Atualizar Funcao de Banco de Dados
+1. Exibir complementos como lista com bullets (texto normal)
+2. Exibir observação com tarja vermelha piscante (apenas se existir)
 
-Modificar `create_order_items_from_json` para:
+## Mudanças Detalhadas
 
-1. Extrair `observation` em vez de `notes`
-2. Processar array `options` e concatenar nomes de complementos
-3. Formatar observacoes combinadas (sabores + obs do cliente)
-
-**Nova logica:**
+### 1. Migração SQL - Novo Campo
 
 ```sql
--- Extrair observation
+-- Adicionar coluna para complementos
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS complements text;
+
+-- Atualizar função para separar dados
+-- notes = apenas observação do cliente
+-- complements = sabores, bordas, opções
+```
+
+### 2. Atualizar Função SQL
+
+```sql
+-- Extrair observation para notes
 v_observation := v_item->>'observation';
 
--- Extrair nomes dos options (sabores, bordas, etc)
-v_options_text := '';
+-- Extrair options para complements (lista separada por linha)
+v_complements := '';
 FOR v_option IN SELECT * FROM jsonb_array_elements(v_item->'options')
 LOOP
   v_option_name := v_option->>'name';
-  -- Remover prefixo # se existir
-  IF v_option_name LIKE '#%' THEN
-    v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
+  IF v_complements != '' THEN
+    v_complements := v_complements || E'\n';
   END IF;
-  
-  IF v_options_text != '' THEN
-    v_options_text := v_options_text || ' | ';
-  END IF;
-  v_options_text := v_options_text || v_option_name;
+  v_complements := v_complements || '- ' || v_option_name;
 END LOOP;
 
--- Combinar: Sabores/Bordas + Observacao
-v_notes := '';
-IF v_options_text != '' THEN
-  v_notes := v_options_text;
-END IF;
-IF v_observation IS NOT NULL AND v_observation != '' THEN
-  IF v_notes != '' THEN
-    v_notes := v_notes || ' || OBS: ' || v_observation;
-  ELSE
-    v_notes := 'OBS: ' || v_observation;
-  END IF;
-END IF;
+-- Salvar separadamente
+INSERT INTO order_items (..., notes, complements)
+VALUES (..., NULLIF(v_observation, ''), NULLIF(v_complements, ''));
 ```
 
-### Parte 2: Melhorar Exibicao no KDS (Opcional)
+### 3. Atualizar Types
 
-O componente `KDSItemCard.tsx` ja exibe o campo `notes` com destaque visual (fundo vermelho pulsante). Apenas precisamos garantir que os dados cheguem corretamente.
+```typescript
+// src/types/orderItems.ts
+export interface OrderItem {
+  // ... campos existentes
+  complements: string | null; // NOVO
+}
+```
 
----
+### 4. Atualizar KDSItemCard
+
+```tsx
+{/* Complementos - Lista simples (sem destaque) */}
+{item.complements && (
+  <div className="mb-2 text-sm text-muted-foreground whitespace-pre-line">
+    {item.complements}
+  </div>
+)}
+
+{/* Observação - Tarja vermelha piscante */}
+{item.notes && (
+  <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+    <p className="text-xs text-white font-bold uppercase">
+      ⚠️ OBS: {item.notes}
+    </p>
+  </div>
+)}
+```
+
+## Resultado Visual
+
+```
+#1234                    0:45
+
+Pizza Grande por 35,00 - 2 Sabores
+
+- # Borda de Chocolate Preto
+- CEARENSE (G)
+- PEPPERONI E CATUPIRY (G)
+
+┌────────────────────────────┐
+│ ⚠️ OBS: SEM CEBOLA         │  ← Apenas isso pisca em vermelho
+└────────────────────────────┘
+
+Pizzaria Central • Bancada 1
+João Silva • Centro
+
+[ INICIAR ]
+```
 
 ## Arquivos a Modificar
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| Migration SQL | Atualizar funcao `create_order_items_from_json` |
-
----
-
-## Migracao SQL Detalhada
-
-```sql
-CREATE OR REPLACE FUNCTION public.create_order_items_from_json(
-  p_order_id uuid, 
-  p_items jsonb, 
-  p_default_sector_id uuid DEFAULT NULL
-)
-RETURNS integer
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path TO 'public'
-AS $function$
-DECLARE
-  v_item jsonb;
-  v_option jsonb;
-  v_count integer := 0;
-  v_qty integer;
-  i integer;
-  v_available_sectors uuid[];
-  v_sector_count integer;
-  v_assigned_sector uuid;
-  v_fallback_sectors uuid[];
-  v_observation text;
-  v_options_text text;
-  v_option_name text;
-  v_notes text;
-BEGIN
-  -- Se setor especifico foi passado, usar diretamente
-  IF p_default_sector_id IS NOT NULL THEN
-    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
-    LOOP
-      v_qty := COALESCE((v_item->>'quantity')::integer, 1);
-      
-      -- Extrair observation (observacao do cliente)
-      v_observation := v_item->>'observation';
-      
-      -- Extrair options (sabores, bordas, complementos)
-      v_options_text := '';
-      FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
-      LOOP
-        v_option_name := v_option->>'name';
-        -- Remover prefixo # se existir
-        IF v_option_name LIKE '#%' THEN
-          v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
-        END IF;
-        
-        IF v_options_text != '' THEN
-          v_options_text := v_options_text || ' | ';
-        END IF;
-        v_options_text := v_options_text || v_option_name;
-      END LOOP;
-      
-      -- Combinar options + observation
-      v_notes := '';
-      IF v_options_text != '' THEN
-        v_notes := v_options_text;
-      END IF;
-      IF v_observation IS NOT NULL AND v_observation != '' THEN
-        IF v_notes != '' THEN
-          v_notes := v_notes || ' || OBS: ' || v_observation;
-        ELSE
-          v_notes := v_observation;
-        END IF;
-      END IF;
-      
-      -- Criar um registro para CADA unidade do produto
-      FOR i IN 1..v_qty
-      LOOP
-        INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
-        VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), p_default_sector_id);
-        v_count := v_count + 1;
-      END LOOP;
-    END LOOP;
-    RETURN v_count;
-  END IF;
-  
-  -- Buscar setores com operadores online
-  v_available_sectors := get_available_sectors();
-  v_sector_count := COALESCE(array_length(v_available_sectors, 1), 0);
-  
-  -- Fallback: se nenhum operador online, usar todos os setores KDS
-  IF v_sector_count = 0 THEN
-    SELECT ARRAY_AGG(id ORDER BY name) INTO v_fallback_sectors
-    FROM sectors
-    WHERE view_type = 'kds';
-    
-    v_available_sectors := COALESCE(v_fallback_sectors, ARRAY[]::uuid[]);
-    v_sector_count := COALESCE(array_length(v_available_sectors, 1), 0);
-  END IF;
-  
-  -- Se ainda nao ha setores, criar itens sem atribuicao
-  IF v_sector_count = 0 THEN
-    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
-    LOOP
-      v_qty := COALESCE((v_item->>'quantity')::integer, 1);
-      
-      -- Mesma logica de extracao
-      v_observation := v_item->>'observation';
-      v_options_text := '';
-      FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
-      LOOP
-        v_option_name := v_option->>'name';
-        IF v_option_name LIKE '#%' THEN
-          v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
-        END IF;
-        IF v_options_text != '' THEN
-          v_options_text := v_options_text || ' | ';
-        END IF;
-        v_options_text := v_options_text || v_option_name;
-      END LOOP;
-      
-      v_notes := '';
-      IF v_options_text != '' THEN
-        v_notes := v_options_text;
-      END IF;
-      IF v_observation IS NOT NULL AND v_observation != '' THEN
-        IF v_notes != '' THEN
-          v_notes := v_notes || ' || OBS: ' || v_observation;
-        ELSE
-          v_notes := v_observation;
-        END IF;
-      END IF;
-      
-      FOR i IN 1..v_qty
-      LOOP
-        INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
-        VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), NULL);
-        v_count := v_count + 1;
-      END LOOP;
-    END LOOP;
-    RETURN v_count;
-  END IF;
-  
-  -- Distribuir por carga (setor com menos itens pendentes)
-  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
-  LOOP
-    v_qty := COALESCE((v_item->>'quantity')::integer, 1);
-    
-    -- Mesma logica de extracao
-    v_observation := v_item->>'observation';
-    v_options_text := '';
-    FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
-    LOOP
-      v_option_name := v_option->>'name';
-      IF v_option_name LIKE '#%' THEN
-        v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
-      END IF;
-      IF v_options_text != '' THEN
-        v_options_text := v_options_text || ' | ';
-      END IF;
-      v_options_text := v_options_text || v_option_name;
-    END LOOP;
-    
-    v_notes := '';
-    IF v_options_text != '' THEN
-      v_notes := v_options_text;
-    END IF;
-    IF v_observation IS NOT NULL AND v_observation != '' THEN
-      IF v_notes != '' THEN
-        v_notes := v_notes || ' || OBS: ' || v_observation;
-      ELSE
-        v_notes := v_observation;
-      END IF;
-    END IF;
-    
-    -- Cada unidade do produto vai para o setor com menor carga
-    FOR i IN 1..v_qty
-    LOOP
-      v_assigned_sector := get_least_loaded_sector(v_available_sectors);
-      
-      INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
-      VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), v_assigned_sector);
-      v_count := v_count + 1;
-    END LOOP;
-  END LOOP;
-  
-  RETURN v_count;
-END;
-$function$;
-```
-
----
-
-## Resultado Esperado
-
-Apos a migracao, novos pedidos terao o campo `notes` preenchido assim:
-
-| Produto | Notes |
-|---------|-------|
-| Pizza Grande - 1 Sabor | Massa Tradicional \| MILHO VERDE (G) |
-| Carne de Sol e Cream Cheese | Massa Tradicional \|\| OBS: SEM GOIABA |
-| Nordestina Gourmet | Borda de Catupiry \| COM CEBOLA |
-
----
-
-## Pedidos Existentes
-
-Para corrigir pedidos ja importados, seria necessario um script de reprocessamento. Recomendo focar nos novos pedidos primeiro e, se necessario, rodar um UPDATE manual depois.
-
----
+| Migration SQL | Adicionar coluna `complements` e atualizar função |
+| `src/types/orderItems.ts` | Adicionar campo `complements` |
+| `src/components/kds/KDSItemCard.tsx` | Separar exibição de complementos e observação |
 
 ## Impacto
 
-- Novos pedidos terao sabores e observacoes visiveis no KDS
-- Interface ja suporta exibicao (fundo vermelho pulsante)
-- Nenhuma mudanca de frontend necessaria
+- Complementos/sabores aparecem como lista legível
+- Somente observações do cliente têm destaque visual
+- Melhor legibilidade para operadores
+- Novo campo `complements` disponível para futuras features
 
