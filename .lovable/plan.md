@@ -1,122 +1,122 @@
 
-# Plano: Eliminar Popup "Allow" do QZ Tray
+# Plano: Implementar Assinatura Digital QZ Tray
 
-## Problema
+## Objetivo
 
-O QZ Tray exige confirmação do usuário ("Allow/OK") a cada impressão porque o sistema está configurado sem certificado digital de segurança.
+Configurar a assinatura digital no QZ Tray para eliminar os popups de confirmação "Allow/OK" a cada impressão.
 
-## Soluções Disponíveis
+## Arquitetura da Solução
 
-### Opção 1: Configurar no QZ Tray Local (MAIS SIMPLES)
+A assinatura digital do QZ Tray funciona assim:
 
-Não requer mudança de código. Configure diretamente no QZ Tray instalado:
-
-**Passos:**
-1. Clique no ícone do QZ Tray na bandeja do sistema (perto do relógio)
-2. Selecione **"Advanced" → "Site Manager"**
-3. Adicione o domínio da aplicação:
-   - Para preview: `id-preview--32fe4f98-1aa0-4e3d-8760-3b11e29b5a98.lovable.app`
-   - Para produção: `groupify-logistics.lovable.app`
-4. Marque a opção **"Remember this decision"** ou **"Always allow"**
-5. Clique em **"Save"**
-
-**Vantagem:** Não requer desenvolvimento adicional
-**Desvantagem:** Precisa configurar em cada computador
-
----
-
-### Opção 2: Implementar Certificado Digital (MAIS ROBUSTA)
-
-Implementar assinatura digital para que o QZ Tray confie automaticamente na aplicação.
-
-**Arquitetura:**
+1. **Certificado Público**: Fornecido ao QZ Tray para identificar a aplicação (pode ficar no frontend)
+2. **Chave Privada**: Usada para assinar cada requisição (deve ficar segura no backend)
 
 ```text
-┌─────────────────┐         ┌──────────────────────────┐
-│    Frontend     │         │   Edge Function          │
-│                 │         │   qz-sign                │
-│  Precisa        │ ──────► │                          │
-│  imprimir       │         │  Recebe: toSign string   │
-│                 │ ◄────── │  Retorna: signature      │
-│  Envia dados    │         │                          │
-│  para QZ Tray   │         │  (usa private key)       │
-└─────────────────┘         └──────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FLUXO DE ASSINATURA                         │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────────┐     1. toSign string      ┌──────────────────┐   │
+│  │   Frontend   │ ─────────────────────────►│  Edge Function   │   │
+│  │  qzTray.ts   │                           │    qz-sign       │   │
+│  │              │◄───────────────────────── │                  │   │
+│  └──────────────┘     2. signature          └──────────────────┘   │
+│         │                                            │              │
+│         │                                            │              │
+│         ▼                                            ▼              │
+│  ┌──────────────┐                           ┌──────────────────┐   │
+│  │   QZ Tray    │                           │  Secret Store    │   │
+│  │   (local)    │                           │  QZ_PRIVATE_KEY  │   │
+│  └──────────────┘                           └──────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Arquivos a criar/modificar:**
+## Arquivos a Criar/Modificar
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `supabase/functions/qz-sign/index.ts` | **Criar** | Edge function que assina requests |
-| `src/lib/qzTray.ts` | **Modificar** | Chamar a edge function para assinatura |
-| Secrets | **Adicionar** | Chave privada como secret do projeto |
+| `supabase/functions/qz-sign/index.ts` | **Criar** | Edge function que assina requests com RSA-SHA1 |
+| `src/lib/qzTray.ts` | **Modificar** | Configurar certificado e chamar edge function para assinatura |
+| `supabase/config.toml` | **Modificar** | Registrar a nova edge function |
+| Secrets | **Adicionar** | `QZ_PRIVATE_KEY` com a chave privada fornecida |
 
-**Passos de implementação:**
+## Implementação Detalhada
 
-1. **Gerar par de chaves:**
-   ```bash
-   openssl genrsa -out private-key.pem 2048
-   openssl req -x509 -new -key private-key.pem -out digital-certificate.crt
-   ```
+### 1. Criar Edge Function `qz-sign`
 
-2. **Criar Edge Function para assinatura:**
-   ```typescript
-   // supabase/functions/qz-sign/index.ts
-   import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-   import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
-   
-   serve(async (req) => {
-     const { toSign } = await req.json();
-     const privateKey = Deno.env.get('QZ_PRIVATE_KEY');
-     
-     // Assinar usando RSA-SHA512
-     const signature = await signWithPrivateKey(toSign, privateKey);
-     
-     return new Response(JSON.stringify({ signature }));
-   });
-   ```
+Esta função recebe o texto a ser assinado e retorna a assinatura RSA-SHA1 em base64:
 
-3. **Modificar qzTray.ts:**
-   ```typescript
-   // Certificado (pode ser inline ou fetch)
-   const CERTIFICATE = `-----BEGIN CERTIFICATE-----
-   ... conteúdo do certificado ...
-   -----END CERTIFICATE-----`;
-   
-   window.qz.security.setCertificatePromise((resolve) => {
-     resolve(CERTIFICATE);
-   });
-   
-   window.qz.security.setSignaturePromise((toSign) => (resolve) => {
-     // Chamar edge function
-     fetch('/functions/v1/qz-sign', {
-       method: 'POST',
-       body: JSON.stringify({ toSign })
-     })
-     .then(r => r.json())
-     .then(data => resolve(data.signature));
-   });
-   ```
+```typescript
+// supabase/functions/qz-sign/index.ts
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
----
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
 
-## Recomendação
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
 
-**Para resolver rapidamente:** Use a **Opção 1** (configurar no QZ Tray local). Basta:
+  const { toSign } = await req.json();
+  const privateKeyPem = Deno.env.get('QZ_PRIVATE_KEY');
+  
+  // Importar chave privada e assinar com RSA-SHA1
+  const signature = await signWithPrivateKey(toSign, privateKeyPem);
+  
+  return new Response(JSON.stringify({ signature }), {
+    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
+  });
+});
+```
 
-1. Clicar no ícone QZ Tray → **Advanced → Site Manager**
-2. Adicionar o domínio e marcar "Always allow"
-3. Reiniciar o navegador
+### 2. Modificar `qzTray.ts`
 
-**Para produção robusta:** Implemente a **Opção 2** posteriormente quando o sistema estiver estabilizado.
+Substituir as funções de segurança vazias pelo certificado e chamada à edge function:
 
----
+```typescript
+// Certificado público (inline)
+const QZ_CERTIFICATE = `-----BEGIN CERTIFICATE-----
+MIIECzCCAvOgAwIBAgIGAZwtiQ/CMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
+... (certificado completo)
+-----END CERTIFICATE-----`;
 
-## Resumo
+// Na função connect():
+window.qz.security.setCertificatePromise((resolve) => {
+  resolve(QZ_CERTIFICATE);
+});
 
-| Solução | Esforço | Segurança | Manutenção |
-|---------|---------|-----------|------------|
-| Site Manager (local) | Baixo (5 min) | Média | Por computador |
-| Certificado Digital | Alto (1-2h) | Alta | Centralizado |
+window.qz.security.setSignaturePromise((toSign) => (resolve) => {
+  fetch('https://cpxuluerkzpynlcdnxcq.supabase.co/functions/v1/qz-sign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ toSign })
+  })
+  .then(r => r.json())
+  .then(data => resolve(data.signature))
+  .catch(() => resolve(''));
+});
+```
 
-Qual opção você prefere seguir?
+### 3. Adicionar Secret
+
+Armazenar a chave privada como secret do projeto para uso seguro na edge function.
+
+## Considerações de Segurança
+
+- **Chave privada**: Nunca exposta no frontend, apenas acessível pela edge function
+- **Certificado público**: Pode ficar no frontend (é público por natureza)
+- **Edge function pública**: Não requer autenticação pois a assinatura só é útil com o QZ Tray local
+- **Algoritmo**: QZ Tray usa RSA-SHA1 para compatibilidade (não SHA256)
+
+## Resultado Esperado
+
+Após implementação:
+- Conexão com QZ Tray será automaticamente confiável
+- Nenhum popup "Allow/OK" aparecerá
+- Impressões serão 100% silenciosas
+- Funciona em qualquer computador sem configuração manual
