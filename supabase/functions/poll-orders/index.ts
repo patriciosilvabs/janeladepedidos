@@ -165,7 +165,9 @@ async function pollStoreOrders(
         : getOrderTypeLabel(order.order_type);
 
       // Insert new order with store_id
-      const { error: insertError } = await supabase.from('orders').insert({
+      const { data: insertedOrder, error: insertError } = await supabase
+        .from('orders')
+        .insert({
         cardapioweb_order_id: orderCode,  // Número visível do pedido (ex: 7955)
         external_id: cardapiowebOrderId,  // ID interno para chamadas de API
         customer_name: orderDetails.customer?.name || 'Cliente',
@@ -189,13 +191,33 @@ async function pollStoreOrders(
         store_id: store.id,
         cardapioweb_created_at: orderDetails.created_at || null,  // Corrigido: created_at (snake_case)
         order_type: order.order_type || 'delivery',
-      });
+        })
+        .select('id')
+        .single();
 
       if (insertError) {
         console.error(`[poll-orders] Error inserting order:`, insertError);
       } else {
         result.newOrders++;
         console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId} for store "${store.name}"`);
+
+        // Criar order_items para KDS
+        if (orderDetails.items && Array.isArray(orderDetails.items)) {
+          const { data: itemsResult, error: itemsError } = await supabase.rpc(
+            'create_order_items_from_json',
+            {
+              p_order_id: insertedOrder.id,
+              p_items: orderDetails.items,
+              p_default_sector_id: null,
+            }
+          );
+
+          if (itemsError) {
+            console.error(`[poll-orders] Error creating order items:`, itemsError);
+          } else {
+            console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+          }
+        }
       }
     }
 
