@@ -17,17 +17,26 @@ const Index = () => {
   const { settings, isLoading: settingsLoading } = useSettings();
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('kds');
 
-  // Sync kdsMode with database settings when loaded
+  // Determine view types early for use in effects
+  const isKDSSector = userSector?.view_type === 'kds';
+  const isDispatchSector = userSector?.view_type === 'dispatch';
+
+  // Sync kdsMode and mainView with database settings when loaded
   useEffect(() => {
     if (settings?.kds_default_mode) {
       setKdsMode(settings.kds_default_mode);
+      // For admins without sector, set mainView based on config
+      if (!isKDSSector && !isDispatchSector) {
+        if (settings.kds_default_mode === 'items') {
+          setMainView('kds');
+        }
+      }
     }
-  }, [settings?.kds_default_mode]);
+  }, [settings?.kds_default_mode, isKDSSector, isDispatchSector]);
 
   // Track presence for KDS operators
-  const isKDSSector = userSector?.view_type === 'kds';
   useSectorPresence({ 
     sectorId: userSector?.id, 
     enabled: isKDSSector && !!user?.id 
@@ -53,7 +62,6 @@ const Index = () => {
   }
 
   // Determine which dashboard to show based on user's sector
-  const isDispatchSector = userSector?.view_type === 'dispatch';
   
   // KDS mode: admin can toggle, regular users use the configured default
   const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
@@ -69,11 +77,11 @@ const Index = () => {
         {showMainViewTabs && !isFullscreen && (
           <Tabs value={mainView} onValueChange={(v) => setMainView(v as 'dashboard' | 'kds')}>
             <TabsList className="h-8">
-              <TabsTrigger value="dashboard" className="text-xs px-3">
-                Despacho
-              </TabsTrigger>
               <TabsTrigger value="kds" className="text-xs px-3">
                 KDS Produção
+              </TabsTrigger>
+              <TabsTrigger value="dashboard" className="text-xs px-3">
+                Despacho
               </TabsTrigger>
             </TabsList>
           </Tabs>
