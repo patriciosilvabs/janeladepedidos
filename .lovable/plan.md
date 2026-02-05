@@ -1,119 +1,100 @@
 
 
-# Plano: Corrigir Mapeamento de Tipos de Pedido
+# Plano: Incluir Pedidos de Mesa Abertos no Polling
 
 ## Problema Identificado
 
-A API do CardápioWeb retorna tipos de pedido diferentes do que o código espera:
-
-| API CardápioWeb | Código Atual | Deveria Ser |
-|-----------------|--------------|-------------|
-| `takeout` | (não mapeado) | Retirada |
-| `counter` | Balcão | OK |
-| `dine_in` | Mesa | OK |
-| `delivery` | Delivery | OK |
-
-**Evidência dos logs:**
-```json
-{
-  "order_type": "takeout",  // API retorna "takeout"
-  ...
-}
-```
-
-**Resultado no banco:**
-```
-address: "takeout"  // Deveria ser "Retirada"
-order_type: "takeout"  // Não é reconhecido pelo badge
-```
-
-O pedido aparece com badge de Delivery (azul) porque `takeout` não está mapeado e o fallback é `delivery`.
-
----
-
-## Solução
-
-Adicionar `takeout` aos mapeamentos em dois arquivos:
-
-1. **Edge Function** - para exibir endereço correto
-2. **OrderCard** - para exibir badge correto
-
----
-
-## Mudanças
-
-### Arquivo 1: `supabase/functions/poll-orders/index.ts`
-
-**Linha 8-16 - Função getOrderTypeLabel:**
+O polling atual consulta apenas pedidos com status `confirmed`:
 
 ```typescript
-function getOrderTypeLabel(orderType: string): string {
-  const labels: Record<string, string> = {
-    'delivery': 'Delivery',
-    'dine_in': 'Mesa',
-    'takeaway': 'Retirada',
-    'takeout': 'Retirada',    // NOVO: API retorna "takeout"
-    'counter': 'Balcão',
-    'table': 'Mesa',
-  };
-  return labels[orderType] || orderType;
-}
+// poll-orders/index.ts - Linha 85
+const ordersResponse = await fetch(`${baseUrl}/api/partner/v1/orders?status[]=confirmed`, {
 ```
 
-**Lógica isDelivery (linha ~158):**
+No CardápioWeb, pedidos de **Mesa** têm status "Aberta" (`open`), não "confirmed". Por isso nunca são capturados pelo sistema.
+
+**Evidência da imagem:**
+- MESA 17, Pedido #6250 mostra status "**Aberta**"
+- Este pedido não aparece no KDS porque o filtro ignora status `open`
+
+---
+
+## Solucao
+
+Expandir o filtro de status para incluir todos os status relevantes:
+- `confirmed` - Delivery/Retirada/Balcao confirmados
+- `open` - Mesas abertas em consumo
+- `pending` - Pedidos aguardando confirmacao (se aplicavel)
+
+---
+
+## Mudanca
+
+**Arquivo**: `supabase/functions/poll-orders/index.ts`
+
+### Antes (linha 85)
 
 ```typescript
-// Verificar se é delivery para extrair endereço
-const isDelivery = order.order_type === 'delivery';
-// takeout/takeaway/counter/dine_in não têm endereço de entrega
+const ordersResponse = await fetch(`${baseUrl}/api/partner/v1/orders?status[]=confirmed`, {
+```
+
+### Depois
+
+```typescript
+// Incluir todos os status relevantes para diferentes tipos de pedido:
+// - confirmed: Delivery, Retirada, Balcao confirmados
+// - open: Mesas abertas em consumo
+// - pending: Pedidos aguardando confirmacao
+const ordersResponse = await fetch(
+  `${baseUrl}/api/partner/v1/orders?status[]=confirmed&status[]=open&status[]=pending`,
+  {
 ```
 
 ---
 
-### Arquivo 2: `src/components/OrderCard.tsx`
+## Fluxo Corrigido
 
-**Linha 8-17 - Função getOrderTypeBadge:**
-
-```typescript
-const getOrderTypeBadge = (type?: string) => {
-  const config: Record<string, { label: string; className: string }> = {
-    'delivery': { label: '🛵 Delivery', className: 'bg-blue-500 hover:bg-blue-500' },
-    'dine_in': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
-    'takeaway': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },
-    'takeout': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },  // NOVO
-    'counter': { label: '🏪 Balcão', className: 'bg-purple-500 hover:bg-purple-500' },
-    'table': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
-  };
-  return config[type || 'delivery'] || config['delivery'];
-};
+```text
+CardapioWeb API
+      |
+      v
+poll-orders (Edge Function)
+      |
+      +--> GET /orders?status[]=confirmed  (Delivery, Retirada, Balcao)
+      |               &status[]=open       (Mesas abertas) <-- NOVO
+      |               &status[]=pending    (Aguardando)    <-- NOVO
+      |
+      v
+Todos os tipos de pedido sao capturados
+      |
+      v
+Aparecem no KDS com badge correto
 ```
 
 ---
 
-## Resultado Esperado
+## Consideracao Adicional
 
-Após a correção:
+Para pedidos de mesa que estao "abertos", o cliente pode continuar adicionando itens. Uma opcao futura seria:
 
-| Tipo API | Badge | Cor | Endereço |
-|----------|-------|-----|----------|
-| `delivery` | 🛵 Delivery | Azul | Endereço completo |
-| `takeout` | 📦 Retirada | Laranja | "Retirada" |
-| `takeaway` | 📦 Retirada | Laranja | "Retirada" |
-| `counter` | 🏪 Balcão | Roxo | "Balcão" |
-| `dine_in` | 🍽️ Mesa | Verde | "Mesa" |
+1. **Abordagem atual (mais simples)**: Importar todos os itens de uma vez e processar
+2. **Abordagem avancada**: Verificar se ha novos itens em pedidos de mesa ja importados e adiciona-los incrementalmente
+
+Por ora, a abordagem simples resolve o problema imediato.
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Mudança |
+| Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/poll-orders/index.ts` | Adicionar `takeout` ao mapeamento de labels |
-| `src/components/OrderCard.tsx` | Adicionar `takeout` ao mapeamento de badges |
+| `supabase/functions/poll-orders/index.ts` | Adicionar `status[]=open` e `status[]=pending` ao endpoint de consulta |
 
 ---
 
-## Pedidos Existentes
+## Resultado Esperado
 
-Os 6 pedidos já importados com `order_type: 'takeout'` passarão a exibir o badge correto (laranja) automaticamente após a atualização do frontend. O campo `address` mostra "takeout" mas após a correção novos pedidos mostrarão "Retirada".
+- Pedidos de Mesa com status "Aberta" serao capturados pelo polling
+- Aparecerao no Dashboard e nas bancadas KDS com badge verde (Mesa)
+- O pedido MESA 17 (#6250) sera importado na proxima sincronizacao
 
