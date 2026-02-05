@@ -1,84 +1,115 @@
 
-# Plano: Substituir Números por "FILA"
+# Plano: Badge "FILA" Aparece Imediatamente no Próximo Item Pendente
 
-## Objetivo
+## Problema Identificado
 
-Remover os números de posição (#1, #2, #3...) que confundem os funcionários e mostrar apenas a palavra **"FILA"** no próximo item a ser produzido.
+Ao clicar em INICIAR, o badge "FILA" não aparece no próximo item pendente porque:
+
+1. A condição `isFirstInQueue` verifica se é o primeiro da lista geral (que agora está em preparo)
+2. O próximo item pendente não recebe o badge automaticamente
 
 ---
 
-## Mudança Proposta
+## Solução
 
-**Arquivo**: `src/components/kds/KDSItemCard.tsx`
+Criar uma nova propriedade `isFirstPending` que identifica o **primeiro item com status pendente**, independente da posição geral na fila.
 
-### Mudança no Badge de Posição (linhas 191-196)
+---
+
+## Mudanças Propostas
+
+### Arquivo 1: `src/components/kds/SectorQueuePanel.tsx`
+
+**Adicionar função para encontrar primeiro pendente**:
 
 ```tsx
-// ANTES - Mostra números em todos os cards
-{isFifoEnabled && queuePosition && (
-  <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold bg-primary text-primary-foreground shadow-lg">
-    #{queuePosition}
-  </div>
-)}
+// NOVA função - identifica o primeiro item pendente
+const getFirstPendingId = useMemo(() => {
+  // Encontrar o primeiro item com status 'pending' na ordem de criação
+  const firstPending = displayItems.find(i => i.status === 'pending');
+  return firstPending?.id ?? null;
+}, [displayItems]);
+```
 
-// DEPOIS - Mostra "FILA" apenas no primeiro item pendente
-{isFifoEnabled && isFirstInQueue && item.status === 'pending' && (
-  <div className="absolute -top-3 -left-3 px-2 py-1 rounded-md flex items-center justify-center text-xs font-extrabold bg-primary text-primary-foreground shadow-lg">
-    FILA
-  </div>
-)}
+**Passar nova prop para KDSItemCard**:
+
+```tsx
+<KDSItemCard
+  key={item.id}
+  item={item}
+  // ... outras props
+  isFirstPending={item.id === getFirstPendingId}  // NOVA PROP
+/>
 ```
 
 ---
 
-## Comportamento Visual
+### Arquivo 2: `src/components/kds/KDSItemCard.tsx`
 
-| Situação | Antes | Depois |
-|----------|-------|--------|
-| Item #1 pendente | Badge "#1" | Badge "FILA" |
-| Item #2 pendente | Badge "#2" | Sem badge |
-| Item #3 pendente | Badge "#3" | Sem badge |
-| Item em preparo | Badge com número | Sem badge |
+**Atualizar interface para receber `isFirstPending`**:
+
+```tsx
+interface KDSItemCardProps {
+  // ... outras props
+  isFirstPending?: boolean;  // NOVA
+}
+```
+
+**Mudar condição do badge**:
+
+```tsx
+// ANTES - Usava isFirstInQueue (posição geral)
+{isFifoEnabled && isFirstInQueue && item.status === 'pending' && (
+
+// DEPOIS - Usa isFirstPending (primeiro pendente)
+{isFifoEnabled && isFirstPending && item.status === 'pending' && (
+```
 
 ---
 
-## Fluxo do Funcionário
+## Comportamento Após Mudança
+
+| Ação | Badge "FILA" |
+|------|--------------|
+| 3 itens pendentes, nenhum iniciado | Aparece no 1º item |
+| Clica INICIAR no 1º item | Aparece IMEDIATAMENTE no 2º item (agora é o 1º pendente) |
+| Clica INICIAR no 2º item | Aparece IMEDIATAMENTE no 3º item |
+| Não há mais pendentes | Sem badge |
+
+---
+
+## Fluxo Visual
 
 ```text
-ANTES (confuso):                 DEPOIS (claro):
+ANTES de clicar:                 DEPOIS de clicar INICIAR:
 +------------------+             +------------------+
-| #1               |             | FILA             |
+| FILA             |             |                  |
 | Pizza Calabresa  |             | Pizza Calabresa  |
-| [INICIAR]        |             | [INICIAR]        |
+| [INICIAR]        |             | [FORNO] [X]      |  <- Em preparo (azul)
 +------------------+             +------------------+
-| #2               |             |                  |
+|                  |             | FILA             |  <- Badge aparece!
 | Pizza Queijos    |             | Pizza Queijos    |
 | [INICIAR]        |             | [INICIAR]        |
 +------------------+             +------------------+
-| #3               |             |                  |
+|                  |             |                  |
 | Pizza Margher    |             | Pizza Margher    |
 | [INICIAR]        |             | [INICIAR]        |
 +------------------+             +------------------+
 
-Funcionário só precisa ver: "Qual tem FILA? Esse é o próximo!"
+Outro funcionário vê IMEDIATAMENTE qual é o próximo!
 ```
 
 ---
 
-## Detalhes Técnicos
+## Arquivos a Modificar
 
-| Elemento | Valor |
-|----------|-------|
-| Arquivo | `src/components/kds/KDSItemCard.tsx` |
-| Condição | `isFirstInQueue && item.status === 'pending'` |
-| Texto | "FILA" (em vez de `#{queuePosition}`) |
-| Formato | Retângulo arredondado (melhor para texto) |
-| Cor | `bg-primary` (mesma cor atual) |
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/kds/SectorQueuePanel.tsx` | Calcular `getFirstPendingId` e passar como prop |
+| `src/components/kds/KDSItemCard.tsx` | Receber `isFirstPending` e usar na condição do badge |
 
 ---
 
-## Resumo
+## Por que funciona imediatamente
 
-- **Remove**: Todos os números de posição (#1, #2, #3...)
-- **Adiciona**: Badge "FILA" apenas no primeiro item pendente
-- **Resultado**: Interface mais simples e clara para os funcionários
+A atualização otimística no `useOrderItems.ts` já muda o status do item para `in_prep` **antes** da resposta do servidor. Isso faz o `useMemo` recalcular `getFirstPendingId` instantaneamente, exibindo o badge no próximo item pendente.
