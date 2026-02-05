@@ -64,11 +64,12 @@ interface OvenItemRowProps {
   item: OrderItemWithOrder;
   onMarkReady: () => void;
   isProcessing: boolean;
+  isAnyProcessing: boolean;
   audioEnabled: boolean;
   ovenTimeSeconds: number;
 }
 
-function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSeconds }: OvenItemRowProps) {
+ function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, audioEnabled, ovenTimeSeconds }: OvenItemRowProps) {
   const [countdown, setCountdown] = useState<number>(ovenTimeSeconds);
   const [hasPlayedAlert, setHasPlayedAlert] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -173,16 +174,18 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
         {/* Action */}
         <Button
           onClick={onMarkReady}
-          disabled={isProcessing}
+          disabled={isProcessing || isAnyProcessing}
           className={cn(
             "text-white shrink-0",
-            isUrgent 
+            isProcessing 
+              ? "bg-gray-500"
+              : isUrgent 
               ? "bg-red-600 hover:bg-red-700" 
               : "bg-green-600 hover:bg-green-700"
           )}
         >
           <Check className="h-4 w-4 mr-1" />
-          PRONTO
+          {isProcessing ? 'SALVANDO...' : 'PRONTO'}
         </Button>
       </div>
     </div>
@@ -198,15 +201,31 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { settings } = useSettings();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Get oven time from settings
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+  
+  // Limpar timeout no unmount
+  useEffect(() => {
+    return () => {
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const handleMarkReady = async (itemId: string) => {
     // Evitar cliques duplos - bloquear se qualquer item já está sendo processado
     if (processingId) return;
     
     setProcessingId(itemId);
+    
+    // Timeout de segurança: liberar após 5 segundos para evitar travamento
+    processingTimeoutRef.current = setTimeout(() => {
+      setProcessingId(null);
+    }, 5000);
+    
     try {
       // Find item for printing before marking ready
       const item = sortedItems.find(i => i.id === itemId);
@@ -220,6 +239,10 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     } catch (error) {
       console.error('Erro ao marcar item como pronto:', error);
     } finally {
+      if (processingTimeoutRef.current) {
+        clearTimeout(processingTimeoutRef.current);
+        processingTimeoutRef.current = null;
+      }
       setProcessingId(null);
     }
   };
@@ -266,6 +289,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
             item={item}
             onMarkReady={() => handleMarkReady(item.id)}
             isProcessing={processingId === item.id}
+            isAnyProcessing={processingId !== null}
             audioEnabled={audioEnabled}
             ovenTimeSeconds={ovenTimeSeconds}
           />
