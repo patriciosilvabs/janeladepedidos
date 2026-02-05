@@ -5,7 +5,6 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQZTray } from '@/hooks/useQZTray';
-import { usePrintJobQueue } from '@/hooks/usePrintJobQueue';
 import { cn } from '@/lib/utils';
 import { isQZLoaded } from '@/lib/qzTray';
 
@@ -27,12 +26,8 @@ export function PrinterSettings() {
     setReceiverEnabled,
   } = useQZTray();
 
-  // Initialize print job queue listener when receiver mode is enabled
-  usePrintJobQueue({
-    enabled: isReceiverEnabled,
-    printerName: selectedPrinter,
-    isQZConnected: isConnected,
-  });
+  // Note: Print job queue listener is initialized in Index.tsx to stay active
+  // even when this settings dialog is closed
 
   const [isPrinting, setIsPrinting] = useState(false);
 

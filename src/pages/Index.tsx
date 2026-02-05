@@ -8,6 +8,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useUserSector } from '@/hooks/useSectors';
 import { useSettings } from '@/hooks/useSettings';
 import { useSectorPresence } from '@/hooks/useSectorPresence';
+import { useQZTray } from '@/hooks/useQZTray';
+import { usePrintJobQueue } from '@/hooks/usePrintJobQueue';
 import { Loader2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -18,6 +20,16 @@ const Index = () => {
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+
+  // Get QZ Tray state for print queue listener
+  const { isConnected: isQZConnected, selectedPrinter, isReceiverEnabled } = useQZTray();
+
+  // Initialize print job queue listener (stays active while app is mounted)
+  usePrintJobQueue({
+    enabled: isReceiverEnabled,
+    printerName: selectedPrinter,
+    isQZConnected: isQZConnected,
+  });
   
   // Track if we've successfully loaded content before
   // to prevent showing loading spinner during brief reloads
