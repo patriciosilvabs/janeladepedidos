@@ -9,10 +9,12 @@ function getOrderTypeLabel(orderType: string): string {
   const labels: Record<string, string> = {
     'delivery': 'Delivery',
     'dine_in': 'Mesa',
+    'table': 'Mesa',
+    'closed_table': 'Mesa',
     'takeaway': 'Retirada',
     'takeout': 'Retirada',
     'counter': 'Balcão',
-    'table': 'Mesa',
+    'onsite': 'Balcão',
   };
   return labels[orderType] || orderType;
 }
@@ -114,11 +116,26 @@ async function pollStoreOrders(
     
     console.log(`[poll-orders] Store "${store.name}": ${ordersData.length} pedidos encontrados`);
 
-    // OTIMIZAÇÃO 1: Filtrar pedidos já finalizados ANTES de processar
-    const ignoredStatuses = ['closed', 'canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
+    // Tipos de pedido que são de mesa (chegam com status closed)
+    const tableOrderTypes = ['closed_table', 'dine_in', 'table'];
+
+    // Log para debug dos order_types recebidos
+    const orderTypesFound = [...new Set(ordersData.map(o => o.order_type))];
+    console.log(`[poll-orders] Order types found:`, orderTypesFound.join(', '));
+
+    // Filtrar pedidos ativos OU pedidos de mesa (que chegam como closed)
+    const ignoredStatuses = ['canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
     const activeOrders = ordersData.filter(order => {
       const status = (order.status || '').toLowerCase();
-      return !ignoredStatuses.includes(status);
+      const orderType = (order.order_type || '').toLowerCase();
+      
+      // Permitir pedidos de mesa mesmo com status closed
+      if (tableOrderTypes.includes(orderType) && status === 'closed') {
+        return true;
+      }
+      
+      // Para outros tipos, ignorar status finalizados (incluindo closed)
+      return !ignoredStatuses.includes(status) && status !== 'closed';
     });
     
     console.log(`[poll-orders] ${activeOrders.length} active orders out of ${ordersData.length} total`);
