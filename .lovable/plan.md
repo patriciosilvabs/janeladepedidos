@@ -1,79 +1,72 @@
 
-# Plano: Corrigir Notificação ao CardápioWeb - Endpoint "Pedido Pronto"
 
-## Problema Identificado
+# Plano: Investigar e Corrigir Notificação de Pedido Pronto
 
-O endpoint `/waiting_to_catch` está retornando **HTTP 404 Not Found**, conforme os logs:
+## Descoberta Importante
 
+O status `waiting_to_catch` **existe no CardápioWeb** como um status de pedido (reconhecido em `sync-orders-status`), mas **não como endpoint da API** (retornou 404 quando tentamos chamar `/waiting_to_catch`).
+
+Isso sugere que:
+1. O KDS do CardápioWeb marca o pedido internamente como `waiting_to_catch` (pronto, aguardando coleta)
+2. O endpoint da API `/ready` marca o pedido e possivelmente dispara integração automática com Foody
+
+## Opções de Solução
+
+### Opção 1: Investigar Documentação Completa da API (Recomendado)
+
+A documentação fornecida menciona "Pedido pronto POST" mas não mostra se aceita parâmetros no body. Talvez o endpoint `/ready` aceite um JSON body com flags como:
+
+```json
+{
+  "auto_dispatch": false,
+  "notify_driver": false
+}
 ```
-Calling CardápioWeb AGUARDANDO COLETA for order 180756212: 
-  https://integracao.cardapioweb.com/api/partner/v1/orders/180756212/waiting_to_catch
 
-Response: 404 {"status":404,"error":"Not Found"}
-```
+**Ação:** Testar enviar body JSON com diferentes flags para o endpoint `/ready`
 
-O endpoint **não existe** na API do CardápioWeb!
+### Opção 2: Contatar Suporte CardápioWeb
 
-## Análise da Documentação
+Email: integracao@cardapioweb.com
 
-Segundo a documentação oficial do CardápioWeb, os endpoints de status de pedido são:
+Perguntar especificamente:
+- "Como marcar um pedido como PRONTO via API sem disparar automaticamente a integração com Foody/entregadores?"
+- "Existe um parâmetro ou flag para o endpoint /ready que controla o auto-dispatch?"
+- "O status 'waiting_to_catch' pode ser definido via API?"
 
-| Ação | Endpoint Provável |
-|------|------------------|
-| Aceitar pedido | `/orders/{id}/accept` |
-| Iniciar preparação | `/orders/{id}/preparation_start` |
-| **Pedido pronto** | `/orders/{id}/ready` |
-| Pedido entregue | `/orders/{id}/delivered` |
-| Cancelar pedido | `/orders/{id}/cancel` |
-| Saiu para entrega | `/orders/{id}/dispatch` ✓ (já funciona) |
+### Opção 3: Desabilitar Auto-Dispatch no Painel CardápioWeb
 
-## O Dilema
+Se o CardápioWeb tem uma configuração de "Despacho Automático" ou "Integração Foody", desabilitar essa opção pode fazer o endpoint `/ready` funcionar corretamente.
 
-- O endpoint `/ready` existe e funciona, **MAS** automaticamente muda o status para "Saiu para Entrega" (porque o CardápioWeb dispara o Foody)
-- O endpoint `/waiting_to_catch` **não existe** (404)
+## Próximo Passo Imediato: Testar com Body JSON
 
-## Solução: Verificar Configuração do CardápioWeb
+Podemos tentar enviar um body vazio ou com flags específicas para o endpoint `/ready`:
 
-A questão provavelmente é que o CardápioWeb tem uma configuração de **"Despacho Automático"** ou integração nativa com Foody que dispara automaticamente quando o pedido é marcado como pronto.
+| Teste | Body | Hipótese |
+|-------|------|----------|
+| 1 | `{}` | Talvez body vazio mude comportamento |
+| 2 | `{"status": "waiting_to_catch"}` | Forçar status específico |
+| 3 | `{"skip_dispatch": true}` | Flag para pular despacho |
 
-### Opção 1: Usar `/ready` e desabilitar despacho automático no CardápioWeb
+## Alteração Proposta para Teste
 
-O cliente precisa acessar o painel do CardápioWeb e:
-1. Ir em Configurações → Integrações → Foody
-2. **Desabilitar** a opção de "Despacho Automático" ou "Enviar automaticamente para entregador"
-
-Com isso, ao chamar `/ready`:
-- O pedido aparece como "Pronto" no CardápioWeb
-- O Foody só é acionado quando o Dashboard chama `/dispatch` (coluna Despachados)
-
-### Opção 2: Se não houver como desabilitar
-
-Se o CardápioWeb não permitir desabilitar o envio automático, então:
-- **Não notificar** o CardápioWeb quando sai do Buffer
-- Notificar **apenas quando for despachado** (já funciona com `/dispatch`)
-
-## Alteração Necessária
-
-Voltar a usar o endpoint `/ready` que existe e funciona:
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `supabase/functions/notify-order-ready/index.ts` | Trocar de `/waiting_to_catch` para `/ready` |
+Modificar a função `notifyCardapioWebReady` para incluir um body JSON na requisição:
 
 ```typescript
-// ANTES (404 - não funciona)
-const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/waiting_to_catch`;
-
-// DEPOIS (funciona)
-const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/ready`;
+const response = await fetch(endpoint, {
+  method: 'POST',
+  headers: {
+    'X-API-KEY': store.cardapioweb_api_token,
+    'Accept': 'application/json',
+    'Content-Type': 'application/json',  // ADICIONAR
+  },
+  body: JSON.stringify({}),  // ADICIONAR - testar com body vazio primeiro
+});
 ```
 
-## Resultado Esperado
+## Resumo
 
-1. O pedido sai do status "Em Preparação" no CardápioWeb
-2. Aparece como "Pronto" ou "Aguardando Coleta"
-3. Se o CardápioWeb disparar automaticamente para "Saiu para Entrega", o cliente precisa verificar as configurações de integração no painel do CardápioWeb
+1. **Causa provável:** O endpoint `/ready` do CardápioWeb tem comportamento diferente quando chamado via API vs KDS interno
+2. **Próximo passo:** Testar com body JSON na requisição
+3. **Plano B:** Contatar suporte CardápioWeb para orientação
 
-## Nota Importante para o Usuário
-
-Se após usar `/ready` o pedido automaticamente mudar para "Saiu para Entrega", isso é **configuração do CardápioWeb**, não do sistema. O usuário deve verificar no painel do CardápioWeb se existe opção de desabilitar o "despacho automático" ou "envio automático ao Foody".
