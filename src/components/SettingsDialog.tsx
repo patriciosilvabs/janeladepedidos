@@ -199,12 +199,12 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-7' : 'grid-cols-4'}`}>
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4 sm:grid-cols-7' : 'grid-cols-2 sm:grid-cols-4'} gap-1`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
               </TabsTrigger>
-              <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Cardápio</TabsTrigger>
+              <TabsTrigger value="cardapio" className="text-xs sm:text-sm">Card.</TabsTrigger>
               <TabsTrigger value="foody" className="text-xs sm:text-sm">
                 <Truck className="h-3 w-3 mr-1 hidden sm:inline" />
                 Foody
