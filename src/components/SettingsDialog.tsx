@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags, Route, Printer } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags, Route } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
@@ -9,7 +9,6 @@ import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { FoodyStatsPanel } from '@/components/FoodyStatsPanel';
 import { DynamicBufferSettings } from '@/components/DynamicBufferSettings';
 import { SectorsManager } from '@/components/SectorsManager';
-import { PrinterSettings } from '@/components/PrinterSettings';
  import { useSectors } from '@/hooks/useSectors';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -205,7 +204,7 @@ export function SettingsDialog() {
           </div>
         ) : (
           <Tabs defaultValue="stores" className="w-full">
-            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-4 sm:grid-cols-8' : 'grid-cols-2 sm:grid-cols-5'} gap-1`}>
+            <TabsList className={`grid w-full ${isOwner ? 'grid-cols-3 sm:grid-cols-7' : 'grid-cols-2 sm:grid-cols-4'} gap-1`}>
               <TabsTrigger value="stores" className="text-xs sm:text-sm">
                 <Store className="h-3 w-3 mr-1 hidden sm:inline" />
                 Lojas
@@ -216,10 +215,6 @@ export function SettingsDialog() {
                 Foody
               </TabsTrigger>
               <TabsTrigger value="buffer" className="text-xs sm:text-sm">Buffer</TabsTrigger>
-              <TabsTrigger value="printer" className="text-xs sm:text-sm">
-                <Printer className="h-3 w-3 mr-1 hidden sm:inline" />
-                Impressão
-              </TabsTrigger>
               {isOwner && (
                 <TabsTrigger value="kds" className="text-xs sm:text-sm">
                   <Monitor className="h-3 w-3 mr-1 hidden sm:inline" />
@@ -625,10 +620,6 @@ export function SettingsDialog() {
                   />
                 </div>
               </div>
-            </TabsContent>
-
-            <TabsContent value="printer" className="space-y-4 mt-4">
-              <PrinterSettings />
             </TabsContent>
 
             {isOwner && (

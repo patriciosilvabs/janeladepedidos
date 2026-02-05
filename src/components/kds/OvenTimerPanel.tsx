@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
-import { useQZTray } from '@/hooks/useQZTray';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -148,7 +147,6 @@ interface OvenTimerPanelProps {
 export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
   const { settings } = useSettings();
-  const { printOrQueue } = useQZTray();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -177,15 +175,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     }, 5000);
     
     try {
-      // Find item for printing before marking ready
-      const item = sortedItems.find(i => i.id === itemId);
-      
       await markItemReady.mutateAsync(itemId);
-      
-      // Print or queue for remote printing
-      if (item) {
-        await printOrQueue(item);
-      }
     } catch (error) {
       console.error('Erro ao marcar item como pronto:', error);
     } finally {

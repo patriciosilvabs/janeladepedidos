@@ -32,10 +32,6 @@ export interface AppSettings {
   kds_edge_keywords: string;
   kds_flavor_keywords: string;
   kds_edge_sector_id: string | null;
-  // QZ Tray printing
-  qz_printer_name: string | null;
-  qz_print_enabled: boolean;
-  print_receiver_enabled: boolean;
 }
 
 export function useSettings() {
