@@ -1,91 +1,95 @@
 
+# Plano: Configurar QZ Tray para Impressão Silenciosa (Sem Popup)
 
-# Plano: Testar Flags de Controle no Endpoint /ready
+## O Problema
 
-## Contexto
+O popup "Allow" aparece porque o QZ Tray não está conseguindo validar a assinatura digital. Para funcionar sem popups, três coisas precisam estar sincronizadas:
 
-O erro de build atual (408 Request Timeout) é temporário - problema de rede do CDN esm.sh, não do código. Será resolvido automaticamente no próximo build.
+1. **Chave Privada** (no servidor) - usada para assinar
+2. **Certificado Público** (no código) - enviado ao QZ Tray
+3. **Confiança no QZ Tray** (no computador local) - precisa confiar no certificado
 
-## Estratégia de Testes
+## Diagnóstico
 
-Baseado nas suas sugestões, vamos testar diferentes payloads para o endpoint `/ready`:
+O código está correto, mas provavelmente:
+- O certificado no código (`QZ_CERTIFICATE`) não corresponde à chave privada (`QZ_PRIVATE_KEY`)
+- OU o QZ Tray não tem este certificado instalado como "confiável"
 
-### Teste 1: Flags de Dispatch
+## Solução: Gerar Novo Par de Chaves + Instalar Certificado
 
-```typescript
-body: JSON.stringify({ 
-  "dispatch": false 
-})
+### Passo 1: Gerar um Novo Par de Chaves
+
+No computador (Windows/Mac/Linux), execute estes comandos em um terminal:
+
+```text
+# 1. Gerar chave privada RSA
+openssl genrsa -out qz-private-key.pem 2048
+
+# 2. Gerar certificado público (válido por 20 anos)
+openssl req -new -x509 -key qz-private-key.pem -out qz-certificate.pem -days 7300 -subj "/CN=Groupify/O=SuaEmpresa"
 ```
 
-### Teste 2: Flag auto_dispatch
+Isso vai criar dois arquivos:
+- `qz-private-key.pem` - Chave privada (para o servidor)
+- `qz-certificate.pem` - Certificado público (para o código e QZ Tray)
 
-```typescript
-body: JSON.stringify({ 
-  "auto_dispatch": false 
-})
+### Passo 2: Atualizar o Secret no Lovable
+
+1. Abra o arquivo `qz-private-key.pem` com um editor de texto
+2. Copie TODO o conteúdo (incluindo `-----BEGIN PRIVATE KEY-----` e `-----END PRIVATE KEY-----`)
+3. No Lovable, vá em **Configurações → Secrets** e atualize o secret `QZ_PRIVATE_KEY` com esse conteúdo
+
+### Passo 3: Atualizar o Certificado no Código
+
+Vou atualizar o arquivo `src/lib/qzTray.ts` com o conteúdo do arquivo `qz-certificate.pem` que você gerou.
+
+### Passo 4: Instalar Certificado no QZ Tray (Computador Local)
+
+Este é o passo crucial para eliminar o popup:
+
+1. Localize a pasta de instalação do QZ Tray:
+   - **Windows**: `C:\Program Files\QZ Tray\`
+   - **Mac**: `/Applications/QZ Tray.app/Contents/Resources/`
+   - **Linux**: `/opt/qz-tray/`
+
+2. Copie o arquivo `qz-certificate.pem` para a subpasta `auth/` dentro da pasta do QZ Tray:
+   - Windows: `C:\Program Files\QZ Tray\auth\qz-certificate.pem`
+   - Mac: `/Applications/QZ Tray.app/Contents/Resources/auth/qz-certificate.pem`
+
+3. Renomeie ou apague o arquivo `root-ca.crt` existente na pasta `auth/` (faça backup primeiro)
+
+4. **Reinicie o QZ Tray** (feche no ícone da bandeja e abra novamente)
+
+### Passo 5: Teste
+
+Após reiniciar o QZ Tray, faça um teste de impressão. O popup "Allow" não deve mais aparecer.
+
+## Resumo Visual
+
+```text
++-----------------------+     +------------------------+     +-------------------+
+|   qz-private-key.pem  | --> |  Secret: QZ_PRIVATE_KEY | --> | Edge Function     |
+|   (chave privada)     |     |  (no Lovable Cloud)     |     | assina requisição |
++-----------------------+     +------------------------+     +-------------------+
+                                                                       |
+                                                                       v
++-----------------------+     +------------------------+     +-------------------+
+|  qz-certificate.pem   | --> |  Código qzTray.ts      | --> | Envia cert ao     |
+|  (certificado)        |     |  (QZ_CERTIFICATE)       |     | QZ Tray           |
++-----------------------+     +------------------------+     +-------------------+
+         |                                                            |
+         v                                                            v
++-----------------------+                                  +-------------------+
+|  Pasta auth/ do       |                                  | QZ Tray valida    |
+|  QZ Tray no PC        | -------------------------------- | assinatura        |
+|  (mesmo certificado)  |                                  | = SEM POPUP!      |
++-----------------------+                                  +-------------------+
 ```
 
-### Teste 3: Status + Notify
+## Alterações no Código
 
-```typescript
-body: JSON.stringify({ 
-  "status": "READY",
-  "notify": false 
-})
-```
+Após você gerar o certificado e me enviar o conteúdo do `qz-certificate.pem`, vou atualizar o arquivo `src/lib/qzTray.ts` com o novo certificado.
 
-## Implementação Proposta
+## Observação Importante
 
-Modificar `notify-order-ready/index.ts` para enviar um body com flags de controle:
-
-```typescript
-// Tentar desabilitar auto-dispatch via body
-const response = await fetch(endpoint, {
-  method: 'POST',
-  headers: {
-    'X-API-KEY': store.cardapioweb_api_token,
-    'Accept': 'application/json',
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({ 
-    dispatch: false,
-    auto_dispatch: false,
-    notify: false
-  }),
-});
-```
-
-## Verificação do Tipo de Pedido
-
-Adicionar log do `order_type` para verificar se o comportamento muda baseado em delivery vs takeout:
-
-```typescript
-console.log(`Order type: ${orderType} - Se delivery, API pode disparar logística automaticamente`);
-```
-
-## Endpoint Alternativo
-
-Se as flags não funcionarem, testar o endpoint `/prepared` como alternativa:
-
-```typescript
-// Testar se /prepared existe
-const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/prepared`;
-```
-
-## Alterações
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/notify-order-ready/index.ts` | Adicionar flags `dispatch: false`, `auto_dispatch: false`, `notify: false` no body |
-
-## Resultado Esperado
-
-1. A API do CardápioWeb respeita as flags e mantém o pedido em "Pronto"
-2. O cliente não é notificado automaticamente
-3. O Foody só é acionado quando nosso sistema chama `/dispatch`
-
-## Plano B
-
-Se nenhuma flag funcionar, a recomendação é contatar o suporte CardápioWeb com a pergunta técnica que você sugeriu - é a forma mais segura de obter a resposta definitiva.
-
+O certificado que está atualmente no código (`QZ Tray Demo Cert`) é um certificado de demonstração do QZ. Para produção, é necessário usar um certificado próprio gerado com os comandos acima.
