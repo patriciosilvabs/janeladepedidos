@@ -1,153 +1,124 @@
 
 
-# Plano: Sistema Visual FIFO como Modo Opcional
+# Plano: Melhorar Destaque Visual do Primeiro Item FIFO
 
-## Objetivo
+## Situação Atual
 
-Criar o **Modo Visual FIFO** como uma funcionalidade configurável que pode ser ativada/desativada pelo administrador. O comportamento atual (simples) permanece como padrão.
+O código já implementa:
+- Badge de sequência: `#1`, `#2`, `#3` (mas pequeno: `w-7 h-7`, `text-xs`)
+- Escala do primeiro card: `scale-105` (5%)
+- Sombra: `shadow-lg shadow-primary/20`
 
----
+## Melhorias Propostas
 
-## Configuração Principal
+### 1. Badge de Sequência Maior e Mais Visível
 
-Nova coluna na tabela `app_settings`:
+| Elemento | Atual | Proposto |
+|----------|-------|----------|
+| Tamanho | `w-7 h-7` (28px) | `w-9 h-9` (36px) |
+| Fonte | `text-xs` | `text-base font-extrabold` |
+| Posição | `-top-2 -left-2` | `-top-3 -left-3` |
+| Badge #1 | Cor sólida | Animação de brilho (glow) |
 
-| Coluna | Tipo | Default | Descrição |
-|--------|------|---------|-----------|
-| `kds_fifo_visual_enabled` | `boolean` | `false` | Habilita o sistema visual de priorização FIFO |
+### 2. Escala Maior para o Primeiro Card
 
----
+| Elemento | Atual | Proposto |
+|----------|-------|----------|
+| Escala | `scale-105` (5%) | `scale-110` (10%) |
+| Sombra | `shadow-lg` | `shadow-xl shadow-primary/30` |
+| Z-index | `z-10` | `z-20` |
 
-## Comportamento por Modo
+### 3. Fundo Diferenciado para o Primeiro Card
 
-### Modo Atual (Padrão) - `kds_fifo_visual_enabled = false`
-
-- Todos os cards têm aparência uniforme
-- Cores de borda baseadas apenas no status (pendente, em preparo)
-- Sem badges de sequência (#1, #2)
-- Sem barra de progresso
-- Qualquer item pode ser iniciado em qualquer ordem
-
-### Modo FIFO Visual - `kds_fifo_visual_enabled = true`
-
-- **Semáforo de urgência**: Bordas verde/amarela/vermelha baseadas no tempo
-- **Badge de sequência**: #1, #2, #3 no canto do card
-- **Barra de progresso**: Indica visualmente tempo decorrido
-- **Destaque no primeiro item**: Card maior com botão em destaque
-- Qualquer item ainda pode ser iniciado (sem bloqueio forçado)
+Adicionar um fundo levemente mais claro/destacado para o card #1:
+- `bg-gradient-to-br from-primary/5 to-transparent`
 
 ---
 
-## Configurações Adicionais (apenas quando FIFO está ativo)
+## Arquivo a Modificar
 
-| Coluna | Tipo | Default | Descrição |
-|--------|------|---------|-----------|
-| `fifo_warning_minutes` | `integer` | `3` | Tempo (min) para mudar de verde → amarelo |
-| `fifo_critical_minutes` | `integer` | `5` | Tempo (min) para mudar de amarelo → vermelho |
-| `fifo_lock_enabled` | `boolean` | `false` | Bloqueia início de itens fora da ordem |
+`src/components/kds/KDSItemCard.tsx`
 
----
-
-## Interface nas Configurações (aba KDS)
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ [Modo de Visualização KDS - seção existente...]            │
-├─────────────────────────────────────────────────────────────┤
-│ ──────────────────────────────────────────────────────────  │
-│                                                             │
-│ 🎯 Sistema Visual FIFO                                      │
-│                                                             │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Habilitar Priorização Visual FIFO               [OFF]  │ │
-│ │ Destaca visualmente os itens por ordem de entrada,     │ │
-│ │ com cores de urgência e badges de sequência.           │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                             │
-│ [Quando ativo, exibe configurações adicionais:]            │
-│                                                             │
-│   Tempo para alerta amarelo: [3] minutos                   │
-│   Tempo para alerta vermelho: [5] minutos                  │
-│                                                             │
-│ ┌─────────────────────────────────────────────────────────┐ │
-│ │ Bloquear seleção fora de ordem               [OFF]     │ │
-│ │ Quando ativo, só permite iniciar o próximo item        │ │
-│ │ após o anterior estar em preparo.                      │ │
-│ └─────────────────────────────────────────────────────────┘ │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Mudanças |
-|---------|----------|
-| **Migração SQL** | Adicionar colunas `kds_fifo_visual_enabled`, `fifo_warning_minutes`, `fifo_critical_minutes`, `fifo_lock_enabled` |
-| `src/hooks/useSettings.ts` | Adicionar novos campos ao tipo `AppSettings` |
-| `src/components/SettingsDialog.tsx` | Adicionar toggle FIFO na aba KDS com configurações condicionais |
-| `src/components/kds/KDSItemCard.tsx` | Receber props de FIFO e aplicar estilos condicionalmente |
-| `src/components/kds/SectorQueuePanel.tsx` | Passar configurações FIFO e posição para cada card |
-
----
-
-## Migração do Banco de Dados
-
-```sql
-ALTER TABLE app_settings 
-ADD COLUMN IF NOT EXISTS kds_fifo_visual_enabled BOOLEAN DEFAULT false,
-ADD COLUMN IF NOT EXISTS fifo_warning_minutes INTEGER DEFAULT 3,
-ADD COLUMN IF NOT EXISTS fifo_critical_minutes INTEGER DEFAULT 5,
-ADD COLUMN IF NOT EXISTS fifo_lock_enabled BOOLEAN DEFAULT false;
-```
-
----
-
-## Lógica no KDSItemCard
+### Mudanças no Badge de Sequência (linhas 193-201)
 
 ```tsx
-interface KDSItemCardProps {
-  // ... props existentes
-  fifoSettings?: {
-    enabled: boolean;
-    warningMinutes: number;
-    criticalMinutes: number;
-    lockEnabled: boolean;
-  };
-  queuePosition?: number;
-  canStartItem?: boolean;
-}
+// ANTES
+<div className={cn(
+  "absolute -top-2 -left-2 w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shadow-lg",
+  isFirstInQueue 
+    ? "bg-primary text-primary-foreground" 
+    : "bg-muted-foreground/80 text-background"
+)}>
+  #{queuePosition}
+</div>
 
-// Dentro do componente:
-const getCardStyles = () => {
-  // Se FIFO desabilitado, usar estilos atuais
-  if (!fifoSettings?.enabled) {
-    return getStatusColor(); // lógica atual
-  }
-  
-  // Se FIFO habilitado, usar semáforo de tempo
-  return getUrgencyColor(elapsedTime, fifoSettings);
-};
+// DEPOIS
+<div className={cn(
+  "absolute -top-3 -left-3 rounded-full flex items-center justify-center font-extrabold shadow-xl",
+  isFirstInQueue 
+    ? "w-10 h-10 text-lg bg-primary text-primary-foreground ring-2 ring-primary/50 animate-pulse" 
+    : "w-8 h-8 text-sm bg-muted-foreground/80 text-background"
+)}>
+  #{queuePosition}
+</div>
+```
+
+### Mudanças no Container do Card (linhas 186-191)
+
+```tsx
+// ANTES
+<div className={cn(
+  "rounded-lg border-2 p-3 transition-all duration-300 relative",
+  isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
+  isFifoEnabled && isFirstInQueue && item.status === 'pending' && "scale-105 shadow-lg shadow-primary/20 z-10"
+)}>
+
+// DEPOIS
+<div className={cn(
+  "rounded-lg border-2 p-3 transition-all duration-300 relative",
+  isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
+  isFifoEnabled && isFirstInQueue && item.status === 'pending' && 
+    "scale-110 shadow-xl shadow-primary/30 z-20 bg-gradient-to-br from-primary/10 to-transparent border-primary"
+)}>
 ```
 
 ---
 
-## Ordem de Implementação
+## Resultado Visual Esperado
 
-1. **Migração SQL**: Adicionar colunas de configuração
-2. **useSettings.ts**: Atualizar tipo TypeScript
-3. **SettingsDialog.tsx**: Adicionar seção FIFO na aba KDS
-4. **SectorQueuePanel.tsx**: Ler configurações e calcular posição na fila
-5. **KDSItemCard.tsx**: Implementar renderização condicional
+```
+Modo FIFO Ativado:
+
+┌────────────────────────────────────────────────────────────────┐
+│                                                                │
+│  ┌──────────────────────┐   ┌─────────────────┐   ┌──────────┐│
+│  │ ╭───╮                │   │ ╭──╮            │   │ ╭──╮     ││
+│  │ │ 1 │  (GRANDE)      │   │ │2 │ (pequeno)  │   │ │3 │     ││
+│  │ ╰───╯                │   │ ╰──╯            │   │ ╰──╯     ││
+│  │     #ML8X   6:42     │   │   #ML8Y  2:15   │   │ #ML8Z    ││
+│  │                      │   │                 │   │          ││
+│  │   Pizza Calabresa    │   │  Pizza Bacon    │   │ Pizza 4Q ││
+│  │   ████████████ 100%  │   │  █████░░ 45%    │   │ ██░░ 15% ││
+│  │                      │   │                 │   │          ││
+│  │  [✨ INICIAR ✨]     │   │ [  INICIAR  ]   │   │[INICIAR] ││
+│  │   (10% MAIOR)        │   │   (normal)      │   │ (normal) ││
+│  └──────────────────────┘   └─────────────────┘   └──────────┘│
+│   BORDA VERMELHA              BORDA AMARELA       BORDA VERDE │
+│   + FUNDO GRADIENTE                                           │
+│                                                                │
+└────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Resultado
+## Resumo das Mudanças
 
-| Configuração | Comportamento |
-|--------------|---------------|
-| FIFO OFF (padrão) | Cards uniformes, como está hoje |
-| FIFO ON | Semáforo, badges, destaque, barra de progresso |
-| FIFO ON + Lock ON | Além do visual, só permite iniciar em ordem FIFO |
+| Elemento | Antes | Depois |
+|----------|-------|--------|
+| Badge #1 | 28px, `text-xs` | 40px, `text-lg`, pulsando |
+| Badges #2+ | 28px, `text-xs` | 32px, `text-sm` |
+| Escala Card #1 | 5% (`scale-105`) | 10% (`scale-110`) |
+| Sombra Card #1 | `shadow-lg` | `shadow-xl` mais intensa |
+| Fundo Card #1 | Igual aos outros | Gradiente sutil `from-primary/10` |
+| Borda Card #1 | Cor do semáforo | `border-primary` |
 
