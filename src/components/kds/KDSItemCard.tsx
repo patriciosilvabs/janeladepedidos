@@ -198,7 +198,7 @@ export function KDSItemCard({
 
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <Badge variant="outline" className="font-mono text-base font-bold px-2 py-0.5">
+        <Badge variant="outline" className="font-mono text-2xl font-bold px-3 py-1">
           #{orderId}
         </Badge>
         <div className="flex items-center gap-1 text-muted-foreground text-xs">
@@ -209,7 +209,7 @@ export function KDSItemCard({
 
       {/* Product Info */}
       <div className="mb-3">
-        <h3 className="text-xl font-bold text-foreground leading-tight">
+        <h3 className="text-3xl font-bold text-foreground leading-tight">
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
           {item.product_name}
         </h3>

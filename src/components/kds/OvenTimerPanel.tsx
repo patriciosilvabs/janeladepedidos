@@ -1,13 +1,64 @@
 import { useState, useEffect, useRef } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
-import { OrderItemWithOrder } from '@/types/orderItems';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Flame, Check, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
+import { OrderItemWithOrder } from '@/types/orderItems';
+
+// Print receipt function
+const printOrderReceipt = (item: OrderItemWithOrder) => {
+  const orderId = item.orders?.cardapioweb_order_id || 
+                  item.orders?.external_id || 
+                  item.order_id.slice(0, 8);
+
+  const printWindow = window.open('', '_blank', 'width=300,height=400');
+  if (!printWindow) return;
+
+  const content = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Comanda #${orderId}</title>
+      <style>
+        body { font-family: monospace; padding: 10px; font-size: 14px; }
+        .header { text-align: center; border-bottom: 1px dashed #000; padding-bottom: 10px; }
+        .order-id { font-size: 24px; font-weight: bold; }
+        .item { font-size: 18px; font-weight: bold; margin: 15px 0; }
+        .customer { margin-top: 10px; }
+        .address { margin-top: 5px; font-size: 12px; }
+        .footer { text-align: center; margin-top: 15px; border-top: 1px dashed #000; padding-top: 10px; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="order-id">#${orderId}</div>
+        ${item.orders?.stores?.name ? `<div>${item.orders.stores.name}</div>` : ''}
+      </div>
+      <div class="item">
+        ${item.quantity > 1 ? item.quantity + 'x ' : ''}${item.product_name}
+      </div>
+      ${item.notes ? `<div style="color: red; font-weight: bold;">OBS: ${item.notes}</div>` : ''}
+      <div class="customer">
+        <strong>${item.orders?.customer_name || 'Cliente'}</strong>
+      </div>
+      <div class="address">
+        ${item.orders?.address || ''}
+        ${item.orders?.neighborhood ? ' - ' + item.orders.neighborhood : ''}
+      </div>
+      <div class="footer">
+        ${new Date().toLocaleString('pt-BR')}
+      </div>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(content);
+  printWindow.document.close();
+  printWindow.print();
+};
 
 interface OvenItemRowProps {
   item: OrderItemWithOrder;
@@ -104,7 +155,7 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
         {/* Item info */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-mono text-xs">
+            <Badge variant="outline" className="font-mono text-lg px-2 py-0.5">
               #{orderId}
             </Badge>
             {item.orders?.stores?.name && (
@@ -113,7 +164,7 @@ function OvenItemRow({ item, onMarkReady, isProcessing, audioEnabled, ovenTimeSe
               </span>
             )}
           </div>
-          <p className="font-medium text-foreground truncate mt-1">
+          <p className="text-xl font-bold text-foreground truncate mt-1">
             {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
             {item.product_name}
           </p>
@@ -147,7 +198,6 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { settings } = useSettings();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const { toast } = useToast();
   
   // Get oven time from settings
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
@@ -155,17 +205,17 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const handleMarkReady = async (itemId: string) => {
     setProcessingId(itemId);
     try {
+      // Find item for printing before marking ready
+      const item = sortedItems.find(i => i.id === itemId);
+      
       await markItemReady.mutateAsync(itemId);
-      toast({
-        title: 'Item pronto!',
-        description: 'Saiu do forno.',
-      });
+      
+      // Print receipt after marking ready
+      if (item) {
+        printOrderReceipt(item);
+      }
     } catch (error) {
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível marcar o item como pronto.',
-        variant: 'destructive',
-      });
+      console.error('Erro ao marcar item como pronto:', error);
     } finally {
       setProcessingId(null);
     }
