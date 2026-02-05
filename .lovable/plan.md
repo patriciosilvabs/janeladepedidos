@@ -1,152 +1,305 @@
 
 
-# Plano: Otimizar Performance do Polling de Pedidos
+# Plano: Corrigir Observacoes e Exibir Sabores no KDS
 
 ## Problema Identificado
 
-A cada 30 segundos, a funcao `poll-orders` faz **muitas requisicoes desnecessarias**:
+A API do CardapioWeb envia os dados em uma estrutura diferente do esperado:
 
-| Etapa | Requisicoes | Observacao |
-|-------|-------------|------------|
-| Lista todos os pedidos | 1 | Retorna 65+ pedidos |
-| Verifica cada no banco | 65 | Query por pedido |
-| Busca detalhes na API | 65 | Apenas para novos (mas ainda e muito) |
-| **Total** | **~130+** | Por ciclo de 30s |
+| Campo na API | Campo esperado | Atual | Correcao |
+|--------------|----------------|-------|----------|
+| `observation` | `notes` | Buscando `notes` (nao existe) | Usar `observation` |
+| `options[].name` | - | Nao extraido | Extrair sabores e complementos |
 
-### Resultado
-- Poll demora **varios segundos** para completar
-- Usuario espera muito para ver novos pedidos
-- Carga desnecessaria no banco e na API externa
+### Exemplo de Dados Recebidos
+
+```json
+{
+  "name": "Pizza Grande por 35,00 - 1 Sabor",
+  "observation": "SEM GOIABA",
+  "options": [
+    {"name": "# Massa Tradicional", "option_group_name": "Massas & Bordas"},
+    {"name": "MILHO VERDE (G)", "option_group_name": "Escolha 1 Sabor"}
+  ]
+}
+```
+
+### Resultado Esperado no KDS
+
+```
+Pizza Grande - 1 Sabor
+Sabor: MILHO VERDE (G)
+Massa: Tradicional
+OBS: SEM GOIABA
+```
 
 ---
 
-## Solucao: Otimizacao em 3 Niveis
+## Solucao em 2 Partes
 
-### 1. Filtrar por Status na Listagem (API)
-Antes de iterar, verificar o status diretamente na listagem para evitar chamadas de detalhes desnecessarias:
+### Parte 1: Atualizar Funcao de Banco de Dados
 
-```typescript
-// ANTES: Busca detalhes para TODOS os pedidos, depois filtra
-for (const order of ordersData) {
-  // ... busca detalhes
-  // ... depois verifica status (tarde demais!)
-}
+Modificar `create_order_items_from_json` para:
 
-// DEPOIS: Filtra ANTES de buscar detalhes
-for (const order of ordersData) {
-  // Verificar status na listagem PRIMEIRO
-  const listStatus = (order.status || '').toLowerCase();
-  if (ignoredStatuses.includes(listStatus)) {
-    continue; // Pula sem buscar detalhes!
-  }
+1. Extrair `observation` em vez de `notes`
+2. Processar array `options` e concatenar nomes de complementos
+3. Formatar observacoes combinadas (sabores + obs do cliente)
+
+**Nova logica:**
+
+```sql
+-- Extrair observation
+v_observation := v_item->>'observation';
+
+-- Extrair nomes dos options (sabores, bordas, etc)
+v_options_text := '';
+FOR v_option IN SELECT * FROM jsonb_array_elements(v_item->'options')
+LOOP
+  v_option_name := v_option->>'name';
+  -- Remover prefixo # se existir
+  IF v_option_name LIKE '#%' THEN
+    v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
+  END IF;
   
-  // So busca detalhes para pedidos ativos
-}
+  IF v_options_text != '' THEN
+    v_options_text := v_options_text || ' | ';
+  END IF;
+  v_options_text := v_options_text || v_option_name;
+END LOOP;
+
+-- Combinar: Sabores/Bordas + Observacao
+v_notes := '';
+IF v_options_text != '' THEN
+  v_notes := v_options_text;
+END IF;
+IF v_observation IS NOT NULL AND v_observation != '' THEN
+  IF v_notes != '' THEN
+    v_notes := v_notes || ' || OBS: ' || v_observation;
+  ELSE
+    v_notes := 'OBS: ' || v_observation;
+  END IF;
+END IF;
 ```
 
-### 2. Verificar Existencia em Batch
-Em vez de 65 queries individuais, buscar todos os external_ids de uma vez:
+### Parte 2: Melhorar Exibicao no KDS (Opcional)
 
-```typescript
-// ANTES: 1 query por pedido
-for (const order of ordersData) {
-  const { data: existing } = await supabase
-    .from('orders')
-    .select('id')
-    .eq('external_id', order.id);
-}
-
-// DEPOIS: 1 query para todos
-const existingIds = await supabase
-  .from('orders')
-  .select('external_id')
-  .in('external_id', ordersData.map(o => String(o.id)));
-
-const existingSet = new Set(existingIds.data?.map(o => o.external_id) || []);
-
-for (const order of ordersData) {
-  if (existingSet.has(String(order.id))) continue;
-  // Processar apenas novos
-}
-```
-
-### 3. Processar Apenas Pedidos Novos
-Combinar as duas otimizacoes para minimizar trabalho:
-
-```typescript
-// Fluxo otimizado:
-// 1. Buscar lista de pedidos da API
-// 2. Filtrar por status ativo (na lista, sem detalhes)
-// 3. Buscar IDs existentes no banco (1 query)
-// 4. Identificar apenas novos pedidos
-// 5. Buscar detalhes SO dos novos
-// 6. Inserir
-```
+O componente `KDSItemCard.tsx` ja exibe o campo `notes` com destaque visual (fundo vermelho pulsante). Apenas precisamos garantir que os dados cheguem corretamente.
 
 ---
 
-## Comparativo de Performance
-
-| Metrica | Antes | Depois |
-|---------|-------|--------|
-| Queries no banco | ~65/ciclo | ~2/ciclo |
-| Chamadas API detalhes | ~65/ciclo | 0-5/ciclo |
-| Tempo total estimado | 5-10s | <1s |
-| Requisicoes HTTP | ~130 | ~3 |
-
----
-
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/poll-orders/index.ts` | Otimizar verificacao de existencia e filtro de status |
+| Migration SQL | Atualizar funcao `create_order_items_from_json` |
 
 ---
 
-## Implementacao Detalhada
+## Migracao SQL Detalhada
 
-### Mudancas no poll-orders/index.ts
-
-**Adicionar filtro de status ANTES de verificar no banco (linha 117):**
-```typescript
-// Filtrar pedidos ja finalizados ANTES de processar
-const activeOrders = ordersData.filter(order => {
-  const status = (order.status || '').toLowerCase();
-  return !['closed', 'canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'].includes(status);
-});
-
-console.log(`[poll-orders] ${activeOrders.length} active orders out of ${ordersData.length} total`);
-```
-
-**Substituir verificacao individual por batch (apos o filtro):**
-```typescript
-// Buscar todos os external_ids existentes de uma vez
-const orderIds = activeOrders.map(o => String(o.id));
-const { data: existingOrders } = await supabase
-  .from('orders')
-  .select('external_id')
-  .in('external_id', orderIds);
-
-const existingSet = new Set(existingOrders?.map(o => o.external_id) || []);
-
-// Filtrar apenas novos
-const newOrders = activeOrders.filter(o => !existingSet.has(String(o.id)));
-
-console.log(`[poll-orders] ${newOrders.length} new orders to import`);
-
-// Processar apenas novos
-for (const order of newOrders) {
-  // Buscar detalhes e inserir...
-}
+```sql
+CREATE OR REPLACE FUNCTION public.create_order_items_from_json(
+  p_order_id uuid, 
+  p_items jsonb, 
+  p_default_sector_id uuid DEFAULT NULL
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_item jsonb;
+  v_option jsonb;
+  v_count integer := 0;
+  v_qty integer;
+  i integer;
+  v_available_sectors uuid[];
+  v_sector_count integer;
+  v_assigned_sector uuid;
+  v_fallback_sectors uuid[];
+  v_observation text;
+  v_options_text text;
+  v_option_name text;
+  v_notes text;
+BEGIN
+  -- Se setor especifico foi passado, usar diretamente
+  IF p_default_sector_id IS NOT NULL THEN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+    LOOP
+      v_qty := COALESCE((v_item->>'quantity')::integer, 1);
+      
+      -- Extrair observation (observacao do cliente)
+      v_observation := v_item->>'observation';
+      
+      -- Extrair options (sabores, bordas, complementos)
+      v_options_text := '';
+      FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
+      LOOP
+        v_option_name := v_option->>'name';
+        -- Remover prefixo # se existir
+        IF v_option_name LIKE '#%' THEN
+          v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
+        END IF;
+        
+        IF v_options_text != '' THEN
+          v_options_text := v_options_text || ' | ';
+        END IF;
+        v_options_text := v_options_text || v_option_name;
+      END LOOP;
+      
+      -- Combinar options + observation
+      v_notes := '';
+      IF v_options_text != '' THEN
+        v_notes := v_options_text;
+      END IF;
+      IF v_observation IS NOT NULL AND v_observation != '' THEN
+        IF v_notes != '' THEN
+          v_notes := v_notes || ' || OBS: ' || v_observation;
+        ELSE
+          v_notes := v_observation;
+        END IF;
+      END IF;
+      
+      -- Criar um registro para CADA unidade do produto
+      FOR i IN 1..v_qty
+      LOOP
+        INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
+        VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), p_default_sector_id);
+        v_count := v_count + 1;
+      END LOOP;
+    END LOOP;
+    RETURN v_count;
+  END IF;
+  
+  -- Buscar setores com operadores online
+  v_available_sectors := get_available_sectors();
+  v_sector_count := COALESCE(array_length(v_available_sectors, 1), 0);
+  
+  -- Fallback: se nenhum operador online, usar todos os setores KDS
+  IF v_sector_count = 0 THEN
+    SELECT ARRAY_AGG(id ORDER BY name) INTO v_fallback_sectors
+    FROM sectors
+    WHERE view_type = 'kds';
+    
+    v_available_sectors := COALESCE(v_fallback_sectors, ARRAY[]::uuid[]);
+    v_sector_count := COALESCE(array_length(v_available_sectors, 1), 0);
+  END IF;
+  
+  -- Se ainda nao ha setores, criar itens sem atribuicao
+  IF v_sector_count = 0 THEN
+    FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+    LOOP
+      v_qty := COALESCE((v_item->>'quantity')::integer, 1);
+      
+      -- Mesma logica de extracao
+      v_observation := v_item->>'observation';
+      v_options_text := '';
+      FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
+      LOOP
+        v_option_name := v_option->>'name';
+        IF v_option_name LIKE '#%' THEN
+          v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
+        END IF;
+        IF v_options_text != '' THEN
+          v_options_text := v_options_text || ' | ';
+        END IF;
+        v_options_text := v_options_text || v_option_name;
+      END LOOP;
+      
+      v_notes := '';
+      IF v_options_text != '' THEN
+        v_notes := v_options_text;
+      END IF;
+      IF v_observation IS NOT NULL AND v_observation != '' THEN
+        IF v_notes != '' THEN
+          v_notes := v_notes || ' || OBS: ' || v_observation;
+        ELSE
+          v_notes := v_observation;
+        END IF;
+      END IF;
+      
+      FOR i IN 1..v_qty
+      LOOP
+        INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
+        VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), NULL);
+        v_count := v_count + 1;
+      END LOOP;
+    END LOOP;
+    RETURN v_count;
+  END IF;
+  
+  -- Distribuir por carga (setor com menos itens pendentes)
+  FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
+  LOOP
+    v_qty := COALESCE((v_item->>'quantity')::integer, 1);
+    
+    -- Mesma logica de extracao
+    v_observation := v_item->>'observation';
+    v_options_text := '';
+    FOR v_option IN SELECT * FROM jsonb_array_elements(COALESCE(v_item->'options', '[]'::jsonb))
+    LOOP
+      v_option_name := v_option->>'name';
+      IF v_option_name LIKE '#%' THEN
+        v_option_name := TRIM(SUBSTRING(v_option_name FROM 2));
+      END IF;
+      IF v_options_text != '' THEN
+        v_options_text := v_options_text || ' | ';
+      END IF;
+      v_options_text := v_options_text || v_option_name;
+    END LOOP;
+    
+    v_notes := '';
+    IF v_options_text != '' THEN
+      v_notes := v_options_text;
+    END IF;
+    IF v_observation IS NOT NULL AND v_observation != '' THEN
+      IF v_notes != '' THEN
+        v_notes := v_notes || ' || OBS: ' || v_observation;
+      ELSE
+        v_notes := v_observation;
+      END IF;
+    END IF;
+    
+    -- Cada unidade do produto vai para o setor com menor carga
+    FOR i IN 1..v_qty
+    LOOP
+      v_assigned_sector := get_least_loaded_sector(v_available_sectors);
+      
+      INSERT INTO order_items (order_id, product_name, quantity, notes, assigned_sector_id)
+      VALUES (p_order_id, v_item->>'name', 1, NULLIF(v_notes, ''), v_assigned_sector);
+      v_count := v_count + 1;
+    END LOOP;
+  END LOOP;
+  
+  RETURN v_count;
+END;
+$function$;
 ```
 
 ---
 
-## Impacto Esperado
+## Resultado Esperado
 
-- Polling completa em menos de 1 segundo
-- Novos pedidos aparecem quase instantaneamente apos criados na API
-- Menos carga no banco de dados e API externa
-- Melhor experiencia para o usuario
+Apos a migracao, novos pedidos terao o campo `notes` preenchido assim:
+
+| Produto | Notes |
+|---------|-------|
+| Pizza Grande - 1 Sabor | Massa Tradicional \| MILHO VERDE (G) |
+| Carne de Sol e Cream Cheese | Massa Tradicional \|\| OBS: SEM GOIABA |
+| Nordestina Gourmet | Borda de Catupiry \| COM CEBOLA |
+
+---
+
+## Pedidos Existentes
+
+Para corrigir pedidos ja importados, seria necessario um script de reprocessamento. Recomendo focar nos novos pedidos primeiro e, se necessario, rodar um UPDATE manual depois.
+
+---
+
+## Impacto
+
+- Novos pedidos terao sabores e observacoes visiveis no KDS
+- Interface ja suporta exibicao (fundo vermelho pulsante)
+- Nenhuma mudanca de frontend necessaria
 
