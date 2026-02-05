@@ -32,6 +32,9 @@ export interface AppSettings {
   kds_edge_keywords: string;
   kds_flavor_keywords: string;
   kds_edge_sector_id: string | null;
+  // PrintNode settings
+  printnode_enabled: boolean;
+  printnode_printer_id: number | null;
 }
 
 export function useSettings() {
