@@ -146,12 +146,16 @@ export function KDSItemCard({
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
           {item.product_name}
         </h3>
-        {item.notes && (
-          <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-            📝 {item.notes}
-          </p>
-        )}
       </div>
+
+      {/* Observações com destaque visual */}
+      {item.notes && (
+        <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+          <p className="text-xs text-white font-bold uppercase">
+            ⚠️ {item.notes}
+          </p>
+        </div>
+      )}
 
       {/* Store & Sector */}
       <div className="flex items-center gap-2 mb-2 text-xs">
