@@ -132,24 +132,42 @@ async function pollStoreOrders(
       });
     }
 
-    // Filtrar pedidos ativos OU pedidos de mesa (que chegam como closed)
-    const ignoredStatuses = ['canceled', 'cancelled', 'rejected'];
+    // Status ignorados (cancelamentos)
+    const cancelledStatuses = ['canceled', 'cancelled', 'rejected'];
+    
+    // Status de pré-pagamento - pedidos ainda não confirmados
+    const prePaymentStatuses = ['pending', 'waiting_confirmation', 'awaiting_payment', 'placed'];
+    
+    // Status finalizados (para não-mesa)
+    const finalizedStatuses = ['closed', 'delivered', 'dispatched'];
+    
     const activeOrders = ordersData.filter(order => {
       const status = (order.status || '').toLowerCase();
       const orderType = (order.order_type || '').toLowerCase();
       
-      // Permitir pedidos de mesa com qualquer status exceto cancelados
+      // Sempre ignorar cancelados
+      if (cancelledStatuses.includes(status)) {
+        return false;
+      }
+      
+      // Ignorar pedidos aguardando pagamento (exceto mesa que tem fluxo diferente)
+      if (!tableOrderTypes.includes(orderType) && prePaymentStatuses.includes(status)) {
+        console.log(`[poll-orders] Ignoring order ${order.id} with pre-payment status: ${status}`);
+        return false;
+      }
+      
+      // Permitir pedidos de mesa com qualquer status (exceto cancelados que já filtramos)
       if (tableOrderTypes.includes(orderType)) {
-        const isIgnored = ignoredStatuses.includes(status);
-        if (!isIgnored) {
-          console.log(`[poll-orders] Including table order ${order.id} with status: ${status}`);
-        }
-        return !isIgnored;
+        console.log(`[poll-orders] Including table order ${order.id} with status: ${status}`);
+        return true;
       }
       
       // Para outros tipos, ignorar status finalizados
-      const extendedIgnored = [...ignoredStatuses, 'closed', 'delivered', 'dispatched'];
-      return !extendedIgnored.includes(status);
+      if (finalizedStatuses.includes(status)) {
+        return false;
+      }
+      
+      return true;
     });
     
     console.log(`[poll-orders] ${activeOrders.length} active orders out of ${ordersData.length} total`);

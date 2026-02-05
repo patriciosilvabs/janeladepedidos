@@ -478,45 +478,69 @@ async function fetchOrderFromApi(
        }
      }
 
-     switch (normalizedEvent) {
-       case 'order.placed':
-       case 'order.confirmed':
-       case 'order.created':
-        case 'order.new':
-         result = await handleOrderPlaced(supabase, body, store as StoreRecord);
-         break;
- 
-       case 'order.cancelled':
-       case 'order.closed':
-       case 'order.canceled':
-         result = await handleOrderCancelledOrClosed(supabase, body, eventType);
-         break;
- 
-       case 'order.ready':
-       case 'order.dispatched':
-       case 'order.delivered':
-       case 'order.status.updated':
-         result = await handleOrderStatusChange(supabase, body);
-         break;
- 
-       default:
-         // For ORDER_STATUS_UPDATED or other status events, try to handle based on order status
-         if (body.order?.status || body.order_status) {
-           console.log(`Handling status-based event: ${eventType}, status: ${body.order?.status || body.order_status}`);
-           const status = body.order?.status || body.order_status;
-           
-           // If order has status 'confirmed' or 'pending', treat as new order
-           if (status === 'confirmed' || status === 'pending' || status === 'waiting_confirmation') {
+     // Status de pedidos que ainda não foram pagos/confirmados - ignorar
+     const prePaymentStatuses = ['pending', 'waiting_confirmation', 'awaiting_payment', 'placed'];
+     const orderStatus = (body.order?.status || body.order_status || '').toLowerCase();
+     
+     // Para eventos de criação, verificar se o pedido está confirmado
+     const isCreationEvent = ['order.placed', 'order.created', 'order.new'].includes(normalizedEvent);
+     
+     if (isCreationEvent && prePaymentStatuses.includes(orderStatus)) {
+       console.log(`Ignoring ${normalizedEvent} - order status is "${orderStatus}" (awaiting payment)`);
+       result = { action: 'ignored', reason: 'awaiting_payment', status: orderStatus };
+     } else {
+       switch (normalizedEvent) {
+         case 'order.confirmed':
+           // Pagamento confirmado - SEMPRE processar
+           result = await handleOrderPlaced(supabase, body, store as StoreRecord);
+           break;
+
+         case 'order.placed':
+         case 'order.created':
+         case 'order.new':
+           // Só processar se status for confirmed (já verificamos acima se é pre-payment)
+           if (orderStatus === 'confirmed' || orderStatus === 'preparing' || orderStatus === 'ready') {
              result = await handleOrderPlaced(supabase, body, store as StoreRecord);
-           } else if (status === 'cancelled' || status === 'closed' || status === 'canceled') {
-             result = await handleOrderCancelledOrClosed(supabase, body, eventType);
            } else {
-             result = await handleOrderStatusChange(supabase, body);
+             console.log(`Ignoring ${normalizedEvent} with status "${orderStatus}" - not confirmed yet`);
+             result = { action: 'ignored', reason: 'not_confirmed', status: orderStatus };
            }
-         } else {
-           console.log(`Unknown event type: ${eventType} - ignoring`);
-           result = { action: 'ignored', reason: 'unknown_event_type' };
-         }
+           break;
+
+         case 'order.cancelled':
+         case 'order.closed':
+         case 'order.canceled':
+           result = await handleOrderCancelledOrClosed(supabase, body, eventType);
+           break;
+
+         case 'order.ready':
+         case 'order.dispatched':
+         case 'order.delivered':
+         case 'order.status.updated':
+           result = await handleOrderStatusChange(supabase, body);
+           break;
+
+         default:
+           // For ORDER_STATUS_UPDATED or other status events, try to handle based on order status
+           if (body.order?.status || body.order_status) {
+             console.log(`Handling status-based event: ${eventType}, status: ${orderStatus}`);
+             
+             // ONLY import if status is confirmed or beyond
+             if (orderStatus === 'confirmed' || orderStatus === 'preparing' || orderStatus === 'ready') {
+               result = await handleOrderPlaced(supabase, body, store as StoreRecord);
+             } else if (orderStatus === 'cancelled' || orderStatus === 'closed' || orderStatus === 'canceled') {
+               result = await handleOrderCancelledOrClosed(supabase, body, eventType);
+             } else if (prePaymentStatuses.includes(orderStatus)) {
+               console.log(`Ignoring event with pre-payment status: ${orderStatus}`);
+               result = { action: 'ignored', reason: 'awaiting_payment', status: orderStatus };
+             } else {
+               result = await handleOrderStatusChange(supabase, body);
+             }
+           } else {
+             console.log(`Unknown event type: ${eventType} - ignoring`);
+             result = { action: 'ignored', reason: 'unknown_event_type' };
+           }
+       }
      }
  
      return new Response(
