@@ -203,6 +203,9 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
 
   const handleMarkReady = async (itemId: string) => {
+    // Evitar cliques duplos - bloquear se qualquer item já está sendo processado
+    if (processingId) return;
+    
     setProcessingId(itemId);
     try {
       // Find item for printing before marking ready

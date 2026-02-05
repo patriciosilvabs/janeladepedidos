@@ -225,8 +225,16 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
       if (error) throw error;
       
       const result = data as unknown as { success: boolean; error?: string };
+      
+      // Tratar 'not_in_oven' como sucesso silencioso
+      // Isso significa que o item já foi marcado como pronto por outra requisição
+      if (!result.success && result.error === 'not_in_oven') {
+        console.log(`[markItemReady] Item ${itemId} já foi marcado como pronto`);
+        return { success: true, already_processed: true };
+      }
+      
       if (!result.success) {
-        throw new Error('Não foi possível marcar o item como pronto');
+        throw new Error(result.error || 'Não foi possível marcar o item como pronto');
       }
 
       return result;
