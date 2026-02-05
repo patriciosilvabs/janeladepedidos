@@ -1,6 +1,7 @@
-
-
-# Descoberta: Limitacao da API CardapioWeb para Pedidos de Mesa
+ # Descoberta: Limitação da API CardápioWeb para Pedidos de Mesa
+ 
+ **Atualizado em**: 05/02/2026
+ **Status**: Documentado - Limitação conhecida da API externa
 
 ## Informacao Crucial da Documentacao
 
