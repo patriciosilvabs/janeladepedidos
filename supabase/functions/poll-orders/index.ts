@@ -259,7 +259,7 @@ async function pollStoreOrders(
     // Check status of existing pending orders and remove cancelled ones
     const { data: existingPendingOrders } = await supabase
       .from('orders')
-      .select('id, external_id, cardapioweb_order_id')
+      .select('id, external_id, cardapioweb_order_id, order_type')
       .eq('store_id', store.id)
       .eq('status', 'pending')
       .not('external_id', 'is', null);
@@ -292,9 +292,20 @@ async function pollStoreOrders(
           if (statusResponse.ok) {
             const details = await statusResponse.json();
             const status = details.order_status || details.status;
+            const orderType = (order.order_type || '').toLowerCase();
             
-            // If cancelled or closed, remove from local database
-            if (['cancelled', 'canceled', 'closed', 'rejected'].includes(status)) {
+            // Pedidos de mesa (closed_table, dine_in, table) chegam com status "closed" - isso é normal
+            // Não devemos deletá-los por causa do status closed
+            const isTableOrder = tableOrderTypes.includes(orderType);
+            
+            // Se for pedido de mesa com status closed, é normal - não deletar
+            if (isTableOrder && status === 'closed') {
+              continue;
+            }
+            
+            // Para outros tipos ou status de cancelamento, remover
+            if (['cancelled', 'canceled', 'rejected'].includes(status) || 
+                (!isTableOrder && status === 'closed')) {
               console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has status "${status}", removing...`);
               await supabase.from('orders').delete().eq('id', order.id);
               result.cancelled++;
