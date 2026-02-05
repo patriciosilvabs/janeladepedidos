@@ -185,7 +185,7 @@ export function KDSItemCard({
 
   return (
     <div className={cn(
-      "rounded-lg border-2 p-3 transition-all duration-300 relative",
+      "rounded-lg border-2 p-4 transition-all duration-300 relative",
       isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
       isFifoEnabled && isFirstInQueue && item.status === 'pending' && 
         "scale-110 shadow-xl shadow-primary/30 z-20 bg-gradient-to-br from-primary/10 to-transparent border-primary"
@@ -204,7 +204,7 @@ export function KDSItemCard({
 
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <Badge variant="outline" className="font-mono text-xs">
+        <Badge variant="outline" className="font-mono text-base font-bold px-2 py-0.5">
           #{orderId}
         </Badge>
         <div className="flex items-center gap-1 text-muted-foreground text-xs">
@@ -214,8 +214,8 @@ export function KDSItemCard({
       </div>
 
       {/* Product Info */}
-      <div className="mb-2">
-        <h3 className="font-semibold text-foreground truncate">
+      <div className="mb-3">
+        <h3 className="text-xl font-bold text-foreground leading-tight">
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
           {item.product_name}
         </h3>
