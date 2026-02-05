@@ -1,125 +1,140 @@
 
 
-# Plano: Corrigir Erro "Não foi possível marcar item como pronto"
+# Descoberta: Limitacao da API CardapioWeb para Pedidos de Mesa
 
-## Problema Identificado
+## Informacao Crucial da Documentacao
 
-O erro ocorre em situações de **race condition** quando:
-1. Usuário clica em "PRONTO" no painel do forno
-2. O item é marcado como `ready` no banco de dados
-3. Antes da UI atualizar, o usuário clica novamente (ou há outra tab/dispositivo)
-4. A segunda chamada falha porque o item já não está mais `in_oven`
+A documentacao oficial do CardapioWeb confirma:
 
-A função `mark_item_ready` retorna `{success: false, error: 'not_in_oven'}`, mas o código trata isso como erro genérico.
+> "Pedidos de mesas e comandas so ficam disponiveis nesse endpoint **apos serem cancelados ou finalizados**."
 
-## Causa Raiz
-
-```typescript
-// useOrderItems.ts - Linha 228-229
-if (!result.success) {
-  throw new Error('Não foi possível marcar o item como pronto');
-}
-```
-
-O código não considera que `not_in_oven` pode significar que o item **já foi processado com sucesso** por outra requisição.
-
-## Solução
-
-Tratar o caso `not_in_oven` como sucesso silencioso, já que significa que o item já foi marcado como pronto.
+Isso explica porque os pedidos de Mesa nunca aparecem no sistema - eles tem `order_type: closed_table` e **NAO sao expostos pela API de polling enquanto estao abertos**.
 
 ---
 
-## Mudanças
+## Como a API Funciona
 
-### Arquivo 1: `src/hooks/useOrderItems.ts`
+### Order Types
+| Valor | Descricao |
+|-------|-----------|
+| `delivery` | Pedido de delivery |
+| `takeout` | Pedido de retirada |
+| `onsite` | Pedido para consumo no local |
+| `closed_table` | Pedido de mesa ou comanda |
 
-**Atualizar a mutação `markItemReady`:**
+### Status Validos para Filtro
+| Status | Descricao |
+|--------|-----------|
+| `waiting_confirmation` | Pedido pendente |
+| `confirmed` | Pedido confirmado e em preparacao |
+| `scheduled_confirmed` | Pedido agendado confirmado |
+| `waiting_to_catch` | Pedido pronto esperando retirada |
+| `released` | Pedido saiu para entrega |
+| `closed` | Pedido finalizado |
+| `canceled` | Pedido cancelado |
 
-```typescript
-// Mark as ready
-const markItemReady = useMutation({
-  mutationFn: async (itemId: string) => {
-    const { data, error } = await supabase.rpc('mark_item_ready', {
-      p_item_id: itemId,
-    });
+---
 
-    if (error) throw error;
-    
-    const result = data as unknown as { success: boolean; error?: string };
-    
-    // Tratar 'not_in_oven' como sucesso silencioso
-    // Isso significa que o item já foi marcado como pronto por outra requisição
-    if (!result.success && result.error === 'not_in_oven') {
-      console.log(`[markItemReady] Item ${itemId} já foi marcado como pronto`);
-      return { success: true, already_processed: true };
-    }
-    
-    if (!result.success) {
-      throw new Error(result.error || 'Não foi possível marcar o item como pronto');
-    }
+## Fluxo Atual vs Limitacao
 
-    return result;
-  },
-  // ... resto permanece igual
-});
-```
+```text
+PEDIDOS DE DELIVERY/RETIRADA/BALCAO:
+  Cliente faz pedido
+       |
+       v
+  status = waiting_confirmation
+       |
+       v
+  Loja aceita -> status = confirmed
+       |
+       v
+  [APARECE NO POLLING] ✅
+       |
+       v
+  Sistema importa para KDS
 
-### Arquivo 2: `src/components/kds/OvenTimerPanel.tsx`
 
-**Adicionar verificação antes de processar:**
-
-```typescript
-const handleMarkReady = async (itemId: string) => {
-  // Evitar cliques duplos
-  if (processingId) return;
-  
-  setProcessingId(itemId);
-  try {
-    const item = sortedItems.find(i => i.id === itemId);
-    
-    await markItemReady.mutateAsync(itemId);
-    
-    // Imprimir apenas se o item existir e não for já processado
-    if (item) {
-      printOrderReceipt(item);
-    }
-  } catch (error) {
-    console.error('Erro ao marcar item como pronto:', error);
-  } finally {
-    setProcessingId(null);
-  }
-};
+PEDIDOS DE MESA (closed_table):
+  Cliente senta na mesa
+       |
+       v
+  Mesa aberta com itens
+       |
+       v
+  [NAO APARECE NO POLLING] ❌ <-- Limitacao da API
+       |
+       v
+  Mesa fechada -> status = closed
+       |
+       v
+  [AGORA APARECE NO POLLING] ✅
+       |
+       v
+  Mas ja esta finalizado...
 ```
 
 ---
 
-## Melhoria Adicional (Opcional)
+## Opcoes Disponiveis
 
-Para evitar completamente cliques duplos, desabilitar o botão enquanto qualquer item está sendo processado:
+### Opcao 1: Aceitar a Limitacao (Simples)
 
-```typescript
-<Button
-  onClick={onMarkReady}
-  disabled={isProcessing || processingId !== null}  // Desabilitar durante qualquer processamento
-  // ...
->
-```
+Manter o sistema atual que funciona para:
+- Delivery
+- Retirada (takeout)
+- Balcao (onsite)
+
+Pedidos de Mesa nao serao capturados em tempo real.
+
+### Opcao 2: Implementar Webhook (Recomendado pelo CardapioWeb)
+
+A API suporta webhooks que notificam em tempo real:
+- `ORDER_CREATED` - Novo pedido
+- `ORDER_STATUS_UPDATED` - Status alterado
+
+**POREM**, a documentacao tambem diz:
+> "Pedidos de mesas e comandas sao notificados somente quando sao cancelados ou finalizados."
+
+Ou seja, mesmo com webhook, pedidos de Mesa so chegam quando fecham.
+
+### Opcao 3: Contatar o CardapioWeb
+
+Perguntar se existe algum endpoint especifico para mesas abertas, ou se ha planos de disponibilizar isso na API. Email: integracao@cardapioweb.com
+
+### Opcao 4: Importar Mesas Fechadas
+
+Configurar o sistema para importar pedidos de Mesa quando eles sao **finalizados** (`closed`), para fins de historico e relatorios. Nao seriam processados no KDS em tempo real, mas teriam registro.
 
 ---
 
-## Arquivos a Modificar
+## Status Atual do Sistema
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/hooks/useOrderItems.ts` | Tratar `not_in_oven` como sucesso silencioso |
-| `src/components/kds/OvenTimerPanel.tsx` | Adicionar proteção contra cliques duplos |
+O polling esta funcionando corretamente e importando:
+- Pedidos de Delivery
+- Pedidos de Retirada
+- Pedidos de Balcao
+
+Os logs mostram: "Imported 24 new orders", "Imported 13 new orders", etc.
 
 ---
 
-## Resultado Esperado
+## Recomendacao
 
-1. Cliques duplos não causam mais erros no console
-2. O fluxo continua funcionando normalmente
-3. A impressão só ocorre uma vez por item
-4. Múltiplos dispositivos/tabs não conflitam
+1. **Manter o polling atual** - Esta funcionando para delivery/retirada
+2. **Adicionar filtro para status `closed`** - Para capturar mesas finalizadas para historico
+3. **Implementar webhook (opcional)** - Para notificacao em tempo real de novos pedidos
+4. **Contatar CardapioWeb** - Perguntar sobre API para mesas abertas
+
+---
+
+## Resumo
+
+| Tipo de Pedido | Disponivel no Polling? | Disponivel em Tempo Real? |
+|----------------|------------------------|---------------------------|
+| Delivery | Sim | Sim |
+| Retirada | Sim | Sim |
+| Balcao | Sim | Sim |
+| Mesa/Comanda | Apenas quando fechado | Nao |
+
+Esta e uma limitacao da API do CardapioWeb, nao do nosso sistema.
 
