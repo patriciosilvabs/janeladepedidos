@@ -3,6 +3,7 @@ import { useSettings } from '@/hooks/useSettings';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import * as qzTray from '@/lib/qzTray';
 import { toast } from 'sonner';
+import { queuePrintJob } from '@/hooks/usePrintJobQueue';
 
 // Browser fallback print function
 const browserPrintFallback = (item: OrderItemWithOrder) => {
@@ -68,14 +69,17 @@ export interface UseQZTrayReturn {
   printers: string[];
   selectedPrinter: string | null;
   isEnabled: boolean;
+  isReceiverEnabled: boolean;
   error: string | null;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   refreshPrinters: () => Promise<void>;
   printReceipt: (item: OrderItemWithOrder) => Promise<void>;
+  printOrQueue: (item: OrderItemWithOrder) => Promise<void>;
   printTestPage: () => Promise<void>;
   setSelectedPrinter: (name: string) => Promise<void>;
   setEnabled: (enabled: boolean) => Promise<void>;
+  setReceiverEnabled: (enabled: boolean) => Promise<void>;
 }
 
 export function useQZTray(): UseQZTrayReturn {
@@ -91,6 +95,7 @@ export function useQZTray(): UseQZTrayReturn {
   // Get values from settings
   const selectedPrinter = settings?.qz_printer_name || null;
   const isEnabled = settings?.qz_print_enabled || false;
+  const isReceiverEnabled = settings?.print_receiver_enabled || false;
 
   // Check connection status periodically
   useEffect(() => {
@@ -187,6 +192,25 @@ export function useQZTray(): UseQZTrayReturn {
     }
   }, [isEnabled, isConnected, selectedPrinter]);
 
+  // Smart print function: local if QZ connected, remote queue if not
+  const printOrQueue = useCallback(async (item: OrderItemWithOrder) => {
+    // If QZ is connected locally, print directly
+    if (isEnabled && isConnected && selectedPrinter) {
+      await printReceipt(item);
+      return;
+    }
+
+    // Otherwise, queue for remote printing
+    try {
+      await queuePrintJob(item);
+      console.log('[useQZTray] Job queued for remote printing');
+    } catch (err: any) {
+      console.error('[useQZTray] Failed to queue job, falling back to browser:', err);
+      toast.error('Falha ao enfileirar impressão');
+      browserPrintFallback(item);
+    }
+  }, [isEnabled, isConnected, selectedPrinter, printReceipt]);
+
   const printTestPage = useCallback(async () => {
     if (!isConnected) {
       throw new Error('Não conectado ao QZ Tray');
@@ -231,19 +255,31 @@ export function useQZTray(): UseQZTrayReturn {
     }
   }, [saveSettings, isConnected, disconnect]);
 
+  const setReceiverEnabled = useCallback(async (enabled: boolean) => {
+    try {
+      await saveSettings.mutateAsync({ print_receiver_enabled: enabled });
+    } catch (err) {
+      toast.error('Erro ao salvar configuração');
+      throw err;
+    }
+  }, [saveSettings]);
+
   return {
     isConnected,
     isConnecting,
     printers,
     selectedPrinter,
     isEnabled,
+    isReceiverEnabled,
     error,
     connect,
     disconnect,
     refreshPrinters,
     printReceipt,
+    printOrQueue,
     printTestPage,
     setSelectedPrinter,
     setEnabled,
+    setReceiverEnabled,
   };
 }

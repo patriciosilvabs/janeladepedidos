@@ -148,7 +148,7 @@ interface OvenTimerPanelProps {
 export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
   const { settings } = useSettings();
-  const { printReceipt } = useQZTray();
+  const { printOrQueue } = useQZTray();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -182,9 +182,9 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       
       await markItemReady.mutateAsync(itemId);
       
-      // Print receipt after marking ready (uses QZ Tray if configured, otherwise browser fallback)
+      // Print or queue for remote printing
       if (item) {
-        await printReceipt(item);
+        await printOrQueue(item);
       }
     } catch (error) {
       console.error('Erro ao marcar item como pronto:', error);

@@ -35,6 +35,7 @@ export interface AppSettings {
   // QZ Tray printing
   qz_printer_name: string | null;
   qz_print_enabled: boolean;
+  print_receiver_enabled: boolean;
 }
 
 export function useSettings() {

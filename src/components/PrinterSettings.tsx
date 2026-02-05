@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Printer, RefreshCw, CheckCircle, XCircle, Loader2, WifiOff, ExternalLink } from 'lucide-react';
+import { Printer, RefreshCw, CheckCircle, XCircle, Loader2, WifiOff, ExternalLink, Radio } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useQZTray } from '@/hooks/useQZTray';
+import { usePrintJobQueue } from '@/hooks/usePrintJobQueue';
 import { cn } from '@/lib/utils';
 import { isQZLoaded } from '@/lib/qzTray';
 
@@ -15,6 +16,7 @@ export function PrinterSettings() {
     printers,
     selectedPrinter,
     isEnabled,
+    isReceiverEnabled,
     error,
     connect,
     disconnect,
@@ -22,7 +24,15 @@ export function PrinterSettings() {
     printTestPage,
     setSelectedPrinter,
     setEnabled,
+    setReceiverEnabled,
   } = useQZTray();
+
+  // Initialize print job queue listener when receiver mode is enabled
+  usePrintJobQueue({
+    enabled: isReceiverEnabled,
+    printerName: selectedPrinter,
+    isQZConnected: isConnected,
+  });
 
   const [isPrinting, setIsPrinting] = useState(false);
 
@@ -61,6 +71,10 @@ export function PrinterSettings() {
 
   const handleEnabledChange = async (checked: boolean) => {
     await setEnabled(checked);
+  };
+
+  const handleReceiverChange = async (checked: boolean) => {
+    await setReceiverEnabled(checked);
   };
 
   return (
@@ -222,6 +236,32 @@ export function PrinterSettings() {
                   )}
                 </div>
               )}
+              {/* Remote receiver toggle */}
+              {selectedPrinter && (
+                <div className="p-4 rounded-lg border border-primary/30 bg-primary/5">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-base font-medium flex items-center gap-2">
+                        <Radio className="h-4 w-4 text-primary" />
+                        Receptor de Impressão Remota
+                      </Label>
+                      <p className="text-sm text-muted-foreground">
+                        Recebe comandos de impressão de tablets e outras bancadas
+                      </p>
+                    </div>
+                    <Switch
+                      checked={isReceiverEnabled}
+                      onCheckedChange={handleReceiverChange}
+                    />
+                  </div>
+                  {isReceiverEnabled && (
+                    <div className="mt-3 flex items-center gap-2 text-sm text-primary">
+                      <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                      Escutando jobs de impressão remota...
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
         </div>
@@ -233,6 +273,15 @@ export function PrinterSettings() {
           <strong>Fallback automático:</strong> Se o QZ Tray não estiver disponível 
           ou a impressão falhar, o sistema usará automaticamente a impressão do 
           navegador (com diálogo).
+        </p>
+      </div>
+
+      {/* Remote printing info */}
+      <div className="p-4 rounded-lg bg-primary/5 border border-primary/20">
+        <p className="text-sm text-muted-foreground">
+          <strong>Impressão Remota:</strong> Tablets e bancadas sem impressora enviam
+          automaticamente para a fila. Este computador, quando configurado como
+          "Receptor", processa e imprime os comandos recebidos.
         </p>
       </div>
 
@@ -265,6 +314,10 @@ export function PrinterSettings() {
           <div className="flex items-start gap-2 text-sm">
             <span className="font-mono text-primary">4.</span>
             <span>Configure a impressora térmica nesta tela</span>
+          </div>
+          <div className="flex items-start gap-2 text-sm">
+            <span className="font-mono text-primary">5.</span>
+            <span>Ative "Receptor" para receber impressões de tablets</span>
           </div>
         </div>
       </div>
