@@ -82,12 +82,11 @@ async function pollStoreOrders(
   console.log(`[poll-orders] Fetching orders for store "${store.name}" from: ${baseUrl}`);
   
   try {
-   // Incluir todos os status relevantes para diferentes tipos de pedido:
-   // - confirmed: Delivery, Retirada, Balcão confirmados
-   // - open: Mesas abertas em consumo
-   // - pending: Pedidos aguardando confirmação
+   // Buscar todos os pedidos sem filtrar por status
+   // Isso permite capturar pedidos de Mesa (status diferente de confirmed)
+   // e descobrir quais valores de status a API retorna
    const ordersResponse = await fetch(
-     `${baseUrl}/api/partner/v1/orders?status[]=confirmed&status[]=open&status[]=pending`,
+     `${baseUrl}/api/partner/v1/orders`,
      {
       method: 'GET',
       headers: {
