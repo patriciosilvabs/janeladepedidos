@@ -1,72 +1,91 @@
 
 
-# Plano: Investigar e Corrigir Notificação de Pedido Pronto
+# Plano: Testar Flags de Controle no Endpoint /ready
 
-## Descoberta Importante
+## Contexto
 
-O status `waiting_to_catch` **existe no CardápioWeb** como um status de pedido (reconhecido em `sync-orders-status`), mas **não como endpoint da API** (retornou 404 quando tentamos chamar `/waiting_to_catch`).
+O erro de build atual (408 Request Timeout) é temporário - problema de rede do CDN esm.sh, não do código. Será resolvido automaticamente no próximo build.
 
-Isso sugere que:
-1. O KDS do CardápioWeb marca o pedido internamente como `waiting_to_catch` (pronto, aguardando coleta)
-2. O endpoint da API `/ready` marca o pedido e possivelmente dispara integração automática com Foody
+## Estratégia de Testes
 
-## Opções de Solução
+Baseado nas suas sugestões, vamos testar diferentes payloads para o endpoint `/ready`:
 
-### Opção 1: Investigar Documentação Completa da API (Recomendado)
-
-A documentação fornecida menciona "Pedido pronto POST" mas não mostra se aceita parâmetros no body. Talvez o endpoint `/ready` aceite um JSON body com flags como:
-
-```json
-{
-  "auto_dispatch": false,
-  "notify_driver": false
-}
-```
-
-**Ação:** Testar enviar body JSON com diferentes flags para o endpoint `/ready`
-
-### Opção 2: Contatar Suporte CardápioWeb
-
-Email: integracao@cardapioweb.com
-
-Perguntar especificamente:
-- "Como marcar um pedido como PRONTO via API sem disparar automaticamente a integração com Foody/entregadores?"
-- "Existe um parâmetro ou flag para o endpoint /ready que controla o auto-dispatch?"
-- "O status 'waiting_to_catch' pode ser definido via API?"
-
-### Opção 3: Desabilitar Auto-Dispatch no Painel CardápioWeb
-
-Se o CardápioWeb tem uma configuração de "Despacho Automático" ou "Integração Foody", desabilitar essa opção pode fazer o endpoint `/ready` funcionar corretamente.
-
-## Próximo Passo Imediato: Testar com Body JSON
-
-Podemos tentar enviar um body vazio ou com flags específicas para o endpoint `/ready`:
-
-| Teste | Body | Hipótese |
-|-------|------|----------|
-| 1 | `{}` | Talvez body vazio mude comportamento |
-| 2 | `{"status": "waiting_to_catch"}` | Forçar status específico |
-| 3 | `{"skip_dispatch": true}` | Flag para pular despacho |
-
-## Alteração Proposta para Teste
-
-Modificar a função `notifyCardapioWebReady` para incluir um body JSON na requisição:
+### Teste 1: Flags de Dispatch
 
 ```typescript
+body: JSON.stringify({ 
+  "dispatch": false 
+})
+```
+
+### Teste 2: Flag auto_dispatch
+
+```typescript
+body: JSON.stringify({ 
+  "auto_dispatch": false 
+})
+```
+
+### Teste 3: Status + Notify
+
+```typescript
+body: JSON.stringify({ 
+  "status": "READY",
+  "notify": false 
+})
+```
+
+## Implementação Proposta
+
+Modificar `notify-order-ready/index.ts` para enviar um body com flags de controle:
+
+```typescript
+// Tentar desabilitar auto-dispatch via body
 const response = await fetch(endpoint, {
   method: 'POST',
   headers: {
     'X-API-KEY': store.cardapioweb_api_token,
     'Accept': 'application/json',
-    'Content-Type': 'application/json',  // ADICIONAR
+    'Content-Type': 'application/json',
   },
-  body: JSON.stringify({}),  // ADICIONAR - testar com body vazio primeiro
+  body: JSON.stringify({ 
+    dispatch: false,
+    auto_dispatch: false,
+    notify: false
+  }),
 });
 ```
 
-## Resumo
+## Verificação do Tipo de Pedido
 
-1. **Causa provável:** O endpoint `/ready` do CardápioWeb tem comportamento diferente quando chamado via API vs KDS interno
-2. **Próximo passo:** Testar com body JSON na requisição
-3. **Plano B:** Contatar suporte CardápioWeb para orientação
+Adicionar log do `order_type` para verificar se o comportamento muda baseado em delivery vs takeout:
+
+```typescript
+console.log(`Order type: ${orderType} - Se delivery, API pode disparar logística automaticamente`);
+```
+
+## Endpoint Alternativo
+
+Se as flags não funcionarem, testar o endpoint `/prepared` como alternativa:
+
+```typescript
+// Testar se /prepared existe
+const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/prepared`;
+```
+
+## Alterações
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/notify-order-ready/index.ts` | Adicionar flags `dispatch: false`, `auto_dispatch: false`, `notify: false` no body |
+
+## Resultado Esperado
+
+1. A API do CardápioWeb respeita as flags e mantém o pedido em "Pronto"
+2. O cliente não é notificado automaticamente
+3. O Foody só é acionado quando nosso sistema chama `/dispatch`
+
+## Plano B
+
+Se nenhuma flag funcionar, a recomendação é contatar o suporte CardápioWeb com a pergunta técnica que você sugeriu - é a forma mais segura de obter a resposta definitiva.
 
