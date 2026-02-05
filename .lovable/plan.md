@@ -1,133 +1,54 @@
 
-# Plano: Corrigir Dois Problemas Criticos
 
-## Problema 1: Loop de Pedidos Antigos
+# Plano: Corrigir Loop de Pedidos - Filtrar por Status da API
 
-### Status Atual
-A correcao do `poll-orders` **ja foi deployada** (usa `external_id` para verificar duplicatas). Os erros de "duplicate key" que voce ainda ve sao residuais de polls anteriores. O proximo ciclo de polling (30 segundos) nao deve mais gerar esses erros.
+## Problema Identificado
 
-### Acao Adicional Recomendada
-Limpar os pedidos duplicados que foram importados incorretamente para garantir que nao ha dados sujos no sistema.
+A Edge Function `poll-orders` está **inserindo pedidos já finalizados** ("closed", "canceled") como novos pedidos "pending". Isso causa:
+- Pedidos antigos aparecem repetidamente
+- Impossível finalizar (já estão fechados na API)
+- Loop infinito de importação
 
-## Problema 2: Botao "PRONTO" Nao Funciona
-
-### Causa Raiz Identificada
-O sistema tem **dois fluxos conflitantes**:
+### Evidência nos Logs
 
 ```text
-FLUXO A - DASHBOARD (orders):
-Botao PRONTO → mark_order_ready() → orders.status = 'waiting_buffer'
-                  ↓
-          Ignora order_items completamente
+Order details raw: {
+  "id": 180660823,
+  "status": "closed",        ← Pedido FECHADO na API
+  "order_type": "takeout",
+  ...
+}
 
-FLUXO B - KDS (order_items):  
-INICIAR → claim_order_item() → order_items.status = 'in_prep'
-FORNO → send_to_oven() → order_items.status = 'in_oven'
-PRONTO → mark_item_ready() → order_items.status = 'ready'
-                  ↓
-          check_order_completion() → Se TODOS items ready → orders.status = 'waiting_buffer'
+Inserted new order: 180660823  ← Inserido como PENDING local!
 ```
 
-**O problema**: O botao "PRONTO" no Dashboard (Fluxo A) tenta mover o pedido diretamente para `waiting_buffer`, mas:
-1. Os itens do pedido permanecem em `pending`
-2. O sistema KDS ainda mostra esses itens para processar
-3. Isso causa inconsistencia de estado
+### Por que os erros de "duplicate key" continuam?
 
-### Cenario do Usuario
-Na imagem, o usuario esta no **Dashboard administrativo** (nao no KDS). Quando clica "PRONTO", ele espera que o pedido seja movido para o buffer. Mas o sistema hibrido (orders + order_items) pode estar causando confusao.
-
-**Verificacao adicional necessaria**: O botao pode estar falhando silenciosamente porque o `mark_order_ready` usa `supabase.rpc()` com tipo `any`, o que pode ocultar erros de tipo.
+A correção do `external_id` foi aplicada ao código, mas **a Edge Function antiga ainda estava rodando**. Eu acabei de fazer o redeploy. Porém, o problema maior é que **pedidos fechados não deveriam ser importados**.
 
 ---
 
-## Solucao Proposta
+## Solucao
 
-### Mudanca 1: Corrigir chamada RPC no useOrders
+Adicionar filtro para **ignorar pedidos com status finalizado** antes de tentar inserir.
 
-O problema esta na chamada RPC que usa `as any` e pode estar falhando silenciosamente:
+### Mudanca no poll-orders/index.ts
+
+Apos buscar os detalhes do pedido (linha 155), adicionar verificacao de status:
 
 ```typescript
-// ANTES (linha 109 de useOrders.ts):
-const { error } = await supabase.rpc('mark_order_ready' as any, {
-  order_id: orderId,
-});
+// Linha 155 - Apos buscar orderDetails
 
-// DEPOIS - Adicionar tratamento de erro e log:
-const { data, error } = await supabase.rpc('mark_order_ready' as any, {
-  order_id: orderId,
-});
+// NOVO: Ignorar pedidos já finalizados na API do CardapioWeb
+const apiStatus = orderDetails.status || order.status;
+const ignoredStatuses = ['closed', 'canceled', 'cancelled', 'rejected', 'delivered'];
 
-if (error) {
-  console.error('[markAsReady] RPC error:', error);
-  throw error;
+if (ignoredStatuses.includes(apiStatus)) {
+  console.log(`[poll-orders] Skipping order ${cardapiowebOrderId} - status "${apiStatus}" (already finalized)`);
+  continue;
 }
 
-console.log('[markAsReady] Success for order:', orderId);
-```
-
-### Mudanca 2: Unificar fluxos - Dashboard deve usar o mesmo fluxo do KDS
-
-Para manter consistencia, quando o usuario clica "PRONTO" no Dashboard, o sistema deveria:
-1. Marcar **todos os items** do pedido como `ready`
-2. Deixar o trigger `check_order_completion` mover o pedido para `waiting_buffer`
-
-Isso requer criar uma nova funcao RPC:
-
-```sql
-CREATE OR REPLACE FUNCTION mark_order_items_ready(p_order_id uuid)
-RETURNS jsonb
-LANGUAGE plpgsql
-SECURITY DEFINER
-AS $$
-DECLARE
-  v_count integer;
-BEGIN
-  -- Marcar todos os itens como ready de uma vez
-  UPDATE order_items
-  SET 
-    status = 'ready',
-    ready_at = NOW()
-  WHERE order_id = p_order_id
-    AND status IN ('pending', 'in_prep', 'in_oven');
-  
-  GET DIAGNOSTICS v_count = ROW_COUNT;
-  
-  -- Verificar se pedido deve ir para buffer
-  PERFORM check_order_completion(p_order_id);
-  
-  RETURN jsonb_build_object(
-    'success', true,
-    'items_marked', v_count,
-    'order_id', p_order_id
-  );
-END;
-$$;
-```
-
-### Mudanca 3: Atualizar useOrders para usar a nova RPC
-
-```typescript
-const markAsReady = useMutation({
-  mutationFn: async (orderId: string) => {
-    const { data, error } = await supabase.rpc('mark_order_items_ready', {
-      p_order_id: orderId,
-    });
-
-    if (error) {
-      console.error('[markAsReady] RPC error:', error);
-      throw error;
-    }
-    
-    const result = data as { success: boolean; items_marked: number };
-    if (!result.success) {
-      throw new Error('Falha ao marcar itens como prontos');
-    }
-
-    console.log('[markAsReady] Marked', result.items_marked, 'items for order:', orderId);
-    return result;
-  },
-  // ... resto da mutacao permanece igual
-});
+// Continua com a insercao apenas para pedidos ativos
 ```
 
 ---
@@ -136,9 +57,21 @@ const markAsReady = useMutation({
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/` (migracao SQL) | Criar funcao `mark_order_items_ready` |
-| `src/hooks/useOrders.ts` | Usar nova RPC e adicionar logs de debug |
-| `src/integrations/supabase/types.ts` | (auto-gerado) Tipos atualizados |
+| `supabase/functions/poll-orders/index.ts` | Adicionar filtro de status antes de inserir |
+
+---
+
+## Limpeza de Dados
+
+Apos aplicar a correcao, precisamos limpar os pedidos antigos que foram importados incorretamente:
+
+```sql
+-- Deletar pedidos pending que sao de mesas fechadas ou antigos
+DELETE FROM orders 
+WHERE status = 'pending' 
+  AND order_type IN ('closed_table', 'closed')
+  OR (status = 'pending' AND created_at < NOW() - INTERVAL '2 hours');
+```
 
 ---
 
@@ -146,44 +79,43 @@ const markAsReady = useMutation({
 
 | Antes | Depois |
 |-------|--------|
-| Dashboard e KDS usam fluxos diferentes | Ambos usam o mesmo fluxo baseado em items |
-| "PRONTO" move pedido mas ignora items | "PRONTO" marca items e trigger move pedido |
-| Erros silenciosos na RPC | Logs de debug para diagnostico |
-| Inconsistencia de estado possivel | Estado sempre consistente |
+| Importa todos os pedidos da API | Importa apenas pedidos ativos |
+| Pedidos "closed" viram "pending" | Pedidos finalizados sao ignorados |
+| Loop infinito de importacao | Apenas novos pedidos sao processados |
+| 40+ pedidos acumulados | Apenas pedidos reais pendentes |
 
 ---
 
 ## Ordem de Execucao
 
-1. Criar migracao SQL com nova funcao `mark_order_items_ready`
-2. Atualizar `useOrders.ts` para usar a nova funcao
-3. Adicionar logs de debug para facilitar troubleshooting futuro
-4. Testar o botao "PRONTO" no Dashboard
-5. Verificar que pedidos e itens ficam sincronizados
+1. Atualizar `poll-orders/index.ts` com filtro de status
+2. Redeployar a Edge Function
+3. Executar limpeza de pedidos antigos no banco
+4. Testar que apenas pedidos novos/ativos sao importados
 
 ---
 
 ## Secao Tecnica
 
-### Por que o botao nao funciona?
+### Status da API CardapioWeb
 
-O botao "PRONTO" pode nao funcionar por varios motivos:
+Com base nos logs, os status possiveis sao:
+- `confirmed` - Pedido confirmado, aguardando preparo
+- `closed` - Pedido finalizado/entregue
+- `canceled` / `cancelled` - Pedido cancelado
+- `rejected` - Pedido rejeitado
+- `delivered` - Pedido entregue
 
-1. **Erro silencioso na RPC**: A chamada `supabase.rpc('mark_order_ready' as any, ...)` usa type assertion que oculta erros de tipo
-2. **Inconsistencia de estado**: O pedido pode ja estar em outro status que nao e `pending`
-3. **Conflito entre fluxos**: O Dashboard atualiza `orders` diretamente enquanto o KDS usa `order_items`
+### Filtro Recomendado
 
-### Consistencia Order ↔ Items
+Importar apenas pedidos com status:
+- `confirmed` - Aguardando producao
+- `new` ou `pending` - Se existirem
 
-O sistema utiliza items atomicos (`order_items`) como unidade de processamento. A funcao `check_order_completion` garante que:
-- Quando TODOS os items de um pedido estao `ready`
-- O pedido automaticamente vai para `waiting_buffer`
+Ignorar:
+- `closed`, `canceled`, `cancelled`, `rejected`, `delivered`
 
-Forcando o Dashboard a seguir o mesmo fluxo, eliminamos a possibilidade de estados inconsistentes.
+### Redeploy da Edge Function
 
-### Logs para Diagnostico
+O codigo ja foi atualizado com a correcao do `external_id`, mas a funcao antiga estava em execucao. Eu fiz o redeploy agora, mas ainda precisamos adicionar o filtro de status para resolver completamente o problema.
 
-Adicionar logs ajudara a identificar problemas futuros:
-- `[markAsReady] RPC error: ...` → Problema na chamada ao banco
-- `[markAsReady] Success for order: ...` → Confirmacao visual
-- `[markAsReady] Marked X items for order: ...` → Quantos items foram atualizados
