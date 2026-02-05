@@ -215,6 +215,13 @@ export function KDSItemCard({
         </h3>
       </div>
 
+      {/* Complementos/Sabores - Lista simples (sem destaque) */}
+      {item.complements && (
+        <div className="mb-2 text-sm text-muted-foreground whitespace-pre-line">
+          {item.complements}
+        </div>
+      )}
+
       {/* Barra de progresso (modo FIFO, apenas para pending) */}
       {isFifoEnabled && item.status === 'pending' && (
         <Progress 
@@ -223,11 +230,11 @@ export function KDSItemCard({
         />
       )}
 
-      {/* Observações com destaque visual */}
+      {/* Observação do cliente - Tarja vermelha piscante */}
       {item.notes && (
         <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
           <p className="text-xs text-white font-bold uppercase">
-            ⚠️ {item.notes}
+            ⚠️ OBS: {item.notes}
           </p>
         </div>
       )}
