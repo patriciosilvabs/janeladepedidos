@@ -9,6 +9,7 @@ interface OrderData {
   id: string;
   external_id: string | null;
   store_id: string | null;
+  order_type: string | null;
 }
 
 interface StoreData {
@@ -17,12 +18,18 @@ interface StoreData {
   cardapioweb_enabled: boolean | null;
 }
 
-// Notifica CardápioWeb que o pedido está PRONTO
+// Tipos de pedido que são considerados "retirada"
+const TAKEOUT_TYPES = ['takeaway', 'takeout', 'pickup', 'retirada'];
+
+// Notifica CardápioWeb que o pedido está PRONTO ou AGUARDANDO RETIRADA
+// - Delivery: usa /ready (aparece como "Pronto" no CardápioWeb)
+// - Retirada: usa /waiting_to_catch (aparece como "Esperando Retirada" no CardápioWeb)
 // O CardápioWeb tem integração nativa com Foody - ao chamar /ready,
 // ele automaticamente envia o pedido para o Foody Delivery
 async function notifyCardapioWebReady(
   store: StoreData,
-  externalId: string
+  externalId: string,
+  orderType: string | null
 ): Promise<{ success: boolean; error?: string }> {
   if (!store.cardapioweb_enabled || !store.cardapioweb_api_url || !store.cardapioweb_api_token) {
     console.log(`CardápioWeb not enabled or configured, skipping ready notification`);
@@ -30,9 +37,15 @@ async function notifyCardapioWebReady(
   }
 
   const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
-  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/ready`;
+  
+  // Determinar endpoint baseado no tipo de pedido
+  const isTakeout = orderType && TAKEOUT_TYPES.includes(orderType.toLowerCase());
+  const actionEndpoint = isTakeout ? 'waiting_to_catch' : 'ready';
+  const statusLabel = isTakeout ? 'AGUARDANDO RETIRADA' : 'PRONTO';
+  
+  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/${actionEndpoint}`;
 
-  console.log(`Calling CardápioWeb READY for order ${externalId}: ${endpoint}`);
+  console.log(`Calling CardápioWeb ${statusLabel} for order ${externalId} (type: ${orderType || 'unknown'}): ${endpoint}`);
 
   try {
     const response = await fetch(endpoint, {
@@ -44,9 +57,9 @@ async function notifyCardapioWebReady(
     });
 
     const responseText = await response.text();
-    console.log(`CardápioWeb READY response for ${externalId}:`, response.status, responseText.substring(0, 200));
+    console.log(`CardápioWeb ${statusLabel} response for ${externalId}:`, response.status, responseText.substring(0, 200));
 
-    // 204 = success, 409 = already ready, which is fine
+    // 204 = success, 409 = already in that status, which is fine
     if (response.ok || response.status === 204 || response.status === 409) {
       return { success: true };
     }
@@ -54,7 +67,7 @@ async function notifyCardapioWebReady(
     return { success: false, error: `HTTP ${response.status}: ${responseText.substring(0, 100)}` };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`Error calling CardápioWeb READY for ${externalId}:`, errorMsg);
+    console.error(`Error calling CardápioWeb ${statusLabel} for ${externalId}:`, errorMsg);
     return { success: false, error: errorMsg };
   }
 }
@@ -94,7 +107,7 @@ Deno.serve(async (req) => {
         // Fetch order data
         const { data: order, error: orderError } = await supabase
           .from('orders')
-          .select('id, external_id, store_id')
+          .select('id, external_id, store_id, order_type')
           .eq('id', orderId)
           .single();
 
@@ -156,8 +169,8 @@ Deno.serve(async (req) => {
 
         // Notify CardápioWeb that order is READY
         // This will trigger CardápioWeb's native Foody integration
-        console.log(`Notifying CardápioWeb for order ${typedOrder.external_id}${urgent ? ' (URGENT)' : ''}`);
-        const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id);
+        console.log(`Notifying CardápioWeb for order ${typedOrder.external_id} (type: ${typedOrder.order_type || 'unknown'})${urgent ? ' (URGENT)' : ''}`);
+        const readyResult = await notifyCardapioWebReady(typedStore, typedOrder.external_id, typedOrder.order_type);
 
         if (readyResult.success) {
           console.log(`Order ${typedOrder.external_id} marked as READY on CardápioWeb - Foody will be notified by CardápioWeb`);
