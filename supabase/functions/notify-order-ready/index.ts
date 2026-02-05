@@ -18,10 +18,10 @@ interface StoreData {
   cardapioweb_enabled: boolean | null;
 }
 
-// Notifica CardápioWeb que o pedido está AGUARDANDO COLETA
-// Sempre usa /waiting_to_catch para marcar como "pronto" sem disparar Foody
-// O endpoint /ready do CardápioWeb dispara automaticamente o Foody (saiu para entrega)
-// O /dispatch será usado apenas quando o motoboy realmente coletar o pedido
+// Notifica CardápioWeb que o pedido está PRONTO
+// Usa o endpoint /ready conforme documentação oficial da API CardápioWeb
+// Nota: Se o pedido automaticamente mudar para "Saiu para Entrega", o cliente
+// deve verificar as configurações de integração Foody no painel do CardápioWeb
 async function notifyCardapioWebReady(
   store: StoreData,
   externalId: string,
@@ -34,12 +34,11 @@ async function notifyCardapioWebReady(
 
   const baseUrl = store.cardapioweb_api_url.replace(/\/$/, '');
   
-  // SEMPRE usar waiting_to_catch para todos os tipos de pedido
-  // Isso marca o pedido como "Aguardando Coleta" / "Pronto" no CardápioWeb
-  // sem disparar automaticamente a integração com Foody
-  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/waiting_to_catch`;
+  // Usar endpoint /ready conforme documentação oficial CardápioWeb
+  // Este é o endpoint correto para marcar pedido como "Pronto"
+  const endpoint = `${baseUrl}/api/partner/v1/orders/${externalId}/ready`;
 
-  console.log(`Calling CardápioWeb AGUARDANDO COLETA for order ${externalId} (type: ${orderType || 'unknown'}): ${endpoint}`);
+  console.log(`Calling CardápioWeb READY for order ${externalId} (type: ${orderType || 'unknown'}): ${endpoint}`);
 
   try {
     const response = await fetch(endpoint, {
@@ -51,7 +50,7 @@ async function notifyCardapioWebReady(
     });
 
     const responseText = await response.text();
-    console.log(`CardápioWeb AGUARDANDO COLETA response for ${externalId}:`, response.status, responseText.substring(0, 200));
+    console.log(`CardápioWeb READY response for ${externalId}:`, response.status, responseText.substring(0, 200));
 
     // 204 = success, 409 = already in that status, which is fine
     if (response.ok || response.status === 204 || response.status === 409) {
@@ -61,7 +60,7 @@ async function notifyCardapioWebReady(
     return { success: false, error: `HTTP ${response.status}: ${responseText.substring(0, 100)}` };
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-    console.error(`Error calling CardápioWeb AGUARDANDO COLETA for ${externalId}:`, errorMsg);
+    console.error(`Error calling CardápioWeb READY for ${externalId}:`, errorMsg);
     return { success: false, error: errorMsg };
   }
 }
