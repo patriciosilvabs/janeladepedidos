@@ -252,7 +252,9 @@ export type Database = {
           claimed_by: string | null
           complements: string | null
           created_at: string
+          edge_type: string | null
           estimated_exit_at: string | null
+          flavors: string | null
           id: string
           notes: string | null
           order_id: string
@@ -268,7 +270,9 @@ export type Database = {
           claimed_by?: string | null
           complements?: string | null
           created_at?: string
+          edge_type?: string | null
           estimated_exit_at?: string | null
+          flavors?: string | null
           id?: string
           notes?: string | null
           order_id: string
@@ -284,7 +288,9 @@ export type Database = {
           claimed_by?: string | null
           complements?: string | null
           created_at?: string
+          edge_type?: string | null
           estimated_exit_at?: string | null
+          flavors?: string | null
           id?: string
           notes?: string | null
           order_id?: string
