@@ -104,18 +104,20 @@ export async function connect(): Promise<void> {
       });
 
       // Configure signature using edge function
-      window.qz.security.setSignaturePromise((toSign) => (resolve) => {
-        fetch(`${SUPABASE_URL}/functions/v1/qz-sign`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ toSign })
-        })
-        .then(r => r.json())
-        .then(data => resolve(data.signature || ''))
-        .catch((err) => {
-          console.error('[QZ Tray] Signing failed:', err);
-          resolve('');
-        });
+      window.qz.security.setSignaturePromise((toSign) => {
+        return (resolve: (signature: string) => void) => {
+          fetch(`${SUPABASE_URL}/functions/v1/sign-qz`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ request: toSign })
+          })
+          .then(res => res.text())
+          .then(resolve)
+          .catch((err) => {
+            console.error('[QZ Tray] Signing failed:', err);
+            resolve('');
+          });
+        };
       });
 
       await window.qz.websocket.connect();
