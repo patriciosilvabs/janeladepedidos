@@ -250,6 +250,7 @@ export type Database = {
           assigned_sector_id: string | null
           claimed_at: string | null
           claimed_by: string | null
+          complements: string | null
           created_at: string
           estimated_exit_at: string | null
           id: string
@@ -265,6 +266,7 @@ export type Database = {
           assigned_sector_id?: string | null
           claimed_at?: string | null
           claimed_by?: string | null
+          complements?: string | null
           created_at?: string
           estimated_exit_at?: string | null
           id?: string
@@ -280,6 +282,7 @@ export type Database = {
           assigned_sector_id?: string | null
           claimed_at?: string | null
           claimed_by?: string | null
+          complements?: string | null
           created_at?: string
           estimated_exit_at?: string | null
           id?: string

@@ -6,6 +6,7 @@ export interface OrderItem {
   product_name: string;
   quantity: number;
   notes: string | null;
+  complements: string | null;
   status: ItemStatus;
   assigned_sector_id: string | null;
   claimed_by: string | null;
