@@ -1,95 +1,41 @@
 
-# Plano: Configurar QZ Tray para Impressão Silenciosa (Sem Popup)
 
-## O Problema
+# Plano: Corrigir CORS na Edge Function sync-orders-status
 
-O popup "Allow" aparece porque o QZ Tray não está conseguindo validar a assinatura digital. Para funcionar sem popups, três coisas precisam estar sincronizadas:
+## Problema Identificado
 
-1. **Chave Privada** (no servidor) - usada para assinar
-2. **Certificado Público** (no código) - enviado ao QZ Tray
-3. **Confiança no QZ Tray** (no computador local) - precisa confiar no certificado
+O erro de CORS está acontecendo porque os headers CORS da edge function não incluem todos os headers que o cliente Supabase envia automaticamente.
 
-## Diagnóstico
+## Solução
 
-O código está correto, mas provavelmente:
-- O certificado no código (`QZ_CERTIFICATE`) não corresponde à chave privada (`QZ_PRIVATE_KEY`)
-- OU o QZ Tray não tem este certificado instalado como "confiável"
+Atualizar o `corsHeaders` na função `sync-orders-status` para incluir os headers adicionais do cliente Supabase:
 
-## Solução: Gerar Novo Par de Chaves + Instalar Certificado
-
-### Passo 1: Gerar um Novo Par de Chaves
-
-No computador (Windows/Mac/Linux), execute estes comandos em um terminal:
-
-```text
-# 1. Gerar chave privada RSA
-openssl genrsa -out qz-private-key.pem 2048
-
-# 2. Gerar certificado público (válido por 20 anos)
-openssl req -new -x509 -key qz-private-key.pem -out qz-certificate.pem -days 7300 -subj "/CN=Groupify/O=SuaEmpresa"
+```typescript
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
+};
 ```
 
-Isso vai criar dois arquivos:
-- `qz-private-key.pem` - Chave privada (para o servidor)
-- `qz-certificate.pem` - Certificado público (para o código e QZ Tray)
+## Outras Edge Functions a Verificar
 
-### Passo 2: Atualizar o Secret no Lovable
+Vou verificar e corrigir os CORS headers em todas as edge functions do projeto para garantir consistência:
 
-1. Abra o arquivo `qz-private-key.pem` com um editor de texto
-2. Copie TODO o conteúdo (incluindo `-----BEGIN PRIVATE KEY-----` e `-----END PRIVATE KEY-----`)
-3. No Lovable, vá em **Configurações → Secrets** e atualize o secret `QZ_PRIVATE_KEY` com esse conteúdo
+1. `sync-orders-status` - Atualizar headers
+2. `sign-qz` - Verificar se precisa atualização
+3. Outras funções no projeto
 
-### Passo 3: Atualizar o Certificado no Código
+## Arquivos a Modificar
 
-Vou atualizar o arquivo `src/lib/qzTray.ts` com o conteúdo do arquivo `qz-certificate.pem` que você gerou.
+- `supabase/functions/sync-orders-status/index.ts` - Atualizar corsHeaders
 
-### Passo 4: Instalar Certificado no QZ Tray (Computador Local)
+## Status do QZ Tray
 
-Este é o passo crucial para eliminar o popup:
+Sobre o plano que você compartilhou: **já está implementado corretamente!**
+- A função `sign-qz` já foi criada com jsrsasign
+- O frontend já chama `/functions/v1/sign-qz`
+- O secret `QZ_PRIVATE_KEY` já está configurado
+- O certificado já está no código
 
-1. Localize a pasta de instalação do QZ Tray:
-   - **Windows**: `C:\Program Files\QZ Tray\`
-   - **Mac**: `/Applications/QZ Tray.app/Contents/Resources/`
-   - **Linux**: `/opt/qz-tray/`
+O erro de WebSocket (`wss://localhost:8181/` failed) é **esperado** se o QZ Tray não estiver rodando no computador. Isso não é um problema do código.
 
-2. Copie o arquivo `qz-certificate.pem` para a subpasta `auth/` dentro da pasta do QZ Tray:
-   - Windows: `C:\Program Files\QZ Tray\auth\qz-certificate.pem`
-   - Mac: `/Applications/QZ Tray.app/Contents/Resources/auth/qz-certificate.pem`
-
-3. Renomeie ou apague o arquivo `root-ca.crt` existente na pasta `auth/` (faça backup primeiro)
-
-4. **Reinicie o QZ Tray** (feche no ícone da bandeja e abra novamente)
-
-### Passo 5: Teste
-
-Após reiniciar o QZ Tray, faça um teste de impressão. O popup "Allow" não deve mais aparecer.
-
-## Resumo Visual
-
-```text
-+-----------------------+     +------------------------+     +-------------------+
-|   qz-private-key.pem  | --> |  Secret: QZ_PRIVATE_KEY | --> | Edge Function     |
-|   (chave privada)     |     |  (no Lovable Cloud)     |     | assina requisição |
-+-----------------------+     +------------------------+     +-------------------+
-                                                                       |
-                                                                       v
-+-----------------------+     +------------------------+     +-------------------+
-|  qz-certificate.pem   | --> |  Código qzTray.ts      | --> | Envia cert ao     |
-|  (certificado)        |     |  (QZ_CERTIFICATE)       |     | QZ Tray           |
-+-----------------------+     +------------------------+     +-------------------+
-         |                                                            |
-         v                                                            v
-+-----------------------+                                  +-------------------+
-|  Pasta auth/ do       |                                  | QZ Tray valida    |
-|  QZ Tray no PC        | -------------------------------- | assinatura        |
-|  (mesmo certificado)  |                                  | = SEM POPUP!      |
-+-----------------------+                                  +-------------------+
-```
-
-## Alterações no Código
-
-Após você gerar o certificado e me enviar o conteúdo do `qz-certificate.pem`, vou atualizar o arquivo `src/lib/qzTray.ts` com o novo certificado.
-
-## Observação Importante
-
-O certificado que está atualmente no código (`QZ Tray Demo Cert`) é um certificado de demonstração do QZ. Para produção, é necessário usar um certificado próprio gerado com os comandos acima.
