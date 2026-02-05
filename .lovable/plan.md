@@ -1,97 +1,114 @@
 
-# Plano: Corrigir Salvamento do Tempo do Forno
+
+# Plano: Garantir Exclusividade de Visualização por Setor no KDS
 
 ## Problema Identificado
 
-O usuário reporta que o **tempo do forno** não está sendo salvo e perde as configurações após um novo deploy.
+Itens desmembrados estão aparecendo em **ambos os tablets**, quando deveriam aparecer apenas no tablet do setor atribuído. Isso gera conflito pois dois operadores podem tentar trabalhar no mesmo item.
 
-### Análise do Banco de Dados
+### Diagnóstico do Banco de Dados
 
+Os dados estão **corretos**:
 ```
-app_settings:
-- id: 'default'
-- oven_time_seconds: 120 (valor padrão)
-- updated_at: 2026-02-04 19:28:24 (mais de 8 horas atrás)
-```
-
-O valor está no padrão (120 segundos), indicando que ou:
-1. Nunca foi alterado
-2. Foi resetado em algum momento
-3. A alteração não está sendo salva
-
-### Análise do Código
-
-O fluxo de salvamento atual é:
-
-```
-SettingsDialog.tsx
-├── formData (estado local) ← usuário altera campos
-├── handleSave() ← chamado ao clicar "Salvar"
-│   └── saveSettings.mutateAsync(formData)
-│       └── supabase.upsert({ id: 'default', ...formData })
+order_items (pedido sim-1770264422061):
+├── Pizza Margherita → BANCADA A (92e3f369...)
+├── Pizza Margherita → BANCADA A 
+├── Pizza Margherita → BANCADA B (bfbd6e97...)
+└── Pizza Margherita → BANCADA B
 ```
 
-**Problema 1**: O usuário precisa clicar em "Salvar" para persistir. Se fechar o dialog sem salvar, perde tudo.
+### Diagnóstico do Código
 
-**Problema 2**: A interface `AppSettings` inclui `oven_time_seconds`, mas em alguns lugares usa `(formData as any)` com type casting, podendo haver inconsistências.
+O hook `useOrderItems` filtra por `sectorId` corretamente na linha 38-39:
+```typescript
+if (sectorId) {
+  query = query.eq('assigned_sector_id', sectorId);
+}
+```
 
----
+### Possíveis Causas
 
-## Causa Raiz Provável
+1. **Usuário admin visualizando KDS**: O admin (`patriciobarbosadasilva@gmail.com`) não tem setor vinculado. Quando acessa a aba "KDS Produção", vê a aba "Todos" que mostra todos os itens sem filtro.
 
-O salvamento **depende do clique no botão "Salvar"**. Se o usuário:
-1. Altera o tempo do forno
-2. Fecha o dialog (sem clicar em Salvar)
-3. Faz refresh ou deploy
+2. **Múltiplas abas abertas**: Se os tablets estão usando a mesma conta (admin) ou não estão logados com os operadores corretos, verão todos os itens.
 
-→ As configurações são perdidas.
-
-Isso é diferente de outros campos como o **Buffer Dinâmico** que usa **auto-save com debounce**.
+3. **Cache de query compartilhado**: Se a query `['order-items', undefined, ...]` foi executada antes (sem sectorId), ela pode estar sendo reusada.
 
 ---
 
 ## Solução
 
-Implementar **auto-save com debounce** para as configurações do KDS (incluindo tempo do forno), similar ao que já existe para `DynamicBufferSettings`.
+### 1. Verificar Vinculação de Usuários (Imediato)
 
-### Alterações no SettingsDialog.tsx
+Confirmar que cada tablet está logado com o operador correto:
 
-1. **Adicionar auto-save debounced para campos da aba KDS**
-2. **Feedback visual de salvamento automático**
-3. **Manter botão "Salvar" como confirmação geral**
+| Tablet | Usuário Esperado | Setor |
+|--------|------------------|-------|
+| Tablet 1 | user-a@domhelderpizzaria.com.br | BANCADA A |
+| Tablet 2 | user-b@domhelderpizzaria.com.br | BANCADA B |
 
-### Código Proposto
+### 2. Remover Aba "Todos" para Evitar Conflitos
 
-```typescript
-// Hook de auto-save para configurações críticas
-const debouncedSaveSettings = useDebouncedCallback(
-  useCallback((updates: Partial<AppSettings>) => {
-    saveSettings.mutate(updates, {
-      onError: () => toast.error('Erro ao salvar configuração'),
-      onSuccess: () => toast.success('Configuração salva automaticamente', { duration: 2000 }),
-    });
-  }, [saveSettings]),
-  800 // 800ms debounce
-);
+Modificar o `KDSItemsDashboard` para que **mesmo admins** vejam os itens separados por aba de setor, sem opção "Todos".
 
-// No onChange do campo oven_time_seconds:
-onChange={(e) => {
-  const value = parseInt(e.target.value) || 120;
-  setFormData({ ...formData, oven_time_seconds: value });
-  debouncedSaveSettings({ oven_time_seconds: value }); // Auto-save!
-}}
-```
+### 3. Forçar Filtro por Setor no SectorQueuePanel
+
+Quando `sectorId` não é passado, o painel não deveria mostrar itens que já estão atribuídos a setores específicos.
 
 ---
 
-## Campos que receberão Auto-Save
+## Alterações de Código
 
-| Campo | Tab | Comportamento Atual | Novo |
-|-------|-----|---------------------|------|
-| `oven_time_seconds` | KDS | Requer clique em Salvar | Auto-save |
-| `kds_default_mode` | KDS | Requer clique em Salvar | Auto-save |
-| `urgent_bypass_enabled` | Buffer | Requer clique em Salvar | Auto-save |
-| `urgent_production_timeout_minutes` | Buffer | Requer clique em Salvar | Auto-save |
+### Arquivo: `src/components/kds/KDSItemsDashboard.tsx`
+
+**Antes (linha 70-81)**:
+```tsx
+<Tabs defaultValue="all">
+  <TabsTrigger value="all">Todos</TabsTrigger>
+  ...
+  <TabsContent value="all">
+    <SectorQueuePanel sectorName="Todos os Setores" />
+    // SEM sectorId - mostra TODOS os itens!
+  </TabsContent>
+```
+
+**Depois**:
+```tsx
+<Tabs defaultValue={kdsSectors[0]?.id}>
+  // Remover aba "Todos"
+  {kdsSectors.map((sector) => (
+    <TabsTrigger key={sector.id} value={sector.id}>
+      {sector.name}
+    </TabsTrigger>
+  ))}
+  ...
+  {kdsSectors.map((sector) => (
+    <TabsContent key={sector.id} value={sector.id}>
+      <SectorQueuePanel 
+        sectorId={sector.id}  // SEMPRE passa sectorId
+        sectorName={sector.name} 
+      />
+    </TabsContent>
+  ))}
+```
+
+### Arquivo: `src/components/kds/SectorQueuePanel.tsx`
+
+Adicionar validação para impedir renderização sem sectorId:
+
+```tsx
+// Se não tiver sectorId, não mostrar itens (evita conflito)
+if (!sectorId) {
+  return (
+    <Card>
+      <CardContent className="py-8 text-center text-muted-foreground">
+        <AlertCircle className="h-8 w-8 mx-auto mb-2 opacity-50" />
+        <p>Selecione um setor para visualizar os itens.</p>
+      </CardContent>
+    </Card>
+  );
+}
+```
 
 ---
 
@@ -99,19 +116,22 @@ onChange={(e) => {
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/SettingsDialog.tsx` | Adicionar auto-save com debounce para campos críticos |
+| `src/components/kds/KDSItemsDashboard.tsx` | Remover aba "Todos", sempre usar primeiro setor como default |
+| `src/components/kds/SectorQueuePanel.tsx` | Bloquear renderização sem sectorId |
 
 ---
 
 ## Resultado Esperado
 
-1. Usuário altera tempo do forno: **salvo automaticamente em 800ms**
-2. Toast de confirmação: "Configuração salva automaticamente"
-3. Deploy ou refresh: **configurações persistem**
-4. Botão "Salvar" continua funcionando para confirmar todas as alterações de uma vez
+| Tela | Antes | Depois |
+|------|-------|--------|
+| Tablet BANCADA A | 4 pizzas (todas) | 2 pizzas (apenas BANCADA A) |
+| Tablet BANCADA B | 4 pizzas (todas) | 2 pizzas (apenas BANCADA B) |
+| Admin sem setor | 4 pizzas (aba Todos) | Abas separadas: BANCADA A (2), BANCADA B (2) |
 
 ---
 
-## Nota Importante
+## Verificação Pré-Implementação
 
-As configurações são salvas no banco de dados **Test**. Quando o usuário publica (deploy), apenas o **código** vai para produção - os **dados do banco (incluindo configurações)** permanecem intactos. O problema reportado provavelmente é causado por não clicar em "Salvar" antes de fechar o dialog.
+Antes de implementar, confirme qual usuário está logado em cada tablet para garantir que não é apenas um problema de login incorreto.
+
