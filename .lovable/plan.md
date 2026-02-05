@@ -1,141 +1,178 @@
- # Descoberta: Limitação da API CardápioWeb para Pedidos de Mesa
- 
- **Atualizado em**: 05/02/2026
- **Status**: Documentado - Limitação conhecida da API externa
 
-## Informacao Crucial da Documentacao
 
-A documentacao oficial do CardapioWeb confirma:
+# Plano: Corrigir Tela que Aparece e Desaparece
 
-> "Pedidos de mesas e comandas so ficam disponiveis nesse endpoint **apos serem cancelados ou finalizados**."
+## Problema Identificado
 
-Isso explica porque os pedidos de Mesa nunca aparecem no sistema - eles tem `order_type: closed_table` e **NAO sao expostos pela API de polling enquanto estao abertos**.
-
----
-
-## Como a API Funciona
-
-### Order Types
-| Valor | Descricao |
-|-------|-----------|
-| `delivery` | Pedido de delivery |
-| `takeout` | Pedido de retirada |
-| `onsite` | Pedido para consumo no local |
-| `closed_table` | Pedido de mesa ou comanda |
-
-### Status Validos para Filtro
-| Status | Descricao |
-|--------|-----------|
-| `waiting_confirmation` | Pedido pendente |
-| `confirmed` | Pedido confirmado e em preparacao |
-| `scheduled_confirmed` | Pedido agendado confirmado |
-| `waiting_to_catch` | Pedido pronto esperando retirada |
-| `released` | Pedido saiu para entrega |
-| `closed` | Pedido finalizado |
-| `canceled` | Pedido cancelado |
-
----
-
-## Fluxo Atual vs Limitacao
+O problema "tela aparece e depois some" e acontece por uma **race condition no fluxo de autenticacao** que causa ciclos de redirecionamento:
 
 ```text
-PEDIDOS DE DELIVERY/RETIRADA/BALCAO:
-  Cliente faz pedido
-       |
-       v
-  status = waiting_confirmation
-       |
-       v
-  Loja aceita -> status = confirmed
-       |
-       v
-  [APARECE NO POLLING] ✅
-       |
-       v
-  Sistema importa para KDS
+Usuario logado
+    |
+    v
+Token expira/refresh inicia
+    |
+    v
+AuthContext: user = null temporariamente (loading = false)
+    |
+    v
+ProtectedRoute detecta !user -> Redireciona para /auth
+    |
+    v
+Auth.tsx recebe o user atualizado -> Redireciona para /
+    |
+    v
+Ciclo se repete = FLASH BRANCO
+```
 
+## Causa Raiz
 
-PEDIDOS DE MESA (closed_table):
-  Cliente senta na mesa
-       |
-       v
-  Mesa aberta com itens
-       |
-       v
-  [NAO APARECE NO POLLING] ❌ <-- Limitacao da API
-       |
-       v
-  Mesa fechada -> status = closed
-       |
-       v
-  [AGORA APARECE NO POLLING] ✅
-       |
-       v
-  Mas ja esta finalizado...
+No `AuthContext.tsx`, quando ocorre um evento de autenticacao (como `TOKEN_REFRESHED`), o estado `loading` e setado como `false` **antes** de verificar se ainda ha um usuario valido. Isso causa uma janela onde:
+
+- `loading = false`
+- `user = null` (temporariamente)
+
+O `ProtectedRoute` interpreta isso como "usuario nao logado" e redireciona.
+
+## Solucao
+
+### Mudanca 1: AuthContext.tsx - Nao setar loading=false durante refresh
+
+Adicionar verificacao para eventos de refresh de token para nao mudar o estado de loading durante a transicao:
+
+```typescript
+// AuthContext.tsx - linha 56-83
+const { data: { subscription } } = supabase.auth.onAuthStateChange(
+  (event, currentSession) => {
+    if (!mountedRef.current) return;
+    
+    // Debounce TOKEN_REFRESHED events to prevent rate limiting
+    const now = Date.now();
+    if (event === 'TOKEN_REFRESHED' && now - lastEventTimeRef.current < 2000) {
+      return;
+    }
+    lastEventTimeRef.current = now;
+    
+    // Durante refresh, so atualizar se houver sessao valida
+    // Evitar transicao user -> null -> user que causa flash
+    if (event === 'TOKEN_REFRESHED' && !currentSession) {
+      // Ignorar eventos de refresh sem sessao - pode ser transitorio
+      return;
+    }
+    
+    // Update state for any auth event
+    setSession(currentSession);
+    setUser(currentSession?.user ?? null);
+    
+    // So setar loading=false no evento INITIAL_SESSION ou quando realmente terminar
+    if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+      setLoading(false);
+    }
+    
+    // ... resto do codigo
+  }
+);
+```
+
+### Mudanca 2: ProtectedRoute.tsx - Aguardar mais tempo durante transicoes
+
+Adicionar um pequeno delay antes de redirecionar para evitar flashes durante refresh de token:
+
+```typescript
+// ProtectedRoute.tsx
+import { Navigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+
+export function ProtectedRoute({ children }: ProtectedRouteProps) {
+  const { user, loading } = useAuth();
+  const [isChecking, setIsChecking] = useState(true);
+
+  // Dar um pequeno delay antes de decidir redirecionar
+  // Isso evita flash durante refresh de token
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => {
+        setIsChecking(false);
+      }, 100); // 100ms de grace period
+      return () => clearTimeout(timer);
+    }
+  }, [loading, user]);
+
+  if (loading || isChecking) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/auth" replace />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+### Mudanca 3: Index.tsx - Manter ultimo estado valido
+
+Adicionar logica para manter o dashboard visivel durante recarregamentos curtos:
+
+```typescript
+// Index.tsx - adicionar estado para manter a ultima view valida
+const [lastValidContent, setLastValidContent] = useState<React.ReactNode>(null);
+
+// Se estiver carregando mas ja temos conteudo anterior, mostrar o anterior
+if (authLoading || sectorLoading || settingsLoading) {
+  if (lastValidContent) {
+    return <>{lastValidContent}</>; // Manter tela anterior durante reload
+  }
+  return (
+    <div className="min-h-screen bg-background flex items-center justify-center">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
 ```
 
 ---
 
-## Opcoes Disponiveis
+## Arquivos a Modificar
 
-### Opcao 1: Aceitar a Limitacao (Simples)
-
-Manter o sistema atual que funciona para:
-- Delivery
-- Retirada (takeout)
-- Balcao (onsite)
-
-Pedidos de Mesa nao serao capturados em tempo real.
-
-### Opcao 2: Implementar Webhook (Recomendado pelo CardapioWeb)
-
-A API suporta webhooks que notificam em tempo real:
-- `ORDER_CREATED` - Novo pedido
-- `ORDER_STATUS_UPDATED` - Status alterado
-
-**POREM**, a documentacao tambem diz:
-> "Pedidos de mesas e comandas sao notificados somente quando sao cancelados ou finalizados."
-
-Ou seja, mesmo com webhook, pedidos de Mesa so chegam quando fecham.
-
-### Opcao 3: Contatar o CardapioWeb
-
-Perguntar se existe algum endpoint especifico para mesas abertas, ou se ha planos de disponibilizar isso na API. Email: integracao@cardapioweb.com
-
-### Opcao 4: Importar Mesas Fechadas
-
-Configurar o sistema para importar pedidos de Mesa quando eles sao **finalizados** (`closed`), para fins de historico e relatorios. Nao seriam processados no KDS em tempo real, mas teriam registro.
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/contexts/AuthContext.tsx` | Melhorar tratamento de eventos de refresh de token |
+| `src/components/ProtectedRoute.tsx` | Adicionar grace period antes de redirecionar |
+| `src/pages/Index.tsx` | (Opcional) Manter ultimo estado valido durante reloads |
 
 ---
 
-## Status Atual do Sistema
+## Resultado Esperado
 
-O polling esta funcionando corretamente e importando:
-- Pedidos de Delivery
-- Pedidos de Retirada
-- Pedidos de Balcao
-
-Os logs mostram: "Imported 24 new orders", "Imported 13 new orders", etc.
+1. A tela nao vai mais piscar/desaparecer durante refresh de token
+2. O usuario nao sera redirecionado para /auth durante transicoes normais
+3. A experiencia sera mais fluida em tablets e dispositivos moveis
 
 ---
 
-## Recomendacao
+## Secao Tecnica
 
-1. **Manter o polling atual** - Esta funcionando para delivery/retirada
-2. **Adicionar filtro para status `closed`** - Para capturar mesas finalizadas para historico
-3. **Implementar webhook (opcional)** - Para notificacao em tempo real de novos pedidos
-4. **Contatar CardapioWeb** - Perguntar sobre API para mesas abertas
+### Por que isso acontece em tablets?
 
----
+Tablets geralmente tem conexoes menos estaveis e podem ter delays maiores nas respostas da API. O token de sessao do Supabase tem validade limitada e precisa ser atualizado periodicamente. Durante esse refresh:
 
-## Resumo
+1. O Supabase emite um evento `TOKEN_REFRESHED`
+2. Dependendo do timing, pode haver um momento onde a sessao esta sendo atualizada
+3. O React re-renderiza os componentes
+4. Se o timing for ruim, o ProtectedRoute detecta ausencia de usuario e redireciona
 
-| Tipo de Pedido | Disponivel no Polling? | Disponivel em Tempo Real? |
-|----------------|------------------------|---------------------------|
-| Delivery | Sim | Sim |
-| Retirada | Sim | Sim |
-| Balcao | Sim | Sim |
-| Mesa/Comanda | Apenas quando fechado | Nao |
+### Eventos do Supabase Auth
 
-Esta e uma limitacao da API do CardapioWeb, nao do nosso sistema.
+- `INITIAL_SESSION`: Primeira vez que a sessao e carregada
+- `SIGNED_IN`: Usuario acabou de fazer login
+- `SIGNED_OUT`: Usuario fez logout
+- `TOKEN_REFRESHED`: Token foi atualizado (acontece periodicamente)
+- `USER_UPDATED`: Dados do usuario foram atualizados
 
