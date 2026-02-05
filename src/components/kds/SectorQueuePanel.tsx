@@ -11,15 +11,13 @@ import { Loader2, AlertCircle, CheckCircle2, Users, UserX } from 'lucide-react';
 import { ItemStatus } from '@/types/orderItems';
 
 interface SectorQueuePanelProps {
-  sectorId?: string;
+  sectorId: string;
   sectorName?: string;
-  showAllStatuses?: boolean;
 }
 
 export function SectorQueuePanel({ 
   sectorId, 
-  sectorName = 'Fila de Produção',
-  showAllStatuses = false 
+  sectorName = 'Fila de Produção'
 }: SectorQueuePanelProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -31,13 +29,11 @@ export function SectorQueuePanel({
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
   
   // Get presence info for this sector
-  const operatorCount = sectorId ? getOnlineOperatorCount(sectorId) : 0;
-  const hasOperators = sectorId ? isAnyOperatorOnline(sectorId) : true;
+  const operatorCount = getOnlineOperatorCount(sectorId);
+  const hasOperators = isAnyOperatorOnline(sectorId);
 
-  // Fetch items based on status filter
-  const statusFilter: ItemStatus[] = showAllStatuses 
-    ? ['pending', 'in_prep', 'in_oven', 'ready'] 
-    : ['pending', 'in_prep'];
+  // Fetch items - ALWAYS filter by sector (sectorId is now required)
+  const statusFilter: ItemStatus[] = ['pending', 'in_prep'];
 
   const { 
     items, 
@@ -170,24 +166,22 @@ export function SectorQueuePanel({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <CardTitle className="text-lg">{sectorName}</CardTitle>
-            {sectorId && (
-              <Badge 
-                variant={hasOperators ? "outline" : "destructive"}
-                className={`gap-1 text-xs ${hasOperators ? 'bg-primary/10 text-primary' : ''}`}
-              >
-                {hasOperators ? (
-                  <>
-                    <Users className="h-3 w-3" />
-                    {operatorCount} online
-                  </>
-                ) : (
-                  <>
-                    <UserX className="h-3 w-3" />
-                    Sem operador
-                  </>
-                )}
-              </Badge>
-            )}
+            <Badge 
+              variant={hasOperators ? "outline" : "destructive"}
+              className={`gap-1 text-xs ${hasOperators ? 'bg-primary/10 text-primary' : ''}`}
+            >
+              {hasOperators ? (
+                <>
+                  <Users className="h-3 w-3" />
+                  {operatorCount} online
+                </>
+              ) : (
+                <>
+                  <UserX className="h-3 w-3" />
+                  Sem operador
+                </>
+              )}
+            </Badge>
           </div>
           <div className="flex items-center gap-2">
             {pendingItems.length > 0 && (
