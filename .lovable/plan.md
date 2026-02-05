@@ -1,125 +1,122 @@
 
-# Correção: Listener de Impressão Remota Desconectando
+# Plano: Eliminar Popup "Allow" do QZ Tray
 
-## Problema Identificado
+## Problema
 
-O listener da fila de impressão (`usePrintJobQueue`) está sendo inicializado **dentro do componente `PrinterSettings`**, que só existe quando o diálogo de configurações está aberto.
+O QZ Tray exige confirmação do usuário ("Allow/OK") a cada impressão porque o sistema está configurado sem certificado digital de segurança.
 
-**Fluxo atual (problemático):**
-1. Usuário abre Configurações → `PrinterSettings` monta → Subscription criada ✅
-2. Usuário fecha Configurações → `PrinterSettings` desmonta → Subscription fechada ❌
-3. Tablet envia job → Ninguém escutando → Job fica pendente eternamente ❌
+## Soluções Disponíveis
 
-**Evidência nos logs:**
-```
-[PrintQueue] Subscription status: SUBSCRIBED
-[PrintQueue] Subscription status: CLOSED   ← Fechou quando diálogo fechou!
-```
+### Opção 1: Configurar no QZ Tray Local (MAIS SIMPLES)
 
----
+Não requer mudança de código. Configure diretamente no QZ Tray instalado:
 
-## Solução
+**Passos:**
+1. Clique no ícone do QZ Tray na bandeja do sistema (perto do relógio)
+2. Selecione **"Advanced" → "Site Manager"**
+3. Adicione o domínio da aplicação:
+   - Para preview: `id-preview--32fe4f98-1aa0-4e3d-8760-3b11e29b5a98.lovable.app`
+   - Para produção: `groupify-logistics.lovable.app`
+4. Marque a opção **"Remember this decision"** ou **"Always allow"**
+5. Clique em **"Save"**
 
-Mover a inicialização do `usePrintJobQueue` para um **componente de nível superior** que permanece montado enquanto a aplicação está ativa.
-
-O local ideal é o `Index.tsx`, pois:
-- É o componente principal da aplicação autenticada
-- Permanece montado durante toda a sessão do usuário
-- Já tem acesso às settings via `useSettings`
+**Vantagem:** Não requer desenvolvimento adicional
+**Desvantagem:** Precisa configurar em cada computador
 
 ---
 
-## Arquivos a Modificar
+### Opção 2: Implementar Certificado Digital (MAIS ROBUSTA)
 
-| Arquivo | Mudança |
-|---------|---------|
-| `src/pages/Index.tsx` | Adicionar chamada ao `usePrintJobQueue` |
-| `src/components/PrinterSettings.tsx` | Remover chamada duplicada do hook |
+Implementar assinatura digital para que o QZ Tray confie automaticamente na aplicação.
+
+**Arquitetura:**
+
+```text
+┌─────────────────┐         ┌──────────────────────────┐
+│    Frontend     │         │   Edge Function          │
+│                 │         │   qz-sign                │
+│  Precisa        │ ──────► │                          │
+│  imprimir       │         │  Recebe: toSign string   │
+│                 │ ◄────── │  Retorna: signature      │
+│  Envia dados    │         │                          │
+│  para QZ Tray   │         │  (usa private key)       │
+└─────────────────┘         └──────────────────────────┘
+```
+
+**Arquivos a criar/modificar:**
+
+| Arquivo | Ação | Descrição |
+|---------|------|-----------|
+| `supabase/functions/qz-sign/index.ts` | **Criar** | Edge function que assina requests |
+| `src/lib/qzTray.ts` | **Modificar** | Chamar a edge function para assinatura |
+| Secrets | **Adicionar** | Chave privada como secret do projeto |
+
+**Passos de implementação:**
+
+1. **Gerar par de chaves:**
+   ```bash
+   openssl genrsa -out private-key.pem 2048
+   openssl req -x509 -new -key private-key.pem -out digital-certificate.crt
+   ```
+
+2. **Criar Edge Function para assinatura:**
+   ```typescript
+   // supabase/functions/qz-sign/index.ts
+   import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+   import { crypto } from "https://deno.land/std@0.168.0/crypto/mod.ts";
+   
+   serve(async (req) => {
+     const { toSign } = await req.json();
+     const privateKey = Deno.env.get('QZ_PRIVATE_KEY');
+     
+     // Assinar usando RSA-SHA512
+     const signature = await signWithPrivateKey(toSign, privateKey);
+     
+     return new Response(JSON.stringify({ signature }));
+   });
+   ```
+
+3. **Modificar qzTray.ts:**
+   ```typescript
+   // Certificado (pode ser inline ou fetch)
+   const CERTIFICATE = `-----BEGIN CERTIFICATE-----
+   ... conteúdo do certificado ...
+   -----END CERTIFICATE-----`;
+   
+   window.qz.security.setCertificatePromise((resolve) => {
+     resolve(CERTIFICATE);
+   });
+   
+   window.qz.security.setSignaturePromise((toSign) => (resolve) => {
+     // Chamar edge function
+     fetch('/functions/v1/qz-sign', {
+       method: 'POST',
+       body: JSON.stringify({ toSign })
+     })
+     .then(r => r.json())
+     .then(data => resolve(data.signature));
+   });
+   ```
 
 ---
 
-## Implementação Detalhada
+## Recomendação
 
-### 1. Modificar `Index.tsx`
+**Para resolver rapidamente:** Use a **Opção 1** (configurar no QZ Tray local). Basta:
 
-Adicionar o hook de print queue que fica ativo enquanto o usuário está logado:
+1. Clicar no ícone QZ Tray → **Advanced → Site Manager**
+2. Adicionar o domínio e marcar "Always allow"
+3. Reiniciar o navegador
 
-```typescript
-import { usePrintJobQueue } from '@/hooks/usePrintJobQueue';
-import { useQZTray } from '@/hooks/useQZTray';
-
-const Index = () => {
-  // ... existing code ...
-  
-  // Get QZ Tray state for print queue
-  const { isConnected: isQZConnected, selectedPrinter, isReceiverEnabled } = useQZTray();
-  
-  // Initialize print job queue listener (stays active while app is mounted)
-  usePrintJobQueue({
-    enabled: isReceiverEnabled,
-    printerName: selectedPrinter,
-    isQZConnected: isQZConnected,
-  });
-  
-  // ... rest of component ...
-};
-```
-
-### 2. Modificar `PrinterSettings.tsx`
-
-Remover a chamada do hook (já será gerenciado pelo Index):
-
-```typescript
-// REMOVER estas linhas:
-// usePrintJobQueue({
-//   enabled: isReceiverEnabled,
-//   printerName: selectedPrinter,
-//   isQZConnected: isConnected,
-// });
-```
+**Para produção robusta:** Implemente a **Opção 2** posteriormente quando o sistema estiver estabilizado.
 
 ---
 
-## Fluxo Corrigido
+## Resumo
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Index.tsx                              │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ usePrintJobQueue({ enabled: true, ... })            │   │
-│  │   → Subscription ATIVA enquanto app está aberta     │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐  │
-│  │ Dashboard    │  │ KDSDashboard │  │ DispatchDashboard│  │
-│  └──────────────┘  └──────────────┘  └──────────────────┘  │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ SettingsDialog (abre/fecha)                         │   │
-│  │   └── PrinterSettings (UI de configuração apenas)   │   │
-│  └─────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+| Solução | Esforço | Segurança | Manutenção |
+|---------|---------|-----------|------------|
+| Site Manager (local) | Baixo (5 min) | Média | Por computador |
+| Certificado Digital | Alto (1-2h) | Alta | Centralizado |
 
-**Resultado:**
-- Subscription permanece ativa enquanto a aplicação está aberta
-- PrinterSettings apenas gerencia configurações (UI)
-- Jobs de impressão são processados mesmo com diálogo fechado
-
----
-
-## Verificação Pós-Implementação
-
-Após a correção, os logs devem mostrar:
-```
-[PrintQueue] Subscription status: SUBSCRIBED
-// Deve permanecer SUBSCRIBED, sem CLOSED
-```
-
-E os jobs pendentes serão processados:
-```
-[PrintQueue] Processing 1 pending jobs
-[PrintQueue] Job processed successfully: 32c7abb6-...
-[QZ Tray] Print successful for order: 6300
-```
+Qual opção você prefere seguir?
