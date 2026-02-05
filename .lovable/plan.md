@@ -1,97 +1,91 @@
 
 
-# Plano: Aumentar Fontes no KDS (Manter Layout Grid)
+# Plano: Cards Fixos na Posicao (Sem Reordenacao ao Iniciar)
 
 ## Objetivo
 
-Aumentar significativamente as fontes do **sabor da pizza** e do **numero do pedido** para melhor visibilidade, **mantendo o layout em grid** atual (multiplas colunas).
+Garantir que os cards **mantenham sua posicao na tela** quando o usuario clica em INICIAR. O card so deve sair da tela quando o usuario clicar em **FORNO**.
 
 ---
 
-## Mudancas Propostas
+## Problema Atual
 
-**Arquivo**: `src/components/kds/KDSItemCard.tsx`
+A ordenacao atual no `SectorQueuePanel.tsx` (linha 104-115) ordena por **status primeiro**:
+- `pending` = posicao 0
+- `in_prep` = posicao 1
 
-### 1. Numero do Pedido Maior
+Isso faz com que quando um item muda de `pending` para `in_prep`, ele seja movido para o final da lista de pendentes.
 
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| Classe | `text-xs` (12px) | `text-base font-bold` (16px) |
+---
 
-```tsx
-// ANTES (linha 207-209)
-<Badge variant="outline" className="font-mono text-xs">
-  #{orderId}
-</Badge>
+## Solucao
 
-// DEPOIS
-<Badge variant="outline" className="font-mono text-base font-bold px-2 py-0.5">
-  #{orderId}
-</Badge>
-```
+Remover a ordenacao por status e ordenar **apenas por `created_at`**. Isso mantem os cards na mesma posicao independente do status.
 
-### 2. Nome do Sabor/Produto Maior
+---
 
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| Classe | `font-semibold` (~16px) | `text-xl font-bold` (20px) |
-| Truncate | `truncate` | Removido para mostrar nome completo |
+## Mudanca Proposta
+
+**Arquivo**: `src/components/kds/SectorQueuePanel.tsx`
 
 ```tsx
-// ANTES (linha 217-222)
-<div className="mb-2">
-  <h3 className="font-semibold text-foreground truncate">
-    {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
-    {item.product_name}
-  </h3>
-</div>
+// ANTES (linhas 104-115)
+const displayItems = useMemo(() => {
+  return [...items].sort((a, b) => {
+    const statusOrder = { pending: 0, in_prep: 1, in_oven: 2, ready: 3 };
+    const orderA = statusOrder[a.status] ?? 99;
+    const orderB = statusOrder[b.status] ?? 99;
+    if (orderA !== orderB) return orderA - orderB;
+    // Then by created_at
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+}, [items]);
 
 // DEPOIS
-<div className="mb-3">
-  <h3 className="text-xl font-bold text-foreground leading-tight">
-    {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
-    {item.product_name}
-  </h3>
-</div>
-```
-
-### 3. Padding do Card Ligeiramente Maior
-
-```tsx
-// ANTES (linha 188)
-"rounded-lg border-2 p-3 transition-all duration-300 relative"
-
-// DEPOIS
-"rounded-lg border-2 p-4 transition-all duration-300 relative"
+const displayItems = useMemo(() => {
+  // Ordenar APENAS por created_at para manter posicao fixa
+  // Cards so saem da tela ao ir para o forno (status muda para 'in_oven')
+  return [...items].sort((a, b) => {
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+}, [items]);
 ```
 
 ---
 
-## Comparacao Visual
+## Comportamento Apos Mudanca
 
-```
-ANTES:                           DEPOIS:
+| Acao | Comportamento |
+|------|---------------|
+| Clica INICIAR | Card fica na mesma posicao, muda visual (borda azul, botao FORNO) |
+| Clica FORNO | Card sai da tela (status muda para `in_oven`), os de baixo sobem |
+
+---
+
+## Fluxo Visual
+
+```text
+ANTES de clicar INICIAR:         DEPOIS de clicar INICIAR:
 +------------------+             +------------------+
-| #SIM-ML8X (12px) |             | #SIM-ML8X (16px) |
-|                  |             |  (MAIOR E BOLD)  |
-| Pizza Calabresa  |             |                  |
-| (16px normal)    |             | Pizza Calabresa  |
-|                  |             | (20px BOLD)      |
-| [INICIAR]        |             |                  |
-+------------------+             | [INICIAR]        |
-                                 +------------------+
+| #1 Pizza Calabr  |             | #1 Pizza Calabr  |
+| [INICIAR]        |   -->       | [FORNO] [X]      |  <-- Mesmo lugar!
++------------------+             +------------------+
+| #2 Pizza Queijos |             | #2 Pizza Queijos |
+| [INICIAR]        |             | [INICIAR]        |
++------------------+             +------------------+
+| #3 Pizza Margher |             | #3 Pizza Margher |
+| [INICIAR]        |             | [INICIAR]        |
++------------------+             +------------------+
+
+DEPOIS de clicar FORNO no #1:
++------------------+
+| #2 Pizza Queijos |  <-- Subiu para cima!
+| [INICIAR]        |
++------------------+
+| #3 Pizza Margher |
+| [INICIAR]        |
++------------------+
 ```
-
----
-
-## Resumo das Mudancas
-
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| Numero do pedido | 12px (`text-xs`) | 16px (`text-base font-bold`) |
-| Nome do sabor | ~16px (`font-semibold`) | 20px (`text-xl font-bold`) |
-| Padding do card | 12px (`p-3`) | 16px (`p-4`) |
-| Layout | Grid (mantido) | Grid (mantido) |
 
 ---
 
@@ -99,5 +93,5 @@ ANTES:                           DEPOIS:
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/components/kds/KDSItemCard.tsx` | Aumentar fontes do pedido e sabor |
+| `src/components/kds/SectorQueuePanel.tsx` | Remover ordenacao por status, ordenar apenas por `created_at` |
 
