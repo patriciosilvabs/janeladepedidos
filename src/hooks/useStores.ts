@@ -6,6 +6,7 @@ export interface Store {
   name: string;
   cardapioweb_api_token: string | null;
   cardapioweb_api_url: string | null;
+  cardapioweb_store_code: string | null;
   cardapioweb_enabled: boolean;
   default_city: string | null;
   default_region: string | null;

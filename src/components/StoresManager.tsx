@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Store, Eye, EyeOff, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Store, Eye, EyeOff, Loader2, CheckCircle, XCircle, Copy, ExternalLink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,11 +30,14 @@ const DEFAULT_STORE: StoreInsert = {
   name: '',
   cardapioweb_api_token: '',
   cardapioweb_api_url: 'https://integracao.cardapioweb.com',
+  cardapioweb_store_code: '',
   cardapioweb_enabled: true,
   default_city: 'João Pessoa',
   default_region: 'PB',
   default_country: 'BR',
 };
+
+const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
 
 export function StoresManager() {
   const { stores, isLoading, createStore, updateStore, deleteStore, testStoreConnection } = useStores();
@@ -57,6 +60,7 @@ export function StoresManager() {
       name: store.name,
       cardapioweb_api_token: store.cardapioweb_api_token || '',
       cardapioweb_api_url: store.cardapioweb_api_url || 'https://integracao.cardapioweb.com',
+      cardapioweb_store_code: store.cardapioweb_store_code || '',
       cardapioweb_enabled: store.cardapioweb_enabled,
       default_city: store.default_city || 'João Pessoa',
       default_region: store.default_region || 'PB',
@@ -64,6 +68,11 @@ export function StoresManager() {
     });
     setEditingStore(store);
     setShowToken(false);
+  };
+
+  const copyWebhookUrl = () => {
+    navigator.clipboard.writeText(WEBHOOK_URL);
+    toast.success('URL do Webhook copiada!');
   };
 
   const closeDialogs = () => {
@@ -309,16 +318,51 @@ export function StoresManager() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="store-url">URL da API</Label>
-              <Input
-                id="store-url"
-                value={formData.cardapioweb_api_url || ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, cardapioweb_api_url: e.target.value })
-                }
-                placeholder="https://integracao.cardapioweb.com"
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label htmlFor="store-code">Código da Loja</Label>
+                <Input
+                  id="store-code"
+                  value={formData.cardapioweb_store_code || ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cardapioweb_store_code: e.target.value })
+                  }
+                  placeholder="Ex: 8268"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="store-url">URL da API</Label>
+                <Input
+                  id="store-url"
+                  value={formData.cardapioweb_api_url || ''}
+                  onChange={(e) =>
+                    setFormData({ ...formData, cardapioweb_api_url: e.target.value })
+                  }
+                  placeholder="https://integracao.cardapioweb.com"
+                />
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/50 p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium">URL do Webhook (configure no CardápioWeb)</Label>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-xs"
+                  onClick={copyWebhookUrl}
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  Copiar
+                </Button>
+              </div>
+              <p className="text-xs font-mono text-muted-foreground break-all select-all">
+                {WEBHOOK_URL}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Configure o header <code className="bg-muted px-1 rounded">X-API-KEY</code> com o mesmo token acima.
+              </p>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
