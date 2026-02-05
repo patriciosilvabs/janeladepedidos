@@ -1,150 +1,122 @@
 
 
-# Plano: Corrigir Visualização Padrão para Admins - KDS Por Item
+# Plano: Reverter Mudanças do Admin e Corrigir Visão das Bancadas
 
 ## Problema Identificado
 
-O admin (owner) está vendo o **Dashboard de Despacho** (4 colunas) quando espera ver o **KDS Por Item** (cards individuais).
+O usuário reportou que os **tablets das bancadas** não estão mostrando os pedidos "desmembrados" (por item). Após investigação detalhada:
 
-### Análise Técnica
+### Dados do Banco (Confirmados Corretos)
+- Configuração: `kds_default_mode = 'items'` (correto)
+- Itens sendo criados corretamente como registros individuais em `order_items`
+- Itens sendo distribuídos para setores (BANCADA A, BANCADA B)
+- Operadores online nos tablets
 
-**Configuração do usuário no banco:**
-- User ID: `4a5ee05a-17fd-47ff-8bb6-676436ce9f8c`
-- Role: `owner`
-- Sector ID: `NULL` (sem setor vinculado)
-- View Type: `NULL`
+### Lógica do Código (Revisada)
+A lógica no `Index.tsx` **está correta** para operadores de bancada:
 
-**Fluxo atual no código (`Index.tsx`):**
+```typescript
+// Para operadores (não-admin)
+const effectiveKdsMode = isAdmin ? kdsMode : (settings?.kds_default_mode || 'items');
+// → effectiveKdsMode = 'items' (do banco)
+
+// Renderização
+{isKDSSector 
+  ? (effectiveKdsMode === 'items' 
+      ? <KDSItemsDashboard userSector={userSector} />  // ← DEVERIA MOSTRAR ISSO
+      : <KDSDashboard userSector={userSector} />) 
 ```
-isKDSSector = false (sector é null)
-isDispatchSector = false (sector é null)
-mainView = 'dashboard' (valor inicial)
-→ Resultado: Mostra <Dashboard /> (tela de despacho)
-```
 
-**Por que o admin vê "Por Pedido" (4 colunas):**
-O `<Dashboard />` é a tela de **DESPACHO** com visão por pedido (Produção → Buffer → Pronto → Despachado). Isso NÃO é o KDS!
+### Problema Real Identificado
 
-Para ver o KDS "Por Item", o admin precisa:
-1. Clicar na aba "KDS Produção" no header
-2. Só então `mainView` muda para `'kds'`
-3. E aí sim mostra `<KDSItemsDashboard />`
+As mudanças que fiz anteriormente **não afetam os tablets das bancadas** pois:
+- Mudei `mainView` inicial de `'dashboard'` para `'kds'` - isso só afeta admins SEM setor
+- Operadores de bancada TÊM setor vinculado (`isKDSSector = true`), então vão direto para o KDSItemsDashboard
+
+O problema pode estar em:
+1. **Cache do navegador** nos tablets com versão antiga
+2. **Sessão antiga** precisando de reload
+3. **Problema de sincronização** com as configurações
 
 ---
 
-## Soluções Propostas
+## Solução
 
-### Opção A: Mudar visualização padrão para KDS (Recomendada)
+### 1. Reverter Mudanças do Admin
 
-Fazer com que admins sem setor vejam o **KDS Por Item** por padrão ao abrir o sistema, mantendo a opção de alternar para Despacho.
+Voltar o estado inicial de `mainView` para `'dashboard'` conforme solicitado, pois admins devem ver tudo:
 
-**Mudança:**
 ```typescript
-// ANTES
-const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
-
-// DEPOIS - Iniciar com 'kds' para mostrar KDS por padrão
+// ANTES (minha mudança)
 const [mainView, setMainView] = useState<'dashboard' | 'kds'>('kds');
+
+// DEPOIS (revertendo)
+const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
 ```
 
-### Opção B: Adicionar configuração no banco
+### 2. Remover Lógica Desnecessária do useEffect
 
-Criar um campo `default_admin_view` no `app_settings` para controlar qual tela admins veem por padrão (`'dashboard'` ou `'kds'`).
-
-### Opção C: Renomear tabs para clarificar
-
-Manter comportamento atual mas renomear tabs:
-- "Despacho" → "Gestão de Pedidos"  
-- "KDS Produção" → "Visualização KDS"
-
----
-
-## Implementação Recomendada (Opção A)
-
-### Arquivo: `src/pages/Index.tsx`
+Remover a parte que força mainView para admins, já que queremos que eles vejam o Dashboard:
 
 ```typescript
-const Index = () => {
-  // ... outros hooks ...
-  
-  // MUDANÇA: Iniciar com 'kds' para admins verem KDS por padrão
-  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('kds');
-  
-  // OU: Sincronizar com kds_default_mode para consistência
-  useEffect(() => {
-    if (settings?.kds_default_mode) {
-      setKdsMode(settings.kds_default_mode);
-      // Também definir a view inicial baseada no modo configurado
-      if (!isKDSSector && !isDispatchSector) {
-        // Se configurado para 'items', mostrar KDS por padrão
-        if (settings.kds_default_mode === 'items') {
-          setMainView('kds');
-        }
-      }
-    }
-  }, [settings?.kds_default_mode]);
-  
-  // ... resto do código ...
-};
+useEffect(() => {
+  if (settings?.kds_default_mode) {
+    setKdsMode(settings.kds_default_mode);
+    // REMOVER: A lógica abaixo não é mais necessária
+    // if (!isKDSSector && !isDispatchSector) { ... }
+  }
+}, [settings?.kds_default_mode]);
 ```
 
-### Inverter ordem das tabs (UX melhorada)
+### 3. Restaurar Ordem das Tabs
+
+Voltar a ordem original: Despacho primeiro, KDS Produção depois:
 
 ```typescript
-{/* Trocar ordem: KDS primeiro, Despacho segundo */}
 <TabsList className="h-8">
-  <TabsTrigger value="kds" className="text-xs px-3">
-    KDS Produção
-  </TabsTrigger>
   <TabsTrigger value="dashboard" className="text-xs px-3">
     Despacho
+  </TabsTrigger>
+  <TabsTrigger value="kds" className="text-xs px-3">
+    KDS Produção
   </TabsTrigger>
 </TabsList>
 ```
 
 ---
 
-## Resumo das Mudanças
+## Verificação para os Tablets
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/pages/Index.tsx` | Alterar estado inicial de `mainView` de `'dashboard'` para `'kds'` |
-| `src/pages/Index.tsx` | Sincronizar `mainView` com configuração do banco |
-| `src/pages/Index.tsx` | Inverter ordem das tabs (KDS primeiro) |
+Para os tablets das bancadas funcionarem corretamente, precisamos garantir que:
 
----
+1. O operador está logado com um usuário vinculado a um setor KDS
+2. O navegador tem a versão mais recente do código (fazer hard refresh: Ctrl+Shift+R)
+3. A configuração `kds_default_mode` está como `'items'` no banco
 
-## Comportamento Após Correção
+### Teste nos Tablets
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                    ADMIN ABRE O SISTEMA                         │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  1. Configuração: kds_default_mode = 'items'                   │
-│     ↓                                                           │
-│  2. Estado inicial: mainView = 'kds'                           │
-│     ↓                                                           │
-│  3. effectiveKdsMode = 'items'                                 │
-│     ↓                                                           │
-│  4. Renderiza: KDSItemsDashboard ✓                             │
-│                                                                 │
-│  [KDS Produção] [Despacho]    ← Tabs no header                 │
-│       ↑                                                         │
-│   (selecionado)                                                │
-│                                                                 │
-│  Admin vê cards individuais de itens (Por Item) ✓              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-```
+Após as mudanças:
+1. Fazer logout e login novamente nos tablets
+2. Ou fazer hard refresh (Ctrl+Shift+R ou Cmd+Shift+R)
+3. O tablet deve mostrar o `KDSItemsDashboard` com cards individuais
 
 ---
 
-## Benefícios
+## Arquivos a Modificar
 
-| Antes | Depois |
-|-------|--------|
-| Admin vê Dashboard de Despacho | Admin vê KDS Por Item |
-| Precisa clicar tab manualmente | Já abre na view correta |
-| Confusão entre "Por Pedido" e Dashboard | Visualização clara e correta |
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/Index.tsx` | Reverter `mainView` inicial para `'dashboard'` |
+| `src/pages/Index.tsx` | Remover lógica que força `mainView` no useEffect |
+| `src/pages/Index.tsx` | Restaurar ordem das tabs (Despacho primeiro) |
+
+---
+
+## Resultado Esperado
+
+| Tipo de Usuário | Visualização |
+|-----------------|--------------|
+| **Admin (Owner)** sem setor | Dashboard de Despacho com tabs para alternar |
+| **Operador de Bancada** | KDSItemsDashboard com itens individuais |
+| **Operador de Despacho** | DispatchDashboard |
 
