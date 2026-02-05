@@ -1,88 +1,114 @@
 
-# Plano: Remover Destaque e Animações dos Cards
+# Plano: Posição Fixa dos Cards (Sem Mudança ao INICIAR)
 
-## Objetivo
+## Problema Identificado
 
-1. Todos os cards devem ter o **mesmo tamanho** - remover destaque especial do primeiro card
-2. O número de posição na fila (#1, #2, etc) **não deve ter animação** e **não pode ser transparente**
+Quando um funcionário toca em INICIAR, dois problemas visuais ocorrem:
+
+1. **Números da fila mudam** - A função `getQueuePosition` só conta itens `pending`, então quando um item vira `in_prep`, os números recalculam
+2. **Badge de posição some** - O badge só aparece em itens `pending`
+
+Isso pode causar confusão quando múltiplos funcionários usam o mesmo tablet.
+
+---
+
+## Solução
+
+Manter a posição de fila **fixa baseada na ordem de criação**, independente do status. O badge de posição continuará visível mesmo após iniciar.
 
 ---
 
 ## Mudanças Propostas
 
-**Arquivo**: `src/components/kds/KDSItemCard.tsx`
+### Arquivo 1: `src/components/kds/SectorQueuePanel.tsx`
 
-### 1. Remover Destaque do Primeiro Card (linha 190-191)
+**Mudança na função `getQueuePosition`** (linhas 113-118):
 
-```tsx
-// ANTES
-isFifoEnabled && isFirstInQueue && item.status === 'pending' && 
-  "scale-110 shadow-xl shadow-primary/30 z-20 bg-gradient-to-br from-primary/10 to-transparent border-primary"
-
-// DEPOIS
-// Remover completamente esta linha - todos os cards terão o mesmo tamanho
-```
-
-### 2. Badge de Posição Sem Animação e Sem Transparência (linhas 195-202)
+| Antes | Depois |
+|-------|--------|
+| Filtra apenas `pending` | Usa todos os itens (`displayItems`) |
+| Posição muda ao iniciar | Posição permanece fixa |
 
 ```tsx
 // ANTES
-<div className={cn(
-  "absolute -top-3 -left-3 rounded-full flex items-center justify-center font-extrabold shadow-xl",
-  isFirstInQueue 
-    ? "w-10 h-10 text-lg bg-primary text-primary-foreground ring-2 ring-primary/50 animate-pulse" 
-    : "w-8 h-8 text-sm bg-muted-foreground/80 text-background"
-)}>
-  #{queuePosition}
-</div>
+const getQueuePosition = (itemId: string): number | undefined => {
+  const pendingItemsSorted = displayItems.filter(i => i.status === 'pending');
+  const index = pendingItemsSorted.findIndex(i => i.id === itemId);
+  return index >= 0 ? index + 1 : undefined;
+};
 
 // DEPOIS
-<div className="absolute -top-3 -left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold bg-primary text-primary-foreground shadow-lg">
-  #{queuePosition}
-</div>
+const getQueuePosition = (itemId: string): number | undefined => {
+  // Posição baseada na ordem de criação, independente do status
+  const index = displayItems.findIndex(i => i.id === itemId);
+  return index >= 0 ? index + 1 : undefined;
+};
 ```
 
 ---
 
-## Mudanças Detalhadas
+### Arquivo 2: `src/components/kds/KDSItemCard.tsx`
 
-| Elemento | Antes | Depois |
-|----------|-------|--------|
-| Primeiro card | `scale-110` (10% maior) | Tamanho normal |
-| Primeiro card | `shadow-xl shadow-primary/30` | Sem sombra extra |
-| Primeiro card | `bg-gradient-to-br` | Sem gradiente |
-| Badge #1 | `animate-pulse` | Sem animação |
-| Badge #1 | `w-10 h-10 text-lg` | `w-8 h-8 text-sm` (igual aos outros) |
-| Badge #2+ | `bg-muted-foreground/80` (transparente) | `bg-primary` (sólido) |
-| Todos os badges | Tamanhos diferentes | Mesmo tamanho |
+**Mudança na condição do badge** (linha 194):
+
+| Antes | Depois |
+|-------|--------|
+| `item.status === 'pending'` | Mostrar sempre (remover condição de status) |
+
+```tsx
+// ANTES
+{isFifoEnabled && queuePosition && item.status === 'pending' && (
+  <div className="absolute -top-3 -left-3 ...">
+    #{queuePosition}
+  </div>
+)}
+
+// DEPOIS
+{isFifoEnabled && queuePosition && (
+  <div className="absolute -top-3 -left-3 ...">
+    #{queuePosition}
+  </div>
+)}
+```
 
 ---
 
-## Resultado Visual
+## Comportamento Após Mudança
+
+| Ação | Número na Fila | Posição do Card |
+|------|----------------|-----------------|
+| Card criado como #3 | #3 | Terceira posição |
+| Clica INICIAR | #3 (mantém) | Terceira posição (mantém) |
+| Clica FORNO | Card sai | Cards abaixo sobem |
+
+---
+
+## Fluxo Visual
 
 ```text
-ANTES:                           DEPOIS:
-+--------------------+           +------------------+
-| #1 (GRANDE, PULSE) |           | #1               |
-|    CARD MAIOR      |           |                  |
-|    com sombra      |           | Pizza Calabresa  |
-|    e gradiente     |           |                  |
-+--------------------+           | [INICIAR]        |
+ANTES de clicar INICIAR:         DEPOIS de clicar INICIAR:
 +------------------+             +------------------+
-| #2 (pequeno,     |             | #2               |
-|    transparente) |             |                  |
+| #1               |             | #1               |
+| Pizza Calabresa  |             | Pizza Calabresa  |
+| [INICIAR]        |             | [FORNO] [X]      |
++------------------+             +------------------+
+| #2               |             | #2               |  <-- Mantém #2!
 | Pizza Queijos    |             | Pizza Queijos    |
-| [INICIAR]        |             |                  |
-+------------------+             | [INICIAR]        |
-                                 +------------------+
+| [INICIAR]        |             | [INICIAR]        |
++------------------+             +------------------+
+| #3               |             | #3               |  <-- Mantém #3!
+| Pizza Margher    |             | Pizza Margher    |
+| [INICIAR]        |             | [INICIAR]        |
++------------------+             +------------------+
 
-Todos os cards iguais, badges sólidos sem animação
+Cards NÃO mudam de posição até ir para o FORNO
 ```
 
 ---
 
-## Arquivo a Modificar
+## Arquivos a Modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/kds/KDSItemCard.tsx` | Remover scale/shadow do primeiro card, uniformizar badges |
+| `src/components/kds/SectorQueuePanel.tsx` | Posição baseada em todos os itens, não apenas pending |
+| `src/components/kds/KDSItemCard.tsx` | Mostrar badge de posição em todos os status |
