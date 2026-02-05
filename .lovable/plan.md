@@ -1,122 +1,104 @@
 
-# Plano: Implementar Assinatura Digital QZ Tray
+# Plano: Melhorar Cadastro de Lojas com Código e URL do Webhook
 
-## Objetivo
+## Problema Identificado
 
-Configurar a assinatura digital no QZ Tray para eliminar os popups de confirmação "Allow/OK" a cada impressão.
+1. **Falta o campo "Código da Loja"** (ex: 8268) na tabela e no formulário
+2. **Usuário não sabe qual URL configurar no CardápioWeb** para receber webhooks
 
-## Arquitetura da Solução
+## Arquitetura Atual vs Necessária
 
-A assinatura digital do QZ Tray funciona assim:
-
-1. **Certificado Público**: Fornecido ao QZ Tray para identificar a aplicação (pode ficar no frontend)
-2. **Chave Privada**: Usada para assinar cada requisição (deve ficar segura no backend)
+A boa notícia: o sistema já suporta múltiplas lojas com tokens individuais. Cada loja cadastrada pode usar o mesmo URL de webhook porque a identificação é feita pelo token no header.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         FLUXO DE ASSINATURA                         │
+│                    FLUXO DE WEBHOOK POR LOJA                        │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ┌──────────────┐     1. toSign string      ┌──────────────────┐   │
-│  │   Frontend   │ ─────────────────────────►│  Edge Function   │   │
-│  │  qzTray.ts   │                           │    qz-sign       │   │
-│  │              │◄───────────────────────── │                  │   │
-│  └──────────────┘     2. signature          └──────────────────┘   │
-│         │                                            │              │
-│         │                                            │              │
-│         ▼                                            ▼              │
-│  ┌──────────────┐                           ┌──────────────────┐   │
-│  │   QZ Tray    │                           │  Secret Store    │   │
-│  │   (local)    │                           │  QZ_PRIVATE_KEY  │   │
-│  └──────────────┘                           └──────────────────┘   │
+│  CardápioWeb (Loja A)                 CardápioWeb (Loja B)          │
+│  Token: abc123...                     Token: xyz789...              │
+│         │                                    │                      │
+│         ▼                                    ▼                      │
+│  ┌──────────────────────────────────────────────────────────┐      │
+│  │          /functions/v1/webhook-orders                     │      │
+│  │                                                           │      │
+│  │  1. Lê header X-API-KEY                                   │      │
+│  │  2. Busca loja pelo token na tabela stores                │      │
+│  │  3. Processa pedido vinculado à loja correta              │      │
+│  └──────────────────────────────────────────────────────────┘      │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Arquivos a Criar/Modificar
+## Alterações Necessárias
 
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `supabase/functions/qz-sign/index.ts` | **Criar** | Edge function que assina requests com RSA-SHA1 |
-| `src/lib/qzTray.ts` | **Modificar** | Configurar certificado e chamar edge function para assinatura |
-| `supabase/config.toml` | **Modificar** | Registrar a nova edge function |
-| Secrets | **Adicionar** | `QZ_PRIVATE_KEY` com a chave privada fornecida |
+| Local | Alteração | Descrição |
+|-------|-----------|-----------|
+| Banco de dados | Adicionar coluna | `cardapioweb_store_code` (texto, para armazenar "8268") |
+| `StoresManager.tsx` | Adicionar campo | Input para "Código da Loja" |
+| `StoresManager.tsx` | Mostrar URL webhook | Exibir a URL que o usuário deve configurar no CardápioWeb |
+| `useStores.ts` | Atualizar tipagem | Incluir novo campo no tipo Store |
 
-## Implementação Detalhada
+## Implementação
 
-### 1. Criar Edge Function `qz-sign`
+### 1. Migração do Banco
 
-Esta função recebe o texto a ser assinado e retorna a assinatura RSA-SHA1 em base64:
+```sql
+ALTER TABLE stores 
+ADD COLUMN cardapioweb_store_code text;
 
-```typescript
-// supabase/functions/qz-sign/index.ts
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
-  }
-
-  const { toSign } = await req.json();
-  const privateKeyPem = Deno.env.get('QZ_PRIVATE_KEY');
-  
-  // Importar chave privada e assinar com RSA-SHA1
-  const signature = await signWithPrivateKey(toSign, privateKeyPem);
-  
-  return new Response(JSON.stringify({ signature }), {
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-  });
-});
+COMMENT ON COLUMN stores.cardapioweb_store_code IS 
+  'Código da loja no CardápioWeb (ex: 8268)';
 ```
 
-### 2. Modificar `qzTray.ts`
+### 2. Atualizar Formulário
 
-Substituir as funções de segurança vazias pelo certificado e chamada à edge function:
+Adicionar novo campo "Código da Loja" e exibir a URL do webhook:
 
-```typescript
-// Certificado público (inline)
-const QZ_CERTIFICATE = `-----BEGIN CERTIFICATE-----
-MIIECzCCAvOgAwIBAgIGAZwtiQ/CMA0GCSqGSIb3DQEBCwUAMIGiMQswCQYDVQQG
-... (certificado completo)
------END CERTIFICATE-----`;
-
-// Na função connect():
-window.qz.security.setCertificatePromise((resolve) => {
-  resolve(QZ_CERTIFICATE);
-});
-
-window.qz.security.setSignaturePromise((toSign) => (resolve) => {
-  fetch('https://cpxuluerkzpynlcdnxcq.supabase.co/functions/v1/qz-sign', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ toSign })
-  })
-  .then(r => r.json())
-  .then(data => resolve(data.signature))
-  .catch(() => resolve(''));
-});
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│  Editar Loja                                                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Nome da Loja *                                                 │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ Loja Centro                                                │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  Código da Loja           Token API (X-API-KEY)                │
+│  ┌─────────────┐          ┌───────────────────────────────────┐│
+│  │ 8268        │          │ ••••••••••••••••••••••           ││
+│  └─────────────┘          └───────────────────────────────────┘│
+│                                                                 │
+│  URL da API                                                     │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ https://integracao.cardapioweb.com                        │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │ URL do Webhook (configure no CardápioWeb):                │ │
+│  │ https://cpxuluerkzpynlcdnxcq.supabase.co/functions/v1/   │ │
+│  │ webhook-orders                                            │ │
+│  │                                              [📋 Copiar]  │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Adicionar Secret
+### 3. Instruções para o Usuário
 
-Armazenar a chave privada como secret do projeto para uso seguro na edge function.
+Ao cadastrar cada loja, o sistema mostrará:
 
-## Considerações de Segurança
-
-- **Chave privada**: Nunca exposta no frontend, apenas acessível pela edge function
-- **Certificado público**: Pode ficar no frontend (é público por natureza)
-- **Edge function pública**: Não requer autenticação pois a assinatura só é útil com o QZ Tray local
-- **Algoritmo**: QZ Tray usa RSA-SHA1 para compatibilidade (não SHA256)
+**Passos para configurar no CardápioWeb:**
+1. Acesse o painel do CardápioWeb da loja
+2. Vá em Configurações de Integração
+3. No campo "URL do Webhook", cole a URL exibida
+4. Configure o header `X-API-KEY` com o mesmo token cadastrado aqui
+5. Salve as configurações
 
 ## Resultado Esperado
 
-Após implementação:
-- Conexão com QZ Tray será automaticamente confiável
-- Nenhum popup "Allow/OK" aparecerá
-- Impressões serão 100% silenciosas
-- Funciona em qualquer computador sem configuração manual
+- Cada loja terá seu código identificador armazenado
+- O usuário saberá exatamente qual URL configurar no CardápioWeb
+- O botão "Copiar" facilitará a configuração
+- Instruções claras sobre como vincular o webhook
