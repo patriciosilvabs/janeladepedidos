@@ -1,37 +1,105 @@
 
-## Plan: Fix CORS Error for sync-orders-status Edge Function
 
-### Problem
+## Plano: Impressão Automática no Despacho
 
-The `sync-orders-status` edge function is failing CORS preflight checks. The error occurs because:
+### Objetivo
 
-1. **Missing config entry**: The function is not listed in `supabase/config.toml`, so `verify_jwt` defaults to `true`
-2. When `verify_jwt = true`, the OPTIONS preflight request fails because it has no authorization token
+Adicionar uma configuração para ativar/desativar a impressão automática quando um item é marcado como "PRONTO" no painel do forno (setor de despacho). Quando ativo, o sistema imprimirá automaticamente um ticket com as informações do item/pedido.
 
-### Solution
+---
 
-Add the `sync-orders-status` function to `supabase/config.toml` with `verify_jwt = false`.
+### Parte 1: Adicionar Campo de Configuração no Banco
 
-**Edit `supabase/config.toml`:**
+**Migração SQL:**
 
-```toml
-project_id = "cpxuluerkzpynlcdnxcq"
-
-[functions.redistribute-items]
-verify_jwt = false
- 
-[functions.webhook-orders]
-verify_jwt = false
-
-[functions.printnode]
-verify_jwt = false
-
-[functions.sync-orders-status]
-verify_jwt = false
+```sql
+ALTER TABLE app_settings 
+ADD COLUMN IF NOT EXISTS printnode_dispatch_enabled boolean DEFAULT false;
 ```
 
-### Technical Details
+Este campo controla especificamente se a impressão ocorre ao marcar itens como prontos no despacho.
 
-- The edge function already implements proper authentication checks in code using the Supabase client
-- Setting `verify_jwt = false` allows the OPTIONS preflight to pass, while the actual POST requests still validate the user's session via the authorization header
-- This is the standard pattern used by other functions in this project (webhook-orders, redistribute-items, printnode)
+---
+
+### Parte 2: Atualizar Interface de Configurações
+
+**Arquivo:** `src/hooks/useSettings.ts`
+
+Adicionar o novo campo à interface `AppSettings`:
+```typescript
+printnode_dispatch_enabled: boolean;
+```
+
+**Arquivo:** `src/components/PrinterSettings.tsx`
+
+Adicionar uma nova opção de switch na seção de configurações:
+- Label: "Imprimir ao Marcar Pronto no Despacho"
+- Descrição: "Quando ativo, um ticket será impresso automaticamente ao clicar em PRONTO no painel do forno"
+- Comportamento: auto-save com debounce (mesmo padrão usado atualmente)
+
+---
+
+### Parte 3: Criar Função de Formatação do Ticket
+
+**Novo arquivo:** `src/utils/printTicket.ts`
+
+Função utilitária para gerar o conteúdo do ticket em texto simples:
+
+```typescript
+export function formatDispatchTicket(item: OrderItemWithOrder): string {
+  // Retorna texto formatado com:
+  // - Número do pedido
+  // - Nome do cliente
+  // - Endereço/bairro
+  // - Nome do produto
+  // - Quantidade
+  // - Observações (se houver)
+  // - Complementos (se houver)
+  // - Borda (se houver)
+  // - Sabores (se houver)
+  // - Data/hora
+}
+```
+
+---
+
+### Parte 4: Integrar Impressão no OvenTimerPanel
+
+**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
+
+Modificações:
+
+1. Importar `usePrintNode` e `useSettings`
+2. Buscar configurações: `printnode_enabled`, `printnode_dispatch_enabled`, `printnode_printer_id`
+3. Na função `handleMarkReady`:
+   - Após marcar o item como pronto com sucesso
+   - Verificar se `printnode_enabled && printnode_dispatch_enabled && printnode_printer_id`
+   - Se ativo, chamar `printRaw()` com o ticket formatado
+
+Fluxo:
+```text
+Clique PRONTO → markItemReady() → sucesso → verificar configs → printRaw()
+```
+
+---
+
+### Resumo das Alterações
+
+| Arquivo | Alteração |
+|---------|-----------|
+| **Migração SQL** | Adicionar coluna `printnode_dispatch_enabled` |
+| `src/hooks/useSettings.ts` | Adicionar campo na interface |
+| `src/components/PrinterSettings.tsx` | Adicionar switch de configuração |
+| `src/utils/printTicket.ts` | Criar função de formatação do ticket |
+| `src/components/kds/OvenTimerPanel.tsx` | Integrar chamada de impressão |
+
+---
+
+### Detalhes Técnicos
+
+- A impressão é silenciosa (não bloqueia UI)
+- Erros de impressão são logados mas não impedem o fluxo
+- O ticket usa formato texto simples (compatível com impressoras térmicas)
+- A configuração `printnode_enabled` é o "master switch" - precisa estar ativo para qualquer impressão funcionar
+- A nova configuração `printnode_dispatch_enabled` controla especificamente a impressão no despacho
+
