@@ -30,6 +30,7 @@ export interface Order {
   cardapioweb_notified: boolean | null;
   cardapioweb_notified_at: string | null;
   is_urgent: boolean | null;
+  order_type?: 'delivery' | 'dine_in' | 'takeaway' | 'counter' | string;
 }
 
 export interface DeliveryGroup {

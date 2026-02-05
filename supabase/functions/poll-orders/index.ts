@@ -5,6 +5,17 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+function getOrderTypeLabel(orderType: string): string {
+  const labels: Record<string, string> = {
+    'delivery': 'Delivery',
+    'dine_in': 'Mesa',
+    'takeaway': 'Retirada',
+    'counter': 'Balcão',
+    'table': 'Mesa',
+  };
+  return labels[orderType] || orderType;
+}
+
 interface CardapioWebOrder {
   id: number;
   code?: string;
@@ -56,8 +67,8 @@ interface Store {
 async function pollStoreOrders(
   supabase: any,
   store: Store
-): Promise<{ newOrders: number; processed: number; totalFromApi: number; deliveryOnly: number; cancelled: number; error?: string }> {
-  const result = { newOrders: 0, processed: 0, totalFromApi: 0, deliveryOnly: 0, cancelled: 0 };
+): Promise<{ newOrders: number; processed: number; totalFromApi: number; cancelled: number; error?: string }> {
+  const result = { newOrders: 0, processed: 0, totalFromApi: 0, cancelled: 0 };
 
   if (!store.cardapioweb_api_token || !store.cardapioweb_api_url) {
     console.log(`[poll-orders] Store "${store.name}" missing API configuration`);
@@ -92,14 +103,11 @@ async function pollStoreOrders(
       console.log(`[poll-orders] First order raw data:`, JSON.stringify(ordersData[0], null, 2));
     }
     
-    // Filter only delivery orders
-    const deliveryOrders = ordersData.filter(order => order.order_type === 'delivery');
     result.totalFromApi = ordersData.length;
-    result.deliveryOnly = deliveryOrders.length;
     
-    console.log(`[poll-orders] Store "${store.name}": ${ordersData.length} total, ${deliveryOrders.length} delivery`);
+    console.log(`[poll-orders] Store "${store.name}": ${ordersData.length} pedidos encontrados`);
 
-    for (const order of deliveryOrders) {
+    for (const order of ordersData) {
       result.processed++;
       const cardapiowebOrderId = String(order.id);
 
@@ -141,21 +149,20 @@ async function pollStoreOrders(
       const orderCode = orderDetails.display_id?.toString() || orderDetails.code || order.display_id?.toString() || String(order.id);
       console.log(`[poll-orders] Final order code to save: ${orderCode}`);
 
-      // Extract address info - API usa delivery_address direto (não delivery.address)
-      const address = orderDetails.delivery_address || {};
+      // Verificar se é delivery para extrair endereço
+      const isDelivery = order.order_type === 'delivery';
+      const address = isDelivery ? (orderDetails.delivery_address || {}) : {};
       
-      const lat = address.latitude || -7.1195;
-      const lng = address.longitude || -34.8450;
+      // Coordenadas: usar padrão se não for delivery
+      const lat = isDelivery ? (address.latitude || -7.1195) : -7.1195;
+      const lng = isDelivery ? (address.longitude || -34.8450) : -34.8450;
 
-      const fullAddress = [
-        address.street,
-        address.number,
-        address.neighborhood,
-        address.city,
-        address.state,
-      ]
-        .filter(Boolean)
-        .join(', ') || 'Endereço não informado';
+      // Endereço formatado baseado no tipo
+      const fullAddress = isDelivery
+        ? [address.street, address.number, address.neighborhood, address.city, address.state]
+            .filter(Boolean)
+            .join(', ') || 'Endereço não informado'
+        : getOrderTypeLabel(order.order_type);
 
       // Insert new order with store_id
       const { error: insertError } = await supabase.from('orders').insert({
@@ -164,13 +171,13 @@ async function pollStoreOrders(
         customer_name: orderDetails.customer?.name || 'Cliente',
         customer_phone: orderDetails.customer?.phone || null,
         address: fullAddress,
-        street: address.street || null,
-        house_number: address.number || null,
-        neighborhood: address.neighborhood || null,
-        city: address.city || store.default_city || 'João Pessoa',
-        region: address.state || store.default_region || 'PB',
-        country: address.country || store.default_country || 'BR',
-        postal_code: address.zipCode || null,
+        street: isDelivery ? (address.street || null) : null,
+        house_number: isDelivery ? (address.number || null) : null,
+        neighborhood: isDelivery ? (address.neighborhood || null) : null,
+        city: isDelivery ? (address.city || store.default_city || 'João Pessoa') : store.default_city || 'João Pessoa',
+        region: isDelivery ? (address.state || store.default_region || 'PB') : store.default_region || 'PB',
+        country: isDelivery ? (address.country || store.default_country || 'BR') : store.default_country || 'BR',
+        postal_code: isDelivery ? (address.zipCode || null) : null,
         lat,
         lng,
         total_amount: orderDetails.total || 0,
@@ -181,6 +188,7 @@ async function pollStoreOrders(
         status: 'pending',
         store_id: store.id,
         cardapioweb_created_at: orderDetails.created_at || null,  // Corrigido: created_at (snake_case)
+        order_type: order.order_type || 'delivery',
       });
 
       if (insertError) {

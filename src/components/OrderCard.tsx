@@ -3,6 +3,18 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { OrderWithGroup } from '@/types/orders';
 import { Loader2, Clock } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+
+const getOrderTypeBadge = (type?: string) => {
+  const config: Record<string, { label: string; className: string }> = {
+    'delivery': { label: '🛵 Delivery', className: 'bg-blue-500 hover:bg-blue-500' },
+    'dine_in': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
+    'takeaway': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },
+    'counter': { label: '🏪 Balcão', className: 'bg-purple-500 hover:bg-purple-500' },
+    'table': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
+  };
+  return config[type || 'delivery'] || config['delivery'];
+};
 
 interface OrderCardProps {
   order: OrderWithGroup;
@@ -82,6 +94,16 @@ export function OrderCard({
             {elapsedTime}
           </div>
         </div>
+
+        {/* Order Type Badge */}
+        {(() => {
+          const badge = getOrderTypeBadge(order.order_type);
+          return (
+            <Badge className={`${badge.className} text-white text-xs mb-1`}>
+              {badge.label}
+            </Badge>
+          );
+        })()}
         
         {/* Store Name */}
         <div className="text-white/90 text-sm font-medium mb-0.5">
