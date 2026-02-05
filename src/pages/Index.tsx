@@ -19,6 +19,13 @@ const Index = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
 
+  // Sync kdsMode with database settings when loaded
+  useEffect(() => {
+    if (settings?.kds_default_mode) {
+      setKdsMode(settings.kds_default_mode);
+    }
+  }, [settings?.kds_default_mode]);
+
   // Track presence for KDS operators
   const isKDSSector = userSector?.view_type === 'kds';
   useSectorPresence({ 
@@ -91,8 +98,10 @@ const Index = () => {
             : <KDSDashboard userSector={userSector} />) 
       : isDispatchSector
         ? <DispatchDashboard />
-          : mainView === 'kds'
-            ? <KDSItemsDashboard />
+        : mainView === 'kds'
+          ? (effectiveKdsMode === 'items' 
+              ? <KDSItemsDashboard />
+              : <KDSDashboard />)
             : <Dashboard />
       }
     </div>
