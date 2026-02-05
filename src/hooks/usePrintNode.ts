@@ -45,7 +45,7 @@ export interface PrintNodeAccount {
   state: string;
 }
 
-async function callPrintNodeApi(action: string, options?: { method?: string; body?: object; params?: Record<string, string> }) {
+async function callPrintNodeApi(action: string, options?: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'; body?: object; params?: Record<string, string> }) {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     throw new Error('Não autenticado');
