@@ -7,6 +7,7 @@ import { KDSItemsDashboard } from '@/components/kds';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserSector } from '@/hooks/useSectors';
 import { useSettings } from '@/hooks/useSettings';
+import { useSectorPresence } from '@/hooks/useSectorPresence';
 import { Loader2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
@@ -17,6 +18,13 @@ const Index = () => {
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+
+  // Track presence for KDS operators
+  const isKDSSector = userSector?.view_type === 'kds';
+  useSectorPresence({ 
+    sectorId: userSector?.id, 
+    enabled: isKDSSector && !!user?.id 
+  });
 
   // Track fullscreen state
   useEffect(() => {
@@ -38,7 +46,6 @@ const Index = () => {
   }
 
   // Determine which dashboard to show based on user's sector
-  const isKDSSector = userSector?.view_type === 'kds';
   const isDispatchSector = userSector?.view_type === 'dispatch';
   
   // KDS mode: admin can toggle, regular users use the configured default

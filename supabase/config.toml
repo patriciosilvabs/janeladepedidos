@@ -1,1 +1,4 @@
 project_id = "cpxuluerkzpynlcdnxcq"
+
+[functions.redistribute-items]
+verify_jwt = false

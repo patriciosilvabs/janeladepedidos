@@ -5,8 +5,9 @@ import { KDSItemCard } from './KDSItemCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePresence } from '@/contexts/PresenceContext';
 import { useToast } from '@/hooks/use-toast';
-import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, AlertCircle, CheckCircle2, Users, UserX } from 'lucide-react';
 import { ItemStatus } from '@/types/orderItems';
 
 interface SectorQueuePanelProps {
@@ -23,10 +24,15 @@ export function SectorQueuePanel({
   const { user } = useAuth();
   const { toast } = useToast();
   const { settings } = useSettings();
+  const { getOnlineOperatorCount, isAnyOperatorOnline } = usePresence();
   const [processingId, setProcessingId] = useState<string | null>(null);
   
   // Get oven time from settings
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+  
+  // Get presence info for this sector
+  const operatorCount = sectorId ? getOnlineOperatorCount(sectorId) : 0;
+  const hasOperators = sectorId ? isAnyOperatorOnline(sectorId) : true;
 
   // Fetch items based on status filter
   const statusFilter: ItemStatus[] = showAllStatuses 
@@ -162,7 +168,27 @@ export function SectorQueuePanel({
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg">{sectorName}</CardTitle>
+          <div className="flex items-center gap-2">
+            <CardTitle className="text-lg">{sectorName}</CardTitle>
+            {sectorId && (
+              <Badge 
+                variant={hasOperators ? "outline" : "destructive"}
+                className={`gap-1 text-xs ${hasOperators ? 'bg-primary/10 text-primary' : ''}`}
+              >
+                {hasOperators ? (
+                  <>
+                    <Users className="h-3 w-3" />
+                    {operatorCount} online
+                  </>
+                ) : (
+                  <>
+                    <UserX className="h-3 w-3" />
+                    Sem operador
+                  </>
+                )}
+              </Badge>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             {pendingItems.length > 0 && (
               <Badge className="bg-amber-500 text-white">
