@@ -1,199 +1,156 @@
 
-# Plano: Receber Todos os Tipos de Pedidos (Delivery, Mesa, Balcão, Retirada)
+# Plano: Corrigir Criação de Itens no Polling
 
-## Problema Atual
+## Problema Identificado
 
-A função `poll-orders` filtra apenas pedidos do tipo `delivery`:
+A função `poll-orders` **não cria itens de produção** (order_items) quando recebe pedidos do CardápioWeb.
+
+**Evidência:**
+- Tabela `orders`: 4 pedidos com dados JSON de itens
+- Tabela `order_items`: **VAZIA** (0 registros)
+
+**Causa raiz:**
+O código `poll-orders` insere o pedido mas **não chama** o RPC `create_order_items_from_json`:
 
 ```typescript
-// Linha 96 - poll-orders/index.ts
-const deliveryOrders = ordersData.filter(order => order.order_type === 'delivery');
+// poll-orders/index.ts - Linha 168-192
+const { error: insertError } = await supabase.from('orders').insert({
+  // ... campos do pedido
+  items: orderDetails.items || [],  // Salva JSON, mas não cria registros
+});
+// FALTA: Chamada ao RPC para criar order_items
 ```
 
-Pedidos de **mesa**, **balcão** e **retirada** são descartados.
+Enquanto `webhook-orders` faz corretamente:
 
----
-
-## Solução
-
-1. Adicionar coluna `order_type` na tabela `orders`
-2. Remover filtro de `delivery` na edge function
-3. Adaptar lógica de endereço para pedidos sem entrega
-4. Exibir tipo do pedido na interface
-
----
-
-## Mudança 1: Adicionar Coluna no Banco de Dados
-
-**Migração SQL**:
-
-```sql
--- Adicionar coluna order_type na tabela orders
-ALTER TABLE orders 
-ADD COLUMN order_type text DEFAULT 'delivery';
-
--- Comentário para documentação
-COMMENT ON COLUMN orders.order_type IS 'Tipo do pedido: delivery, dine_in (mesa), takeaway (retirada), counter (balcão)';
+```typescript
+// webhook-orders/index.ts - Linha 186-193
+const { data: itemsResult } = await supabase.rpc(
+  'create_order_items_from_json',
+  { p_order_id: insertedOrder.id, p_items: order.items }
+);
 ```
 
 ---
 
-## Mudança 2: Atualizar Edge Function poll-orders
+## Solucao
+
+Adicionar chamada ao RPC `create_order_items_from_json` após inserir o pedido na função `poll-orders`.
+
+---
+
+## Mudanca
 
 **Arquivo**: `supabase/functions/poll-orders/index.ts`
 
-### Remover filtro de delivery (linhas 95-100)
-
-```typescript
-// ANTES
-const deliveryOrders = ordersData.filter(order => order.order_type === 'delivery');
-result.totalFromApi = ordersData.length;
-result.deliveryOnly = deliveryOrders.length;
-
-for (const order of deliveryOrders) {
-
-// DEPOIS
-result.totalFromApi = ordersData.length;
-console.log(`[poll-orders] Store "${store.name}": ${ordersData.length} pedidos encontrados`);
-
-for (const order of ordersData) {
-```
-
-### Adaptar lógica de endereço para tipos sem entrega
-
-```typescript
-// Para pedidos que não são delivery, usar endereço padrão da loja
-const isDelivery = order.order_type === 'delivery';
-const address = isDelivery ? (orderDetails.delivery_address || {}) : {};
-
-// Coordenadas: usar padrão se não for delivery
-const lat = isDelivery ? (address.latitude || -7.1195) : -7.1195;
-const lng = isDelivery ? (address.longitude || -34.8450) : -34.8450;
-
-// Endereço formatado baseado no tipo
-const fullAddress = isDelivery
-  ? [address.street, address.number, address.neighborhood, address.city, address.state]
-      .filter(Boolean)
-      .join(', ') || 'Endereço não informado'
-  : getOrderTypeLabel(order.order_type);  // "Mesa", "Balcão", "Retirada"
-```
-
-### Adicionar função auxiliar para labels
-
-```typescript
-function getOrderTypeLabel(orderType: string): string {
-  const labels: Record<string, string> = {
-    'delivery': 'Delivery',
-    'dine_in': 'Mesa',
-    'takeaway': 'Retirada',
-    'counter': 'Balcão',
-    'table': 'Mesa',
-  };
-  return labels[orderType] || orderType;
-}
-```
-
-### Salvar order_type no insert
+### Antes (linhas 167-199)
 
 ```typescript
 const { error: insertError } = await supabase.from('orders').insert({
-  // ... campos existentes ...
-  order_type: order.order_type || 'delivery',  // NOVO CAMPO
+  // ... campos
 });
+
+if (insertError) {
+  console.error(`[poll-orders] Error inserting order:`, insertError);
+} else {
+  result.newOrders++;
+  console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId}`);
+}
 ```
 
----
-
-## Mudança 3: Atualizar Tipos TypeScript
-
-**Arquivo**: `src/types/orders.ts`
+### Depois
 
 ```typescript
-export interface Order {
-  // ... campos existentes ...
-  order_type?: 'delivery' | 'dine_in' | 'takeaway' | 'counter' | string;  // NOVO
+const { data: insertedOrder, error: insertError } = await supabase
+  .from('orders')
+  .insert({
+    // ... campos
+  })
+  .select('id')
+  .single();
+
+if (insertError) {
+  console.error(`[poll-orders] Error inserting order:`, insertError);
+} else {
+  result.newOrders++;
+  console.log(`[poll-orders] Inserted new order: ${cardapiowebOrderId}`);
+
+  // NOVO: Criar order_items para KDS
+  if (orderDetails.items && Array.isArray(orderDetails.items)) {
+    const { data: itemsResult, error: itemsError } = await supabase.rpc(
+      'create_order_items_from_json',
+      {
+        p_order_id: insertedOrder.id,
+        p_items: orderDetails.items,
+        p_default_sector_id: null, // Distribuicao automatica
+      }
+    );
+
+    if (itemsError) {
+      console.error(`[poll-orders] Error creating order items:`, itemsError);
+    } else {
+      console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+    }
+  }
 }
 ```
 
 ---
 
-## Mudança 4: Exibir Tipo do Pedido no OrderCard
+## Fluxo Corrigido
 
-**Arquivo**: `src/components/OrderCard.tsx`
-
-Adicionar badge visual indicando o tipo:
-
-```tsx
-// Função auxiliar para cor e label
-const getOrderTypeBadge = (type?: string) => {
-  const config: Record<string, { label: string; color: string }> = {
-    'delivery': { label: '🛵 Delivery', color: 'bg-blue-500' },
-    'dine_in': { label: '🍽️ Mesa', color: 'bg-green-500' },
-    'takeaway': { label: '📦 Retirada', color: 'bg-orange-500' },
-    'counter': { label: '🏪 Balcão', color: 'bg-purple-500' },
-  };
-  return config[type || 'delivery'] || config['delivery'];
-};
-
-// No JSX, após o número do pedido:
-<div className={`${badge.color} text-white text-xs px-2 py-0.5 rounded-full`}>
-  {badge.label}
-</div>
+```text
+CardapioWeb API
+      |
+      v
+poll-orders (Edge Function)
+      |
+      +--> INSERT orders (pedido)
+      |
+      +--> RPC create_order_items_from_json  <-- NOVO
+             |
+             v
+      order_items (itens individuais)
+             |
+             v
+      Distribuido para BANCADA A / BANCADA B
+             |
+             v
+      Aparece no tablet KDS
 ```
 
 ---
 
-## Fluxo Após Mudanças
+## Correção de Pedidos Existentes
 
-```text
-CardápioWeb API
-      ↓
-  Pedidos confirmados (todos os tipos)
-      ↓
-  poll-orders (sem filtro)
-      ↓
-  Salva com order_type no banco
-      ↓
-  Interface exibe com badge colorido
+Após corrigir o código, será necessário reprocessar os pedidos já inseridos que não têm itens. Uma opção é chamar manualmente:
 
-Tipos suportados:
-- 🛵 Delivery (azul) → Com endereço
-- 🍽️ Mesa (verde) → Sem endereço
-- 📦 Retirada (laranja) → Sem endereço  
-- 🏪 Balcão (roxo) → Sem endereço
+```sql
+-- Para cada pedido pendente sem itens
+SELECT create_order_items_from_json(
+  o.id, 
+  o.items, 
+  NULL
+) 
+FROM orders o 
+WHERE o.status = 'pending'
+  AND NOT EXISTS (
+    SELECT 1 FROM order_items oi WHERE oi.order_id = o.id
+  );
 ```
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Mudança |
+| Arquivo | Mudanca |
 |---------|---------|
-| Migração SQL | Adicionar coluna `order_type` |
-| `supabase/functions/poll-orders/index.ts` | Remover filtro, adaptar endereço, salvar tipo |
-| `src/types/orders.ts` | Adicionar campo `order_type` |
-| `src/components/OrderCard.tsx` | Exibir badge do tipo de pedido |
+| `supabase/functions/poll-orders/index.ts` | Adicionar chamada RPC para criar order_items apos inserir pedido |
 
 ---
 
-## Resultado Visual no Dashboard
+## Resultado Esperado
 
-```
-┌─────────────────────────────┐
-│  #7955  ⏱️ 5min             │
-│  🛵 Delivery                │  ← Badge azul
-│  Pizzaria Central           │
-│  João Silva                 │
-│  Manaíra                    │
-│  [PRONTO]                   │
-└─────────────────────────────┘
-
-┌─────────────────────────────┐
-│  #7956  ⏱️ 2min             │
-│  🍽️ Mesa                    │  ← Badge verde
-│  Pizzaria Central           │
-│  Maria Santos               │
-│                             │
-│  [PRONTO]                   │
-└─────────────────────────────┘
-```
+- Pedidos recebidos via polling terao itens criados na tabela `order_items`
+- Itens serao distribuidos entre BANCADA A e BANCADA B automaticamente
+- Tablets KDS mostrarao os itens pendentes para producao
