@@ -118,15 +118,16 @@ async function pollStoreOrders(
       result.processed++;
       const cardapiowebOrderId = String(order.id);
 
-      // Check if order already exists
+      // Check if order already exists - CORRIGIDO: usar external_id em vez de cardapioweb_order_id
+      // O external_id contém o ID interno da API (ex: 180702725), que é o que usamos para verificar duplicatas
       const { data: existingOrder } = await supabase
         .from('orders')
         .select('id')
-        .eq('cardapioweb_order_id', cardapiowebOrderId)
+        .eq('external_id', cardapiowebOrderId)
         .maybeSingle();
 
       if (existingOrder) {
-        console.log(`[poll-orders] Order already exists: ${cardapiowebOrderId}`);
+        // Order already exists, skip silently to reduce log noise
         continue;
       }
 
