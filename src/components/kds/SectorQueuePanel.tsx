@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePresence } from '@/contexts/PresenceContext';
-import { useToast } from '@/hooks/use-toast';
 import { Loader2, AlertCircle, CheckCircle2, Users, UserX } from 'lucide-react';
 import { ItemStatus } from '@/types/orderItems';
 
@@ -20,7 +19,6 @@ export function SectorQueuePanel({
   sectorName = 'Fila de Produção'
 }: SectorQueuePanelProps) {
   const { user } = useAuth();
-  const { toast } = useToast();
   const { settings } = useSettings();
   const { getOnlineOperatorCount, isAnyOperatorOnline } = usePresence();
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -51,16 +49,9 @@ export function SectorQueuePanel({
     setProcessingId(itemId);
     try {
       await claimItem.mutateAsync(itemId);
-      toast({
-        title: 'Item capturado!',
-        description: 'Você pode iniciar o preparo.',
-      });
+      // Feedback visual via estado do card (sem popup)
     } catch (error: any) {
-      toast({
-        title: 'Não foi possível capturar',
-        description: error.message || 'Outro operador pode ter sido mais rápido.',
-        variant: 'destructive',
-      });
+      console.error('Erro ao capturar item:', error.message);
     } finally {
       setProcessingId(null);
     }
@@ -70,16 +61,9 @@ export function SectorQueuePanel({
     setProcessingId(itemId);
     try {
       await releaseItem.mutateAsync(itemId);
-      toast({
-        title: 'Item liberado',
-        description: 'Outros operadores podem capturá-lo.',
-      });
+      // Feedback visual via estado do card (sem popup)
     } catch (error: any) {
-      toast({
-        title: 'Erro ao liberar',
-        description: error.message,
-        variant: 'destructive',
-      });
+      console.error('Erro ao liberar item:', error.message);
     } finally {
       setProcessingId(null);
     }
@@ -89,19 +73,9 @@ export function SectorQueuePanel({
     setProcessingId(itemId);
     try {
       await sendToOven.mutateAsync({ itemId, ovenTimeSeconds });
-      const minutes = Math.floor(ovenTimeSeconds / 60);
-      const seconds = ovenTimeSeconds % 60;
-      const timeStr = seconds > 0 ? `${minutes}m${seconds}s` : `${minutes} minutos`;
-      toast({
-        title: '🔥 Enviado ao forno!',
-        description: `Timer de ${timeStr} iniciado.`,
-      });
+      // Feedback visual via estado do card (sem popup)
     } catch (error: any) {
-      toast({
-        title: 'Erro',
-        description: error.message,
-        variant: 'destructive',
-      });
+      console.error('Erro ao enviar ao forno:', error.message);
     } finally {
       setProcessingId(null);
     }
@@ -111,16 +85,9 @@ export function SectorQueuePanel({
     setProcessingId(itemId);
     try {
       await markItemReady.mutateAsync(itemId);
-      toast({
-        title: '✓ Item pronto!',
-        description: 'Aguardando despacho.',
-      });
+      // Feedback visual via estado do card (sem popup)
     } catch (error: any) {
-      toast({
-        title: 'Erro',
-        description: error.message,
-        variant: 'destructive',
-      });
+      console.error('Erro ao marcar pronto:', error.message);
     } finally {
       setProcessingId(null);
     }
