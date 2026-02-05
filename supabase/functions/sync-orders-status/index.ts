@@ -19,6 +19,7 @@ interface Order {
   external_id: string | null;  // ID real para chamadas de API
   status: string;
   store_id: string | null;
+  order_type: string | null;
 }
 
 interface StoreResult {
@@ -48,7 +49,7 @@ async function syncStoreOrders(
   // Fetch active orders for this store
   const { data: orders, error: ordersError } = await supabase
     .from('orders')
-    .select('id, cardapioweb_order_id, external_id, status, store_id')
+    .select('id, cardapioweb_order_id, external_id, status, store_id, order_type')
     .eq('store_id', store.id)
     .in('status', ['pending', 'waiting_buffer', 'ready'])  // Incluir 'ready' também
     .not('external_id', 'is', null);  // Usar external_id (ID real da API)
@@ -118,11 +119,19 @@ async function syncStoreOrders(
 
       console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} status in CardápioWeb: ${cardapiowebStatus}`);
 
-      // Status que indicam que o pedido foi CONCLUÍDO (deletar)
-      const completedStatuses = [
-        'closed',      // Fechado
+      // Tipos de pedido que são de mesa (chegam com status closed da API)
+      const tableOrderTypes = ['closed_table', 'dine_in', 'table'];
+      const isTableOrder = tableOrderTypes.includes((order.order_type || '').toLowerCase());
+
+      // Status que indicam que o pedido foi CANCELADO (deletar)
+      const cancelledStatuses = [
         'cancelled',   // Cancelado (inglês britânico)
         'canceled',    // Cancelado (inglês americano - CardápioWeb usa este)
+      ];
+      
+      // Status que indicam conclusão (deletar apenas para pedidos que não são de mesa)
+      const completedStatuses = [
+        'closed',      // Fechado - para mesa é normal, para outros é conclusão
         'delivered',   // Entregue
         'finished',    // Finalizado
       ];
@@ -134,9 +143,32 @@ async function syncStoreOrders(
         'on_the_way',  // Em rota
       ];
 
-      // Check if order should be deleted (completed/cancelled)
-      if (completedStatuses.includes(cardapiowebStatus)) {
-        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} (completed), deleting`);
+      // Pedidos de mesa com status closed são NORMAIS - não deletar
+      if (isTableOrder && cardapiowebStatus === 'closed') {
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is table order with closed status - keeping (normal for table orders)`);
+        result.unchanged++;
+        continue;
+      }
+
+      // Check if order was cancelled (always delete)
+      if (cancelledStatuses.includes(cardapiowebStatus)) {
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} (cancelled), deleting`);
+        const { error: deleteError } = await supabase
+          .from('orders')
+          .delete()
+          .eq('id', order.id);
+
+        if (deleteError) {
+          result.errors.push(`Erro ao deletar pedido ${order.cardapioweb_order_id}: ${deleteError.message}`);
+        } else {
+          result.deleted++;
+        }
+        continue;
+      }
+
+      // Check if order should be deleted (completed - only for non-table orders)
+      if (completedStatuses.includes(cardapiowebStatus) && !isTableOrder) {
+        console.log(`[sync-orders-status] Order ${order.cardapioweb_order_id} is ${cardapiowebStatus} (completed, non-table), deleting`);
         const { error: deleteError } = await supabase
           .from('orders')
           .delete()

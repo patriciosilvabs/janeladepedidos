@@ -142,6 +142,8 @@ async function pollStoreOrders(
     
     // OTIMIZAÇÃO 2: Buscar todos os external_ids existentes de uma vez (1 query em vez de N)
     const orderIds = activeOrders.map(o => String(o.id));
+    console.log(`[poll-orders] Looking for external_ids:`, orderIds.slice(0, 5).join(', '));
+    
     const { data: existingOrders } = await supabase
       .from('orders')
       .select('external_id')
@@ -149,6 +151,7 @@ async function pollStoreOrders(
       .in('external_id', orderIds);
     
     const existingSet = new Set(existingOrders?.map((o: { external_id: string | null }) => o.external_id) || []);
+    console.log(`[poll-orders] Found ${existingSet.size} existing orders in DB:`, [...existingSet].slice(0, 5).join(', '));
     
     // OTIMIZAÇÃO 3: Filtrar apenas pedidos novos
     const newOrders = activeOrders.filter(o => !existingSet.has(String(o.id)));
