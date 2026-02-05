@@ -37,6 +37,7 @@ export type Database = {
           id: string
           kds_default_mode: string | null
           kds_edge_keywords: string | null
+          kds_edge_sector_id: string | null
           kds_fifo_visual_enabled: boolean | null
           kds_flavor_keywords: string | null
           max_order_age_hours: number | null
@@ -68,6 +69,7 @@ export type Database = {
           id?: string
           kds_default_mode?: string | null
           kds_edge_keywords?: string | null
+          kds_edge_sector_id?: string | null
           kds_fifo_visual_enabled?: boolean | null
           kds_flavor_keywords?: string | null
           max_order_age_hours?: number | null
@@ -99,6 +101,7 @@ export type Database = {
           id?: string
           kds_default_mode?: string | null
           kds_edge_keywords?: string | null
+          kds_edge_sector_id?: string | null
           kds_fifo_visual_enabled?: boolean | null
           kds_flavor_keywords?: string | null
           max_order_age_hours?: number | null
@@ -108,7 +111,15 @@ export type Database = {
           urgent_bypass_enabled?: boolean | null
           urgent_production_timeout_minutes?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "app_settings_kds_edge_sector_id_fkey"
+            columns: ["kds_edge_sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       buffer_settings_by_day: {
         Row: {
@@ -262,6 +273,7 @@ export type Database = {
           estimated_exit_at: string | null
           flavors: string | null
           id: string
+          next_sector_id: string | null
           notes: string | null
           order_id: string
           oven_entry_at: string | null
@@ -280,6 +292,7 @@ export type Database = {
           estimated_exit_at?: string | null
           flavors?: string | null
           id?: string
+          next_sector_id?: string | null
           notes?: string | null
           order_id: string
           oven_entry_at?: string | null
@@ -298,6 +311,7 @@ export type Database = {
           estimated_exit_at?: string | null
           flavors?: string | null
           id?: string
+          next_sector_id?: string | null
           notes?: string | null
           order_id?: string
           oven_entry_at?: string | null
@@ -310,6 +324,13 @@ export type Database = {
           {
             foreignKeyName: "order_items_assigned_sector_id_fkey"
             columns: ["assigned_sector_id"]
+            isOneToOne: false
+            referencedRelation: "sectors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "order_items_next_sector_id_fkey"
+            columns: ["next_sector_id"]
             isOneToOne: false
             referencedRelation: "sectors"
             referencedColumns: ["id"]
@@ -608,6 +629,10 @@ export type Database = {
         Returns: Json
       }
       cleanup_stale_presence: { Args: never; Returns: number }
+      complete_edge_preparation: {
+        Args: { p_item_id: string; p_user_id: string }
+        Returns: Json
+      }
       create_order_items_from_json: {
         Args: {
           p_default_sector_id?: string

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags } from 'lucide-react';
+ import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags, Route } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
@@ -9,11 +9,13 @@ import { InvitationsPanel } from '@/components/InvitationsPanel';
 import { FoodyStatsPanel } from '@/components/FoodyStatsPanel';
 import { DynamicBufferSettings } from '@/components/DynamicBufferSettings';
 import { SectorsManager } from '@/components/SectorsManager';
+ import { useSectors } from '@/hooks/useSectors';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -30,7 +32,10 @@ import { toast } from 'sonner';
 export function SettingsDialog() {
   const { settings, isLoading, saveSettings, testFoodyConnection } = useSettings();
   const { bufferSettings, updateBufferSetting, getDayName, isLoading: isLoadingBuffer } = useBufferSettings();
+   const { sectors } = useSectors();
   const { isOwner, isAdmin } = useAuth();
+   // Filter only KDS sectors for edge routing dropdown
+   const kdsSectors = sectors?.filter(s => s.view_type === 'kds') || [];
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<Partial<AppSettings>>({});
   const [showCardapioWebhook, setShowCardapioWebhook] = useState(false);
@@ -873,6 +878,54 @@ export function SettingsDialog() {
                       </div>
                     </div>
                   </div>
+
+                   {/* Edge Routing Configuration */}
+                   <div className="border-t border-border/50 pt-4 mt-6">
+                     <div className="flex items-center gap-2 mb-4">
+                       <Route className="h-4 w-4 text-primary" />
+                       <Label className="text-base font-medium">Roteamento de Bordas Recheadas</Label>
+                     </div>
+                     <p className="text-sm text-muted-foreground mb-4">
+                       Quando configurado, pizzas com borda recheada vão primeiro para o setor selecionado antes de ir para a bancada de produção.
+                     </p>
+
+                     <div className="space-y-4">
+                       <div className="space-y-2">
+                         <Label htmlFor="edge-sector">Setor de Bordas</Label>
+                         <Select
+                           value={(formData as any).kds_edge_sector_id || 'none'}
+                           onValueChange={(value) => {
+                             const sectorId = value === 'none' ? null : value;
+                             setFormData({ ...formData, kds_edge_sector_id: sectorId } as any);
+                             debouncedAutoSave({ kds_edge_sector_id: sectorId });
+                           }}
+                         >
+                           <SelectTrigger className="w-full">
+                             <SelectValue placeholder="Selecione o setor de bordas" />
+                           </SelectTrigger>
+                           <SelectContent>
+                             <SelectItem value="none">(Nenhum - desabilitado)</SelectItem>
+                             {kdsSectors.map((sector) => (
+                               <SelectItem key={sector.id} value={sector.id}>
+                                 {sector.name}
+                               </SelectItem>
+                             ))}
+                           </SelectContent>
+                         </Select>
+                         <p className="text-xs text-muted-foreground">
+                           Itens com borda aparecerão primeiro neste setor. Após o operador clicar em "Enviar para Montagem", o item vai automaticamente para uma bancada de produção.
+                         </p>
+                       </div>
+
+                       {(formData as any).kds_edge_sector_id && (
+                         <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
+                           <p className="text-sm">
+                             <strong>Fluxo ativo:</strong> Pizza com borda → <span className="text-primary font-medium">{kdsSectors.find(s => s.id === (formData as any).kds_edge_sector_id)?.name || 'Setor de Bordas'}</span> → Bancada A/B → Forno → Despacho
+                           </p>
+                         </div>
+                       )}
+                     </div>
+                   </div>
                 </div>
               </TabsContent>
             )}

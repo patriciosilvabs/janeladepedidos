@@ -3,6 +3,14 @@ import { supabase } from '@/integrations/supabase/client';
 import { OrderItemWithOrder, ClaimResult, OvenResult, ItemStatus } from '@/types/orderItems';
 import { useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+ 
+ interface EdgeCompletionResult {
+   success: boolean;
+   error?: string;
+   message?: string;
+   item_id?: string;
+   moved_to_sector?: string;
+ }
 
 interface UseOrderItemsOptions {
   sectorId?: string;
@@ -163,6 +171,46 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     },
   });
 
+   // Complete edge preparation and move to next sector
+   const completeEdgePreparation = useMutation({
+     mutationFn: async (itemId: string) => {
+       if (!user?.id) throw new Error('Usuário não autenticado');
+ 
+       const { data, error } = await supabase.rpc('complete_edge_preparation', {
+         p_item_id: itemId,
+         p_user_id: user.id,
+       });
+ 
+       if (error) throw error;
+       
+       const result = data as unknown as EdgeCompletionResult;
+       if (!result.success) {
+         throw new Error(result.message || 'Não foi possível mover o item');
+       }
+ 
+       return result;
+     },
+     onMutate: async (itemId) => {
+       await queryClient.cancelQueries({ queryKey: ['order-items'] });
+       const previousItems = queryClient.getQueryData<OrderItemWithOrder[]>(['order-items', sectorId, status]);
+ 
+       // Remove item from current sector view (it will appear in new sector)
+       queryClient.setQueryData<OrderItemWithOrder[]>(['order-items', sectorId, status], (old) =>
+         old?.filter((item) => item.id !== itemId) ?? []
+       );
+ 
+       return { previousItems };
+     },
+     onError: (_err, _itemId, context) => {
+       if (context?.previousItems) {
+         queryClient.setQueryData(['order-items', sectorId, status], context.previousItems);
+       }
+     },
+     onSettled: () => {
+       queryClient.invalidateQueries({ queryKey: ['order-items'] });
+     },
+   });
+ 
   // Send to oven
   const sendToOven = useMutation({
     mutationFn: async ({ itemId, ovenTimeSeconds = 120 }: { itemId: string; ovenTimeSeconds?: number }) => {
@@ -297,5 +345,6 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     releaseItem,
     sendToOven,
     markItemReady,
+    completeEdgePreparation,
   };
 }

@@ -10,7 +10,8 @@ import {
   Flame, 
   Clock, 
   User,
-  XCircle 
+   XCircle,
+   ArrowRight
 } from 'lucide-react';
 
 export interface FifoSettings {
@@ -25,6 +26,7 @@ interface KDSItemCardProps {
   onClaim: () => void;
   onRelease: () => void;
   onSendToOven: () => void;
+   onSendToNextSector?: () => void;
   isProcessing: boolean;
   currentUserId?: string;
   fifoSettings?: FifoSettings;
@@ -38,6 +40,7 @@ export function KDSItemCard({
   onClaim,
   onRelease,
   onSendToOven,
+   onSendToNextSector,
   isProcessing,
   currentUserId,
   fifoSettings,
@@ -47,6 +50,8 @@ export function KDSItemCard({
 }: KDSItemCardProps) {
   const [elapsedTime, setElapsedTime] = useState(0);
 
+   const hasNextSector = Boolean(item.next_sector_id);
+ 
   const orderId = item.orders?.cardapioweb_order_id || 
                   item.orders?.external_id || 
                   item.order_id.slice(0, 8);
@@ -155,6 +160,30 @@ export function KDSItemCard({
 
     // in_prep status
     if (isOwnClaim) {
+       // Se tem próximo setor, mostra botão "Enviar para Montagem"
+       if (hasNextSector && onSendToNextSector) {
+         return (
+           <div className="flex gap-1">
+             <Button
+               onClick={onSendToNextSector}
+               className="flex-1 bg-blue-600 hover:bg-blue-700"
+             >
+               <ArrowRight className="h-4 w-4 mr-1" />
+               MONTAGEM
+             </Button>
+             <Button
+               onClick={onRelease}
+               variant="outline"
+               size="icon"
+               className="border-destructive text-destructive hover:bg-destructive/10"
+             >
+               <XCircle className="h-4 w-4" />
+             </Button>
+           </div>
+         );
+       }
+ 
+       // Senão, mostra botão normal do forno
       return (
         <div className="flex gap-1">
           <Button

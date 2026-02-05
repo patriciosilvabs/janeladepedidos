@@ -51,6 +51,7 @@ export function SectorQueuePanel({
     releaseItem,
     sendToOven,
     markItemReady,
+    completeEdgePreparation,
   } = useOrderItems({ sectorId, status: statusFilter });
 
   const handleClaim = async (itemId: string) => {
@@ -101,6 +102,18 @@ export function SectorQueuePanel({
     }
   };
 
+   const handleSendToNextSector = async (itemId: string) => {
+     setProcessingId(itemId);
+     try {
+       await completeEdgePreparation.mutateAsync(itemId);
+       // Item movido para próximo setor - feedback visual automático
+     } catch (error: any) {
+       console.error('Erro ao enviar para montagem:', error.message);
+     } finally {
+       setProcessingId(null);
+     }
+   };
+ 
   // Filter items by status for display
   const displayItems = useMemo(() => {
     return [...items].sort((a, b) => {
@@ -214,6 +227,7 @@ export function SectorQueuePanel({
                 onClaim={() => handleClaim(item.id)}
                 onRelease={() => handleRelease(item.id)}
                 onSendToOven={() => handleSendToOven(item.id)}
+                onSendToNextSector={() => handleSendToNextSector(item.id)}
                 isProcessing={processingId === item.id}
                 currentUserId={user?.id}
                 fifoSettings={fifoSettings}

@@ -28,10 +28,11 @@ export interface AppSettings {
   kds_fifo_visual_enabled: boolean;
   fifo_warning_minutes: number;
   fifo_critical_minutes: number;
-  fifo_lock_enabled: boolean;
-  kds_edge_keywords: string;
-  kds_flavor_keywords: string;
-}
+ fifo_lock_enabled: boolean;
+   kds_edge_keywords: string;
+   kds_flavor_keywords: string;
+   kds_edge_sector_id: string | null;
+ }
 
 export function useSettings() {
   const queryClient = useQueryClient();
