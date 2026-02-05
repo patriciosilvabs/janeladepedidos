@@ -35,6 +35,7 @@ export interface AppSettings {
   // PrintNode settings
   printnode_enabled: boolean;
   printnode_printer_id: number | null;
+  printnode_dispatch_enabled: boolean;
 }
 
 export function useSettings() {

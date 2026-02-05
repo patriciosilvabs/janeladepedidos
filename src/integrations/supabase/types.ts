@@ -43,6 +43,7 @@ export type Database = {
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
+          printnode_dispatch_enabled: boolean | null
           printnode_enabled: boolean | null
           printnode_printer_id: number | null
           updated_at: string | null
@@ -77,6 +78,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          printnode_dispatch_enabled?: boolean | null
           printnode_enabled?: boolean | null
           printnode_printer_id?: number | null
           updated_at?: string | null
@@ -111,6 +113,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          printnode_dispatch_enabled?: boolean | null
           printnode_enabled?: boolean | null
           printnode_printer_id?: number | null
           updated_at?: string | null
