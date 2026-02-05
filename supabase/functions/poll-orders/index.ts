@@ -82,14 +82,21 @@ async function pollStoreOrders(
   console.log(`[poll-orders] Fetching orders for store "${store.name}" from: ${baseUrl}`);
   
   try {
-    const ordersResponse = await fetch(`${baseUrl}/api/partner/v1/orders?status[]=confirmed`, {
+   // Incluir todos os status relevantes para diferentes tipos de pedido:
+   // - confirmed: Delivery, Retirada, Balcão confirmados
+   // - open: Mesas abertas em consumo
+   // - pending: Pedidos aguardando confirmação
+   const ordersResponse = await fetch(
+     `${baseUrl}/api/partner/v1/orders?status[]=confirmed&status[]=open&status[]=pending`,
+     {
       method: 'GET',
       headers: {
         'X-API-KEY': token,
         'Accept': 'application/json',
         'Content-Type': 'application/json',
       },
-    });
+     }
+   );
 
     if (!ordersResponse.ok) {
       const errorText = await ordersResponse.text();
