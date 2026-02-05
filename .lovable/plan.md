@@ -1,36 +1,38 @@
 
-# Plano: Integrar Impressão Silenciosa com QZ Tray
+# Plano: Impressão Remota via Supabase Realtime
 
-## O que é QZ Tray?
+## Cenário Atual
 
-O QZ Tray é um aplicativo Java que permite que páginas web imprimam diretamente em impressoras locais **sem abrir a janela de diálogo do navegador**. Ideal para operações de cozinha onde a impressão precisa ser instantânea.
+Atualmente, quando o operador do **tablet (KDS de bancada)** clica em "PRONTO", a impressão ocorre **localmente no próprio tablet**. Isso é um problema porque:
 
----
-
-## Situação Atual
-
-O sistema já possui impressão funcionando no `OvenTimerPanel.tsx`, mas usa `window.open()` + `window.print()` que:
-- Abre uma nova janela
-- Exibe o diálogo de impressão do navegador
-- Requer interação manual
+1. O tablet não tem impressora térmica conectada
+2. O QZ Tray não está instalado no tablet
+3. A impressora está no **computador da gestão/despacho**
 
 ---
 
-## Arquitetura da Solução
+## Solução: Fila de Impressão com Realtime
+
+A solução é criar uma **fila de trabalhos de impressão** no banco de dados. Quando o tablet marca um item como pronto, ele **insere um registro** na fila. O computador com QZ Tray **escuta essa fila em tempo real** e executa a impressão.
 
 ```text
-+----------------+       WebSocket        +-------------+
-|  Navegador     | <-------------------> |  QZ Tray    |
-|  (React App)   |    (wss://localhost)  | (Instalado  |
-|                |                        |  no PC)     |
-+----------------+                        +------+------+
-                                                 |
-                                                 | USB/Rede
-                                                 v
-                                          +-------------+
-                                          | Impressora  |
-                                          | Térmica     |
-                                          +-------------+
+┌──────────────────┐                     ┌──────────────────┐
+│    TABLET        │                     │   COMPUTADOR     │
+│  (KDS Bancada)   │                     │   (Despacho)     │
+│                  │                     │   + QZ Tray      │
+│  Clica PRONTO ───┼─────┐               │   + Impressora   │
+│                  │     │               │                  │
+└──────────────────┘     │               │  Escuta Realtime │
+                         │               │        │         │
+                         ▼               │        ▼         │
+              ┌────────────────────┐     │  Recebe job      │
+              │     SUPABASE       │     │        │         │
+              │  ┌──────────────┐  │     │        ▼         │
+              │  │  print_jobs  │──┼─────┼──► Imprime       │
+              │  └──────────────┘  │     │        │         │
+              └────────────────────┘     │        ▼         │
+                                         │  Marca 'printed' │
+                                         └──────────────────┘
 ```
 
 ---
@@ -39,162 +41,214 @@ O sistema já possui impressão funcionando no `OvenTimerPanel.tsx`, mas usa `wi
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `src/lib/qzTray.ts` | **Criar** | Serviço de conexão e impressão com QZ Tray |
-| `src/hooks/useQZTray.ts` | **Criar** | Hook React para gerenciar estado da conexão |
-| `src/components/PrinterSettings.tsx` | **Criar** | UI para selecionar impressora e testar |
-| `src/components/SettingsDialog.tsx` | **Modificar** | Adicionar aba "Impressão" |
-| `src/components/kds/OvenTimerPanel.tsx` | **Modificar** | Substituir impressão do navegador por QZ Tray |
-| `public/qz-tray.js` | **Criar** | Biblioteca JavaScript do QZ Tray |
-| `index.html` | **Modificar** | Carregar script do QZ Tray |
+| Migração SQL | **Criar** | Tabela `print_jobs` com Realtime habilitado |
+| `src/hooks/usePrintJobQueue.ts` | **Criar** | Hook para escutar e processar jobs de impressão |
+| `src/hooks/useQZTray.ts` | **Modificar** | Adicionar função `queuePrintJob` para inserir na fila |
+| `src/components/kds/OvenTimerPanel.tsx` | **Modificar** | Usar nova lógica: local se tem QZ, remoto se não tem |
+| `src/components/PrinterSettings.tsx` | **Modificar** | Adicionar toggle para "Modo Receptor de Impressão" |
+| `src/App.tsx` ou `Layout` | **Modificar** | Inicializar listener de impressão quando em modo receptor |
 
 ---
 
-## Detalhes Técnicos
-
-### 1. Biblioteca QZ Tray (`public/qz-tray.js`)
-Copiar a biblioteca oficial do QZ Tray para o projeto (arquivo público que será carregado no HTML).
-
-### 2. Serviço de Impressão (`src/lib/qzTray.ts`)
-
-```typescript
-// Funções principais:
-- connect(): Conectar ao QZ Tray local
-- disconnect(): Desconectar
-- getPrinters(): Listar impressoras disponíveis
-- printReceipt(printerName, content): Imprimir comanda
-- getConnectionStatus(): Verificar se está conectado
-```
-
-### 3. Hook React (`src/hooks/useQZTray.ts`)
-
-```typescript
-// Estados gerenciados:
-- isConnected: boolean
-- printers: string[]
-- selectedPrinter: string | null
-- isLoading: boolean
-- error: string | null
-
-// Funções expostas:
-- connect()
-- disconnect()
-- refreshPrinters()
-- printReceipt(item: OrderItemWithOrder)
-- setSelectedPrinter(name: string)
-```
-
-### 4. Configurações de Impressão
-
-Adicionar na tabela `app_settings`:
-- `qz_printer_name`: Nome da impressora selecionada
-- `qz_print_enabled`: Habilitar/desabilitar impressão silenciosa
-
-### 5. Fluxo de Impressão no KDS
-
-```text
-1. Operador clica "PRONTO" no OvenTimerPanel
-2. Sistema chama markItemReady()
-3. Se QZ Tray conectado e configurado:
-   - Envia comanda diretamente para impressora
-   - Sem janelas, sem diálogos
-4. Se QZ Tray não disponível:
-   - Fallback para impressão atual (window.print())
-```
-
----
-
-## Formato da Comanda (ESC/POS)
-
-Para impressoras térmicas, usaremos comandos ESC/POS:
-
-```text
-================================
-        #180706302
-     PIZZARIA CENTRAL
-================================
-
-2x PIZZA CALABRESA G
-   • 1/2 Calabresa
-   • 1/2 Mussarela
-
-BORDA: #Cheddar
-
-⚠️ OBS: SEM CEBOLA
-
---------------------------------
-Cliente: JOÃO SILVA
-Bairro: Manaíra
---------------------------------
-        05/02/2026 14:30
-================================
-```
-
----
-
-## Pré-requisitos do Usuário
-
-Antes de usar, o usuário precisa:
-1. Baixar e instalar o QZ Tray em: https://qz.io/download/
-2. Executar o QZ Tray (ícone na bandeja do sistema)
-3. Configurar a impressora no painel de Configurações do app
-
----
-
-## Interface de Configuração
-
-Nova aba "Impressão" nas Configurações:
-
-```text
-┌─────────────────────────────────────────┐
-│ 🖨️ Configuração de Impressão           │
-├─────────────────────────────────────────┤
-│                                         │
-│ Status: ● Conectado ao QZ Tray          │
-│                                         │
-│ Impressora: [Dropdown com lista]    ▼   │
-│                                         │
-│ [🔄 Atualizar Lista] [🧪 Imprimir Teste]│
-│                                         │
-│ ☑️ Imprimir automaticamente ao marcar   │
-│    item como pronto                     │
-│                                         │
-│ ─────────────────────────────────────   │
-│ ⚠️ Pré-requisitos:                      │
-│ 1. Instale o QZ Tray: qz.io/download    │
-│ 2. Execute o aplicativo                 │
-│ 3. Permita a conexão quando solicitado  │
-└─────────────────────────────────────────┘
-```
-
----
-
-## Migração de Banco de Dados
+## Estrutura da Tabela `print_jobs`
 
 ```sql
--- Adicionar colunas de configuração de impressão
-ALTER TABLE app_settings 
-ADD COLUMN IF NOT EXISTS qz_printer_name text,
-ADD COLUMN IF NOT EXISTS qz_print_enabled boolean DEFAULT false;
+CREATE TABLE print_jobs (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  order_item_id uuid REFERENCES order_items(id) ON DELETE CASCADE,
+  item_data jsonb NOT NULL,           -- Dados completos para impressão
+  status text DEFAULT 'pending',      -- pending, printing, printed, failed
+  created_at timestamptz DEFAULT now(),
+  printed_at timestamptz,
+  printer_name text,                  -- Qual impressora processou
+  error_message text                  -- Se falhou, motivo
+);
+
+-- Habilitar Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE print_jobs;
 ```
 
 ---
 
-## Tratamento de Erros
+## Lógica de Decisão: Local vs Remoto
 
-| Cenário | Comportamento |
-|---------|---------------|
-| QZ Tray não instalado | Mostra aviso na UI, usa fallback |
-| QZ Tray fechado | Tenta reconectar, fallback se falhar |
-| Impressora offline | Notifica usuário, tenta fallback |
-| Erro de impressão | Log + toast de erro, permite retry |
+```text
+┌─────────────────────────────────────────────────────┐
+│            Clicou "PRONTO" no item                  │
+└─────────────────────────────────────────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │ QZ Tray conectado localmente?│
+        └──────────────────────────────┘
+               │                 │
+              SIM               NÃO
+               │                 │
+               ▼                 ▼
+    ┌─────────────────┐  ┌─────────────────────┐
+    │ Imprime local   │  │ Insere print_job    │
+    │ (direto no QZ)  │  │ (impressão remota)  │
+    └─────────────────┘  └─────────────────────┘
+```
+
+---
+
+## Hook: `usePrintJobQueue`
+
+Este hook será usado no **computador receptor** para:
+
+1. Escutar novos jobs via Realtime
+2. Processar cada job com QZ Tray
+3. Atualizar status para `printed` ou `failed`
+
+```typescript
+// Pseudocódigo
+export function usePrintJobQueue(enabled: boolean) {
+  const { printReceipt, isConnected } = useQZTray();
+  
+  useEffect(() => {
+    if (!enabled || !isConnected) return;
+    
+    // Subscribe to print_jobs where status = 'pending'
+    const channel = supabase
+      .channel('print-jobs')
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'print_jobs',
+        filter: 'status=eq.pending'
+      }, async (payload) => {
+        const job = payload.new;
+        
+        try {
+          // Update to 'printing'
+          await updateJobStatus(job.id, 'printing');
+          
+          // Execute print
+          await printReceipt(job.item_data);
+          
+          // Update to 'printed'
+          await updateJobStatus(job.id, 'printed');
+        } catch (error) {
+          await updateJobStatus(job.id, 'failed', error.message);
+        }
+      })
+      .subscribe();
+      
+    return () => supabase.removeChannel(channel);
+  }, [enabled, isConnected]);
+}
+```
+
+---
+
+## Modificações no useQZTray
+
+Adicionar função `queuePrintJob` que:
+
+1. Verifica se QZ está conectado localmente
+2. Se sim: imprime direto
+3. Se não: insere na tabela `print_jobs`
+
+```typescript
+const queuePrintJob = async (item: OrderItemWithOrder) => {
+  // Se QZ está conectado localmente, imprime direto
+  if (isConnected && selectedPrinter) {
+    await printReceipt(item);
+    return;
+  }
+  
+  // Caso contrário, envia para fila remota
+  await supabase.from('print_jobs').insert({
+    order_item_id: item.id,
+    item_data: item,
+    status: 'pending'
+  });
+};
+```
+
+---
+
+## Configuração no PrinterSettings
+
+Adicionar nova seção:
+
+```text
+┌─────────────────────────────────────────────────────┐
+│ 🖨️ Modo de Operação                                │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│ ○ Impressão Local                                   │
+│   Imprime neste computador quando EU clicar PRONTO  │
+│                                                     │
+│ ● Receptor de Impressão Remota                [ON]  │
+│   Recebe comandos de impressão de tablets/bancadas  │
+│   Status: 3 jobs processados hoje                   │
+│                                                     │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## Fluxo Completo
+
+1. **Tablet (Bancada)**:
+   - Operador clica PRONTO no item
+   - Sistema detecta que QZ não está conectado
+   - Insere registro em `print_jobs`
+
+2. **Computador (Despacho)**:
+   - Está com "Receptor de Impressão" ativado
+   - Recebe o job via Realtime
+   - Executa impressão no QZ Tray
+   - Atualiza status para `printed`
+
+3. **Fallback**:
+   - Se nenhum receptor estiver online
+   - Job fica pendente até alguém processar
+   - Pode mostrar alerta visual de jobs pendentes
+
+---
+
+## Configurações Adicionais no Banco
+
+Adicionar em `app_settings`:
+
+```sql
+ALTER TABLE app_settings 
+ADD COLUMN IF NOT EXISTS print_receiver_enabled boolean DEFAULT false;
+```
+
+---
+
+## Limpeza Automática
+
+Jobs antigos (>24h) serão limpos automaticamente:
+
+```sql
+-- Trigger ou cron job para limpar jobs antigos
+DELETE FROM print_jobs 
+WHERE created_at < now() - interval '24 hours'
+  AND status IN ('printed', 'failed');
+```
 
 ---
 
 ## Benefícios
 
-1. **Impressão instantânea** - Sem cliques extras
-2. **Sem janelas popup** - Experiência limpa
-3. **Suporte a múltiplas impressoras** - Configurável
-4. **Fallback automático** - Sempre funciona
-5. **Comandos ESC/POS** - Layout otimizado para térmicas
+1. **Sem dependência de rede local** - Funciona via internet
+2. **Múltiplos tablets** - Todos enviam para mesma fila
+3. **Múltiplos receptores** - Pode ter backup de impressoras
+4. **Auditoria** - Histórico de impressões no banco
+5. **Resiliente** - Jobs não se perdem se PC reiniciar
 
+---
+
+## Resumo das Mudanças
+
+| Componente | Mudança |
+|------------|---------|
+| **Banco** | Nova tabela `print_jobs` + coluna `print_receiver_enabled` |
+| **Tablet/KDS** | Insere na fila ao invés de imprimir local |
+| **Computador** | Escuta fila e processa impressões |
+| **UI Settings** | Toggle para ativar modo receptor |
