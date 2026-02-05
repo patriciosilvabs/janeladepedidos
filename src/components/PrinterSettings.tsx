@@ -38,7 +38,7 @@ export function PrinterSettings() {
 
   // Auto-save settings with debounce
   const debouncedSave = useDebouncedCallback(
-    (updates: { printnode_printer_id?: number | null; printnode_enabled?: boolean }) => {
+    (updates: Partial<{ printnode_printer_id: number | null; printnode_enabled: boolean; printnode_dispatch_enabled: boolean }>) => {
       saveSettings.mutate(updates as any, {
         onSuccess: () => toast.success('Configuração salva', { duration: 2000 }),
         onError: () => toast.error('Erro ao salvar configuração'),
@@ -160,6 +160,23 @@ Status: OK
             <Switch
               checked={printEnabled}
               onCheckedChange={handleEnabledChange}
+            />
+          </div>
+
+          {/* Dispatch Print Enable/Disable */}
+          <div className="flex items-center justify-between p-4 rounded-lg border border-border/50 bg-muted/30">
+            <div className="space-y-0.5">
+              <Label className="text-base font-medium">Imprimir ao Marcar Pronto no Despacho</Label>
+              <p className="text-sm text-muted-foreground">
+                Quando ativo, um ticket será impresso automaticamente ao clicar em PRONTO no painel do forno
+              </p>
+            </div>
+            <Switch
+              checked={settings?.printnode_dispatch_enabled || false}
+              onCheckedChange={(checked) => {
+                debouncedSave({ printnode_dispatch_enabled: checked });
+              }}
+              disabled={!printEnabled}
             />
           </div>
 

@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
+import { usePrintNode } from '@/hooks/usePrintNode';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Flame, Check, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
 import { OrderItemWithOrder } from '@/types/orderItems';
+import { formatDispatchTicket } from '@/utils/printTicket';
 
 interface OvenItemRowProps {
   item: OrderItemWithOrder;
@@ -147,12 +149,18 @@ interface OvenTimerPanelProps {
 export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { inOvenItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
   const { settings } = useSettings();
+  const { printRaw } = usePrintNode();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Get oven time from settings
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
+  
+  // PrintNode settings
+  const printEnabled = settings?.printnode_enabled ?? false;
+  const dispatchPrintEnabled = settings?.printnode_dispatch_enabled ?? false;
+  const printerId = settings?.printnode_printer_id ?? null;
   
   // Limpar timeout no unmount
   useEffect(() => {
@@ -167,6 +175,9 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     // Evitar cliques duplos - bloquear se qualquer item já está sendo processado
     if (processingId) return;
     
+    // Find the item to print before marking ready
+    const itemToPrint = inOvenItems.find(i => i.id === itemId);
+    
     setProcessingId(itemId);
     
     // Timeout de segurança: liberar após 5 segundos para evitar travamento
@@ -176,6 +187,17 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     
     try {
       await markItemReady.mutateAsync(itemId);
+      
+      // Print dispatch ticket if enabled
+      if (printEnabled && dispatchPrintEnabled && printerId && itemToPrint) {
+        try {
+          const ticketContent = formatDispatchTicket(itemToPrint);
+          await printRaw(printerId, ticketContent, `Despacho #${itemToPrint.orders?.cardapioweb_order_id || itemId.slice(0, 8)}`);
+        } catch (printError) {
+          console.error('Erro ao imprimir ticket de despacho:', printError);
+          // Don't block the flow for print errors
+        }
+      }
     } catch (error) {
       console.error('Erro ao marcar item como pronto:', error);
     } finally {
