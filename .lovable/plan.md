@@ -1,39 +1,37 @@
 
+## Plan: Fix CORS Error for sync-orders-status Edge Function
 
-## Plan: Fix CORS and React Ref Warnings
+### Problem
 
-### Problem Analysis
+The `sync-orders-status` edge function is failing CORS preflight checks. The error occurs because:
 
-Two issues were identified in the console:
-
-1. **CORS Error on PrintNode Edge Function**: The `callPrintNodeApiWithParams` function uses raw `fetch()` with an incorrect environment variable name (`VITE_SUPABASE_PUBLISHABLE_KEY` should be `VITE_SUPABASE_ANON_KEY`). This causes the edge function call to fail on preflight.
-
-2. **React Ref Warnings**: Several function components are being passed refs without using `React.forwardRef`. These warnings occur because parent components (like Dialog, Select) try to pass refs to child components.
-
----
+1. **Missing config entry**: The function is not listed in `supabase/config.toml`, so `verify_jwt` defaults to `true`
+2. When `verify_jwt = true`, the OPTIONS preflight request fails because it has no authorization token
 
 ### Solution
 
-#### Part 1: Fix PrintNode API Call
+Add the `sync-orders-status` function to `supabase/config.toml` with `verify_jwt = false`.
 
-Edit `src/hooks/usePrintNode.ts`:
-- Change `VITE_SUPABASE_PUBLISHABLE_KEY` to `VITE_SUPABASE_ANON_KEY`
-- Ensure the fetch call uses the correct Supabase anon key
+**Edit `supabase/config.toml`:**
 
-**Change (line 99):**
-```typescript
-// FROM:
-'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+```toml
+project_id = "cpxuluerkzpynlcdnxcq"
 
-// TO:
-'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+[functions.redistribute-items]
+verify_jwt = false
+ 
+[functions.webhook-orders]
+verify_jwt = false
+
+[functions.printnode]
+verify_jwt = false
+
+[functions.sync-orders-status]
+verify_jwt = false
 ```
 
----
+### Technical Details
 
-### Technical Notes
-
-- The React ref warnings are coming from Radix UI primitives and are cosmetic (non-breaking). They typically occur when the library version has components not wrapped with forwardRef. These warnings do not affect functionality and will likely be resolved in future Radix UI updates.
-
-- The CORS fix is the critical change that will allow the PrintNode integration to work properly.
-
+- The edge function already implements proper authentication checks in code using the Supabase client
+- Setting `verify_jwt = false` allows the OPTIONS preflight to pass, while the actual POST requests still validate the user's session via the authorization header
+- This is the standard pattern used by other functions in this project (webhook-orders, redistribute-items, printnode)
