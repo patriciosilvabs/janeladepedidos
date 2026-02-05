@@ -114,25 +114,37 @@ async function pollStoreOrders(
     
     console.log(`[poll-orders] Store "${store.name}": ${ordersData.length} pedidos encontrados`);
 
-    for (const order of ordersData) {
+    // OTIMIZAÇÃO 1: Filtrar pedidos já finalizados ANTES de processar
+    const ignoredStatuses = ['closed', 'canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
+    const activeOrders = ordersData.filter(order => {
+      const status = (order.status || '').toLowerCase();
+      return !ignoredStatuses.includes(status);
+    });
+    
+    console.log(`[poll-orders] ${activeOrders.length} active orders out of ${ordersData.length} total`);
+    
+    // OTIMIZAÇÃO 2: Buscar todos os external_ids existentes de uma vez (1 query em vez de N)
+    const orderIds = activeOrders.map(o => String(o.id));
+    const { data: existingOrders } = await supabase
+      .from('orders')
+      .select('external_id')
+      .eq('store_id', store.id)
+      .in('external_id', orderIds);
+    
+    const existingSet = new Set(existingOrders?.map((o: { external_id: string | null }) => o.external_id) || []);
+    
+    // OTIMIZAÇÃO 3: Filtrar apenas pedidos novos
+    const newOrders = activeOrders.filter(o => !existingSet.has(String(o.id)));
+    
+    console.log(`[poll-orders] ${newOrders.length} new orders to import`);
+    
+    // Processar apenas pedidos novos
+    for (const order of newOrders) {
       result.processed++;
       const cardapiowebOrderId = String(order.id);
 
-      // Check if order already exists - CORRIGIDO: usar external_id em vez de cardapioweb_order_id
-      // O external_id contém o ID interno da API (ex: 180702725), que é o que usamos para verificar duplicatas
-      const { data: existingOrder } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('external_id', cardapiowebOrderId)
-        .maybeSingle();
-
-      if (existingOrder) {
-        // Order already exists, skip silently to reduce log noise
-        continue;
-      }
-
-      // Fetch order details
-      console.log(`[poll-orders] Fetching details for order: ${order.id}, code from list: ${order.code}`);
+      // Fetch order details only for new orders
+      console.log(`[poll-orders] Fetching details for NEW order: ${order.id}`);
       let orderDetails = order;
       
       try {
@@ -147,7 +159,6 @@ async function pollStoreOrders(
 
         if (detailsResponse.ok) {
           orderDetails = await detailsResponse.json();
-          console.log(`[poll-orders] Order details raw:`, JSON.stringify(orderDetails, null, 2));
         }
       } catch (err) {
         console.error(`[poll-orders] Error fetching order details:`, err);
@@ -155,16 +166,6 @@ async function pollStoreOrders(
 
       // Use display_id from details, fallback to code or order id
       const orderCode = orderDetails.display_id?.toString() || orderDetails.code || order.display_id?.toString() || String(order.id);
-      console.log(`[poll-orders] Final order code to save: ${orderCode}`);
-
-       // NOVO: Ignorar pedidos já finalizados na API do CardapioWeb
-       const apiStatus = (orderDetails.status || order.status || '').toLowerCase();
-       const ignoredStatuses = ['closed', 'canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
- 
-       if (ignoredStatuses.includes(apiStatus)) {
-         console.log(`[poll-orders] Skipping order ${cardapiowebOrderId} - status "${apiStatus}" (already finalized)`);
-         continue;
-       }
  
       // Verificar se é delivery para extrair endereço
       const isDelivery = order.order_type === 'delivery';
