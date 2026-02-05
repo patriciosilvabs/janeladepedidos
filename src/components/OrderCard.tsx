@@ -10,6 +10,7 @@ const getOrderTypeBadge = (type?: string) => {
     'delivery': { label: '🛵 Delivery', className: 'bg-blue-500 hover:bg-blue-500' },
     'dine_in': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
     'takeaway': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },
+    'takeout': { label: '📦 Retirada', className: 'bg-orange-500 hover:bg-orange-500' },
     'counter': { label: '🏪 Balcão', className: 'bg-purple-500 hover:bg-purple-500' },
     'table': { label: '🍽️ Mesa', className: 'bg-green-500 hover:bg-green-500' },
   };

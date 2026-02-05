@@ -10,6 +10,7 @@ function getOrderTypeLabel(orderType: string): string {
     'delivery': 'Delivery',
     'dine_in': 'Mesa',
     'takeaway': 'Retirada',
+    'takeout': 'Retirada',
     'counter': 'Balcão',
     'table': 'Mesa',
   };
