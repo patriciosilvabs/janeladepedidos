@@ -366,29 +366,51 @@
      const eventType = body.event_type;
  
      console.log(`Event: ${eventType}, order_id: ${body.order_id}`);
+     console.log(`Full payload: ${JSON.stringify(body).substring(0, 500)}`);
  
      let result: { action: string; [key: string]: unknown };
  
-     switch (eventType) {
+     // Normalize event type for matching (case-insensitive, handle both formats)
+     const normalizedEvent = eventType?.toLowerCase().replace(/_/g, '.');
+ 
+     switch (normalizedEvent) {
        case 'order.placed':
        case 'order.confirmed':
+       case 'order.created':
          result = await handleOrderPlaced(supabase, body, store as StoreRecord);
          break;
  
        case 'order.cancelled':
        case 'order.closed':
+       case 'order.canceled':
          result = await handleOrderCancelledOrClosed(supabase, body, eventType);
          break;
  
        case 'order.ready':
        case 'order.dispatched':
        case 'order.delivered':
+       case 'order.status.updated':
          result = await handleOrderStatusChange(supabase, body);
          break;
  
        default:
-         console.log(`Unknown event type: ${eventType} - ignoring`);
-         result = { action: 'ignored', reason: 'unknown_event_type' };
+         // For ORDER_STATUS_UPDATED or other status events, try to handle based on order status
+         if (body.order?.status || body.order_status) {
+           console.log(`Handling status-based event: ${eventType}, status: ${body.order?.status || body.order_status}`);
+           const status = body.order?.status || body.order_status;
+           
+           // If order has status 'confirmed' or 'pending', treat as new order
+           if (status === 'confirmed' || status === 'pending' || status === 'waiting_confirmation') {
+             result = await handleOrderPlaced(supabase, body, store as StoreRecord);
+           } else if (status === 'cancelled' || status === 'closed' || status === 'canceled') {
+             result = await handleOrderCancelledOrClosed(supabase, body, eventType);
+           } else {
+             result = await handleOrderStatusChange(supabase, body);
+           }
+         } else {
+           console.log(`Unknown event type: ${eventType} - ignoring`);
+           result = { action: 'ignored', reason: 'unknown_event_type' };
+         }
      }
  
      return new Response(
