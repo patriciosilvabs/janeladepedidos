@@ -123,19 +123,33 @@ async function pollStoreOrders(
     const orderTypesFound = [...new Set(ordersData.map(o => o.order_type))];
     console.log(`[poll-orders] Order types found:`, orderTypesFound.join(', '));
 
+    // Log específico para pedidos de mesa
+    const tableOrders = ordersData.filter(o => tableOrderTypes.includes((o.order_type || '').toLowerCase()));
+    if (tableOrders.length > 0) {
+      console.log(`[poll-orders] Table orders found: ${tableOrders.length}`);
+      tableOrders.slice(0, 3).forEach(o => {
+        console.log(`[poll-orders] Table order ${o.id}: type=${o.order_type}, status=${o.status}`);
+      });
+    }
+
     // Filtrar pedidos ativos OU pedidos de mesa (que chegam como closed)
-    const ignoredStatuses = ['canceled', 'cancelled', 'rejected', 'delivered', 'dispatched'];
+    const ignoredStatuses = ['canceled', 'cancelled', 'rejected'];
     const activeOrders = ordersData.filter(order => {
       const status = (order.status || '').toLowerCase();
       const orderType = (order.order_type || '').toLowerCase();
       
-      // Permitir pedidos de mesa mesmo com status closed
-      if (tableOrderTypes.includes(orderType) && status === 'closed') {
-        return true;
+      // Permitir pedidos de mesa com qualquer status exceto cancelados
+      if (tableOrderTypes.includes(orderType)) {
+        const isIgnored = ignoredStatuses.includes(status);
+        if (!isIgnored) {
+          console.log(`[poll-orders] Including table order ${order.id} with status: ${status}`);
+        }
+        return !isIgnored;
       }
       
-      // Para outros tipos, ignorar status finalizados (incluindo closed)
-      return !ignoredStatuses.includes(status) && status !== 'closed';
+      // Para outros tipos, ignorar status finalizados
+      const extendedIgnored = [...ignoredStatuses, 'closed', 'delivered', 'dispatched'];
+      return !extendedIgnored.includes(status);
     });
     
     console.log(`[poll-orders] ${activeOrders.length} active orders out of ${ordersData.length} total`);
