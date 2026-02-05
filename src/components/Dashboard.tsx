@@ -276,64 +276,72 @@ export function Dashboard() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
-      {/* Polling Status Bar */}
-      {pollingEnabled && (
-        <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <RefreshCw className={cn("h-4 w-4", isPolling && "animate-spin")} />
-            <span>
-              {isPolling ? 'Sincronizando...' : lastSync 
-                ? `Última sincronização: ${lastSync.toLocaleTimeString('pt-BR')}`
-                : 'Aguardando sincronização...'}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Manual Cleanup Button */}
-            <Button
-              onClick={handleManualCleanup}
-              disabled={manualCleanup.isPending}
+      {/* Action Bar - Always visible */}
+      <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          {pollingEnabled && (
+            <>
+              <RefreshCw className={cn("h-4 w-4", isPolling && "animate-spin")} />
+              <span>
+                {isPolling ? 'Sincronizando...' : lastSync 
+                  ? `Última sincronização: ${lastSync.toLocaleTimeString('pt-BR')}`
+                  : 'Aguardando sincronização...'}
+              </span>
+            </>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Always visible */}
+          <Button
+            onClick={handleManualCleanup}
+            disabled={manualCleanup.isPending}
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Trash2 className={cn("h-4 w-4 mr-1", manualCleanup.isPending && "animate-pulse")} />
+            {manualCleanup.isPending ? 'Limpando...' : 'Limpar Pedidos'}
+          </Button>
+
+          {ordersWithErrors.length > 0 && (
+            <Button 
+              onClick={handleCleanupErrors}
+              disabled={cleanupErrors.isPending}
               variant="ghost"
               size="sm"
-              className="text-muted-foreground hover:text-foreground"
+              className="text-destructive hover:text-destructive"
             >
-              <Trash2 className={cn("h-4 w-4 mr-1", manualCleanup.isPending && "animate-pulse")} />
-              {manualCleanup.isPending ? 'Limpando...' : 'Limpar Pedidos'}
+              <Trash2 className={cn("h-4 w-4 mr-1", cleanupErrors.isPending && "animate-pulse")} />
+              Limpar {ordersWithErrors.length} com erro
             </Button>
+          )}
 
-            {ordersWithErrors.length > 0 && (
+          {/* Only when CardápioWeb is enabled */}
+          {pollingEnabled && (
+            <>
               <Button 
-                onClick={handleCleanupErrors}
-                disabled={cleanupErrors.isPending}
+                onClick={handleSyncStatus}
+                disabled={syncOrdersStatus.isPending}
                 variant="ghost"
                 size="sm"
-                className="text-destructive hover:text-destructive"
+                className="text-orange-600 hover:text-orange-500"
               >
-                <Trash2 className={cn("h-4 w-4 mr-1", cleanupErrors.isPending && "animate-pulse")} />
-                Limpar {ordersWithErrors.length} com erro
+                <RefreshCw className={cn("h-4 w-4 mr-1", syncOrdersStatus.isPending && "animate-spin")} />
+                Sincronizar Status
               </Button>
-            )}
-            <Button 
-              onClick={handleSyncStatus}
-              disabled={syncOrdersStatus.isPending}
-              variant="ghost"
-              size="sm"
-              className="text-orange-600 hover:text-orange-500"
-            >
-              <RefreshCw className={cn("h-4 w-4 mr-1", syncOrdersStatus.isPending && "animate-spin")} />
-              Sincronizar Status
-            </Button>
-            <Button 
-              onClick={manualPoll}
-              disabled={isPolling}
-              variant="ghost"
-              size="sm"
-              className="text-primary hover:text-primary/80"
-            >
-              Buscar novos pedidos
-            </Button>
-          </div>
+              <Button 
+                onClick={manualPoll}
+                disabled={isPolling}
+                variant="ghost"
+                size="sm"
+                className="text-primary hover:text-primary/80"
+              >
+                Buscar novos pedidos
+              </Button>
+            </>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Oven Timer Panel - visible when there are items in oven */}
       {inOvenItems.length > 0 && (
