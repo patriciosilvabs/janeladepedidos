@@ -103,10 +103,13 @@ export function SectorQueuePanel({
 
   // Filter items by status for display
   const displayItems = useMemo(() => {
-   // Ordenar APENAS por created_at para manter posição fixa
-   // Cards só saem da tela ao ir para o forno (status muda para 'in_oven')
     return [...items].sort((a, b) => {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      const timeA = new Date(a.created_at).getTime();
+      const timeB = new Date(b.created_at).getTime();
+      // Ordenação primária por created_at
+      if (timeA !== timeB) return timeA - timeB;
+      // Ordenação secundária por ID para estabilidade absoluta
+      return a.id.localeCompare(b.id);
     });
   }, [items]);
 
