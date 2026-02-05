@@ -39,7 +39,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
             address,
             stores(id, name)
           ),
-          sectors(id, name)
+      sectors!order_items_assigned_sector_id_fkey(id, name)
         `)
         .order('created_at', { ascending: true });
 
