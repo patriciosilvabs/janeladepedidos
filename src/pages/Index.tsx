@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Header } from '@/components/Header';
 import { Dashboard } from '@/components/Dashboard';
 import { DispatchDashboard } from '@/components/DispatchDashboard';
@@ -18,6 +18,10 @@ const Index = () => {
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+  
+  // Track if we've successfully loaded content before
+  // to prevent showing loading spinner during brief reloads
+  const hasLoadedRef = useRef(false);
 
   // Determine view types early for use in effects
   const isKDSSector = userSector?.view_type === 'kds';
@@ -47,13 +51,25 @@ const Index = () => {
   }, []);
 
   // Show loading while auth or sector data is loading
-  if (authLoading || sectorLoading || settingsLoading) {
+  const isLoading = authLoading || sectorLoading || settingsLoading;
+  
+  // Mark as loaded once we have all data
+  if (!isLoading && user) {
+    hasLoadedRef.current = true;
+  }
+  
+  // Only show loading spinner on initial load
+  // If we've loaded before, keep showing the last content
+  if (isLoading && !hasLoadedRef.current) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
+  
+  // If loading but we've loaded before, continue showing content
+  // This prevents flash during token refresh
 
   // Determine which dashboard to show based on user's sector
   

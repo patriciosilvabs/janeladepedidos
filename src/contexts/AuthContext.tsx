@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useCallback, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -24,12 +24,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<AppRole | null>(null);
   const [loading, setLoading] = useState(true);
   
-  // Use refs to avoid multiple initializations and track state without causing re-renders
+  // Use refs to avoid multiple initializations and track state
   const initializedRef = useRef(false);
   const mountedRef = useRef(true);
   const lastEventTimeRef = useRef<number>(0);
+  const previousUserRef = useRef<User | null>(null);
 
-  const fetchUserRole = async (userId: string) => {
+  const fetchUserRole = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('user_roles')
@@ -43,7 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       console.error('Error fetching user role:', error);
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Prevent double initialization (React StrictMode or fast remounts)
@@ -64,10 +65,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
         lastEventTimeRef.current = now;
         
-        // Update state for any auth event
+        // During token refresh, ignore null sessions temporarily
+        // This prevents the flash of redirecting to /auth during refresh
+        if (event === 'TOKEN_REFRESHED' && !currentSession && previousUserRef.current) {
+          // Token refresh returned null but we had a user - likely transient state
+          // Don't update state, wait for the next event
+          return;
+        }
+        
+        // Track previous user for comparison
+        previousUserRef.current = currentSession?.user ?? null;
+        
+        // Update state
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
-        setLoading(false);
+        
+        // Only set loading to false on definitive events
+        // This prevents premature redirect during token refresh
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+          setLoading(false);
+        } else if (event === 'TOKEN_REFRESHED' && currentSession) {
+          // Token refreshed successfully with valid session
+          setLoading(false);
+        }
         
         if (currentSession?.user) {
           // Defer role fetch to avoid Supabase deadlock
