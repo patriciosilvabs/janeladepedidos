@@ -189,9 +189,9 @@ export function KDSItemCard({
       isFifoEnabled ? getUrgencyColor() : getDefaultStatusColor(),
     )}>
       {/* Badge de posição na fila (modo FIFO) */}
-      {isFifoEnabled && queuePosition && (
-         <div className="absolute -top-3 -left-3 w-8 h-8 rounded-full flex items-center justify-center text-sm font-extrabold bg-primary text-primary-foreground shadow-lg">
-          #{queuePosition}
+      {isFifoEnabled && isFirstInQueue && item.status === 'pending' && (
+        <div className="absolute -top-3 -left-3 px-2 py-1 rounded-md flex items-center justify-center text-xs font-extrabold bg-primary text-primary-foreground shadow-lg">
+          FILA
         </div>
       )}
 
