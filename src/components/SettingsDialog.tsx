@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags, Route, Printer, RefreshCw } from 'lucide-react';
+import { Settings, Eye, EyeOff, Loader2, AlertCircle, Copy, Check, Store, Users, Truck, CheckCircle, XCircle, Calendar, Building2, Monitor, Flame, Target, Tags, Route, Printer } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDebouncedCallback } from '@/hooks/useDebouncedCallback';
 import { AppSettings as AppSettingsType } from '@/hooks/useSettings';
@@ -803,36 +803,6 @@ export function SettingsDialog() {
                         </div>
                       </div>
                     )}
-                  </div>
-
-                  {/* Redistribuição automática por inatividade */}
-                  <div className="border-t border-border/50 pt-4 mt-6">
-                    <div className="flex items-center gap-2 mb-4">
-                      <RefreshCw className="h-4 w-4 text-primary" />
-                      <Label className="text-base font-medium">Redistribuição por Inatividade</Label>
-                    </div>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Se ninguém clicar em "Iniciar" dentro do tempo configurado, o item é movido automaticamente para outro setor com operador online.
-                    </p>
-
-                    <div className="space-y-2">
-                      <Label>Tempo máximo pendente antes de redistribuir (minutos)</Label>
-                      <Input
-                        type="number"
-                        min={1}
-                        max={30}
-                        value={(formData as any).pending_redistribution_minutes ?? 3}
-                        onChange={(e) => {
-                          const val = parseInt(e.target.value) || 3;
-                          setFormData({ ...formData, pending_redistribution_minutes: val } as any);
-                          debouncedAutoSave({ pending_redistribution_minutes: val });
-                        }}
-                        className="w-24"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Itens pendentes há mais de {(formData as any).pending_redistribution_minutes ?? 3} minuto(s) serão redistribuídos automaticamente. Verificação ocorre a cada 1 minuto.
-                      </p>
-                    </div>
                   </div>
 
                   {/* Item Classification Keywords */}
