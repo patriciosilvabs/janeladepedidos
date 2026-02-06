@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { Flame, Volume2, VolumeX } from 'lucide-react';
 import { CancellationAlert } from './CancellationAlert';
 import { OrderOvenBlock } from './OrderOvenBlock';
+import { OvenItemRow } from './OvenItemRow';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
 
@@ -142,22 +143,42 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         {sectorId && <CancellationAlert sectorId={sectorId} />}
-        {orderGroups.map((group) => (
-          <OrderOvenBlock
-            key={group.orderId}
-            orderId={group.orderId}
-            orderDisplayId={group.orderDisplayId}
-            storeName={group.storeName}
-            customerName={group.customerName}
-            ovenItems={group.ovenItems}
-            siblingItems={group.siblingItems}
-            onMarkItemReady={handleMarkItemReady}
-            onMasterReady={handleMasterReady}
-            processingId={processingId}
-            audioEnabled={audioEnabled}
-            ovenTimeSeconds={ovenTimeSeconds}
-          />
-        ))}
+        {orderGroups.map((group) => {
+          const totalItems = group.ovenItems.length + group.siblingItems.length;
+          
+          if (totalItems === 1 && group.ovenItems.length === 1) {
+            // Single-item order: render simple row without order header/DESPACHAR
+            return (
+              <OvenItemRow
+                key={group.ovenItems[0].id}
+                item={group.ovenItems[0]}
+                onMarkReady={() => handleMarkItemReady(group.ovenItems[0].id)}
+                isProcessing={processingId === group.ovenItems[0].id}
+                isAnyProcessing={processingId !== null}
+                audioEnabled={audioEnabled}
+                ovenTimeSeconds={ovenTimeSeconds}
+              />
+            );
+          }
+          
+          // Multi-item order: render full block with DESPACHAR
+          return (
+            <OrderOvenBlock
+              key={group.orderId}
+              orderId={group.orderId}
+              orderDisplayId={group.orderDisplayId}
+              storeName={group.storeName}
+              customerName={group.customerName}
+              ovenItems={group.ovenItems}
+              siblingItems={group.siblingItems}
+              onMarkItemReady={handleMarkItemReady}
+              onMasterReady={handleMasterReady}
+              processingId={processingId}
+              audioEnabled={audioEnabled}
+              ovenTimeSeconds={ovenTimeSeconds}
+            />
+          );
+        })}
       </CardContent>
     </Card>
   );
