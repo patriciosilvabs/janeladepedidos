@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
 import { KDSItemCard, FifoSettings } from './KDSItemCard';
+import { CancellationAlert } from './CancellationAlert';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/contexts/AuthContext';
@@ -212,6 +213,9 @@ export function SectorQueuePanel({
         </div>
       </CardHeader>
       <CardContent>
+        {/* Cancellation alerts */}
+        <CancellationAlert sectorId={sectorId} />
+        
         {displayItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <CheckCircle2 className="h-12 w-12 opacity-30 mb-3" />

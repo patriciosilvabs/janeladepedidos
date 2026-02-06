@@ -353,10 +353,10 @@ async function pollStoreOrders(
             }
           );
 
-          // If order not found (404), it was deleted/cancelled
+          // If order not found (404), it was deleted/cancelled - use cancel with alert
           if (statusResponse.status === 404) {
-            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} not found in CardapioWeb, removing...`);
-            await supabase.from('orders').delete().eq('id', order.id);
+            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} not found in CardapioWeb, cancelling with alert...`);
+            await supabase.rpc('cancel_order_with_alert', { p_order_id: order.id });
             result.cancelled++;
             continue;
           }
@@ -366,20 +366,17 @@ async function pollStoreOrders(
             const status = details.order_status || details.status;
             const orderType = (order.order_type || '').toLowerCase();
             
-            // Pedidos de mesa (closed_table, dine_in, table) chegam com status "closed" - isso é normal
-            // Não devemos deletá-los por causa do status closed
             const isTableOrder = tableOrderTypes.includes(orderType);
             
-            // Se for pedido de mesa com status closed, é normal - não deletar
             if (isTableOrder && status === 'closed') {
               continue;
             }
             
-            // Para outros tipos ou status de cancelamento, remover
+            // For cancellation statuses, use cancel with alert
             if (['cancelled', 'canceled', 'rejected'].includes(status) || 
                 (!isTableOrder && status === 'closed')) {
-              console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has status "${status}", removing...`);
-              await supabase.from('orders').delete().eq('id', order.id);
+              console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has status "${status}", cancelling with alert...`);
+              await supabase.rpc('cancel_order_with_alert', { p_order_id: order.id });
               result.cancelled++;
             }
           }
