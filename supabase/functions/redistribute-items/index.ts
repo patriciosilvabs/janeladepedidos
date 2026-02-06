@@ -17,9 +17,9 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // Parse request body
-    const { offline_sector_id, cleanup_stale, cleanup_stale_pending } = await req.json().catch(() => ({}));
+    const { offline_sector_id, cleanup_stale } = await req.json().catch(() => ({}));
 
-    console.log('[redistribute-items] Request received:', { offline_sector_id, cleanup_stale, cleanup_stale_pending });
+    console.log('[redistribute-items] Request received:', { offline_sector_id, cleanup_stale });
 
     // Option 1: Cleanup stale presence and redistribute offline sectors
     if (cleanup_stale) {
@@ -86,49 +86,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Option 2: Cleanup stale pending items (items pending too long without anyone starting)
-    if (cleanup_stale_pending) {
-      // Read timeout from app_settings
-      const { data: settingsData, error: settingsError } = await supabase
-        .from('app_settings')
-        .select('pending_redistribution_minutes')
-        .eq('id', 'default')
-        .maybeSingle();
-
-      if (settingsError) {
-        console.error('[redistribute-items] Error reading settings:', settingsError);
-        throw settingsError;
-      }
-
-      const timeoutMinutes = settingsData?.pending_redistribution_minutes ?? 3;
-
-      console.log(`[redistribute-items] Checking stale pending items (timeout: ${timeoutMinutes}min)`);
-
-      const { data: redistributed, error: redistError } = await supabase.rpc(
-        'redistribute_stale_pending_items',
-        { p_timeout_minutes: timeoutMinutes }
-      );
-
-      if (redistError) {
-        console.error('[redistribute-items] Stale pending redistribution error:', redistError);
-        throw redistError;
-      }
-
-      if (redistributed > 0) {
-        console.log(`[redistribute-items] Redistributed ${redistributed} stale pending items`);
-      }
-
-      return new Response(
-        JSON.stringify({
-          success: true,
-          stale_pending_redistributed: redistributed,
-          timeout_minutes: timeoutMinutes,
-        }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Option 3: Redistribute from specific offline sector
+    // Option 2: Redistribute from specific offline sector
     if (offline_sector_id) {
       const { data: redistributed, error } = await supabase.rpc(
         'redistribute_offline_sector_items',
@@ -152,7 +110,7 @@ Deno.serve(async (req) => {
     }
 
     return new Response(
-      JSON.stringify({ error: 'Missing offline_sector_id, cleanup_stale, or cleanup_stale_pending parameter' }),
+      JSON.stringify({ error: 'Missing offline_sector_id or cleanup_stale parameter' }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
