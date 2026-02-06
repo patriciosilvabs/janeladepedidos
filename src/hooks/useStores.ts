@@ -12,6 +12,7 @@ export interface Store {
   default_region: string | null;
   default_country: string | null;
   allowed_order_types: string[];
+  allowed_categories: string[] | null;
   created_at: string;
   updated_at: string;
 }

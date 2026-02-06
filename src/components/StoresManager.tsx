@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Pencil, Trash2, Store, Eye, EyeOff, Loader2, CheckCircle, XCircle, Copy, ExternalLink } from 'lucide-react';
+import { CategoriesTagInput } from '@/components/CategoriesTagInput';
+import { Plus, Pencil, Trash2, Store, Eye, EyeOff, Loader2, CheckCircle, XCircle, Copy, ExternalLink, X, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,7 @@ const DEFAULT_STORE: StoreInsert = {
   default_region: 'PB',
   default_country: 'BR',
   allowed_order_types: ['delivery', 'takeaway', 'dine_in', 'counter'],
+  allowed_categories: null,
 };
 
 const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
@@ -74,6 +76,7 @@ export function StoresManager() {
       default_region: store.default_region || 'PB',
       default_country: store.default_country || 'BR',
       allowed_order_types: store.allowed_order_types || ['delivery', 'takeaway', 'dine_in', 'counter'],
+      allowed_categories: store.allowed_categories || null,
     });
     setEditingStore(store);
     setShowToken(false);
@@ -444,6 +447,12 @@ export function StoresManager() {
                 })}
               </div>
             </div>
+
+            {/* Categorias Exibidas no Tablet */}
+            <CategoriesTagInput
+              categories={formData.allowed_categories}
+              onChange={(cats) => setFormData({ ...formData, allowed_categories: cats })}
+            />
           </div>
 
           <DialogFooter>

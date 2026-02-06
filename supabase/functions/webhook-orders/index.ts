@@ -31,14 +31,16 @@ const corsHeaders = {
    group?: string;
  }
  
- interface CardapioWebItem {
-   name: string;
-   quantity: number;
-   options?: CardapioWebOption[];
-   observation?: string;
-   unit_price?: number;
-   total_price?: number;
- }
+  interface CardapioWebItem {
+    name: string;
+    quantity: number;
+    options?: CardapioWebOption[];
+    observation?: string;
+    unit_price?: number;
+    total_price?: number;
+    category?: string;
+    category_name?: string;
+  }
  
  interface CardapioWebOrder {
    id: number;
@@ -66,14 +68,15 @@ const corsHeaders = {
    order_status?: string;
  }
  
- interface StoreRecord {
-   id: string;
-   name: string;
-   default_city: string | null;
-   default_region: string | null;
-   default_country: string | null;
-   allowed_order_types: string[] | null;
- }
+  interface StoreRecord {
+    id: string;
+    name: string;
+    default_city: string | null;
+    default_region: string | null;
+    default_country: string | null;
+    allowed_order_types: string[] | null;
+    allowed_categories: string[] | null;
+  }
  
  // ================== HELPERS ==================
  
@@ -204,24 +207,45 @@ const corsHeaders = {
    console.log(`Order created: ${insertedOrder.id}`);
  
    // Create order_items using RPC
-   let itemsCreated = 0;
-   if (order.items && order.items.length > 0) {
-     const { data: itemCount, error: itemsError } = await supabase.rpc(
-       'create_order_items_from_json',
-       {
-         p_order_id: insertedOrder.id,
-         p_items: order.items,
-         p_default_sector_id: null,
-       }
-     );
- 
-     if (itemsError) {
-       console.error('Error creating order items:', itemsError);
-     } else {
-       itemsCreated = itemCount as number;
-       console.log(`Created ${itemsCreated} items for order ${insertedOrder.id}`);
-     }
-   }
+    let itemsCreated = 0;
+    if (order.items && order.items.length > 0) {
+      // Add category to each item and filter by allowed_categories
+      let itemsToCreate = order.items.map(item => ({
+        ...item,
+        category: item.category || item.category_name || '',
+      }));
+
+      // Filter by allowed categories if configured
+      const allowedCategories = store.allowed_categories;
+      if (allowedCategories && allowedCategories.length > 0) {
+        const before = itemsToCreate.length;
+        itemsToCreate = itemsToCreate.filter(item => {
+          const cat = (item.category || '').toLowerCase();
+          return !cat || allowedCategories.some(c => c.toLowerCase() === cat);
+        });
+        console.log(`Category filter: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
+      }
+
+      if (itemsToCreate.length === 0) {
+        console.log('No items remaining after category filter - skipping order item creation');
+      } else {
+        const { data: itemCount, error: itemsError } = await supabase.rpc(
+          'create_order_items_from_json',
+          {
+            p_order_id: insertedOrder.id,
+            p_items: itemsToCreate,
+            p_default_sector_id: null,
+          }
+        );
+
+        if (itemsError) {
+          console.error('Error creating order items:', itemsError);
+        } else {
+          itemsCreated = itemCount as number;
+          console.log(`Created ${itemsCreated} items for order ${insertedOrder.id}`);
+        }
+      }
+    }
  
    return { action: 'created', order_id: insertedOrder.id, items_created: itemsCreated };
  }
@@ -331,6 +355,7 @@ async function fetchOrderFromApi(
         observation: item.notes || item.observation,
         unit_price: item.price || item.unit_price,
         total_price: item.total || item.total_price,
+        category: item.category || item.category_name || '',
       })),
       total: orderData.total,
       delivery_fee: orderData.delivery_fee,
@@ -423,12 +448,12 @@ async function fetchOrderFromApi(
      }
  
      // Find store by API token
-     const { data: store, error: storeError } = await supabase
-       .from('stores')
-       .select('id, name, default_city, default_region, default_country, allowed_order_types')
-       .eq('cardapioweb_api_token', apiToken)
-       .eq('cardapioweb_enabled', true)
-       .maybeSingle();
+      const { data: store, error: storeError } = await supabase
+        .from('stores')
+        .select('id, name, default_city, default_region, default_country, allowed_order_types, allowed_categories')
+        .eq('cardapioweb_api_token', apiToken)
+        .eq('cardapioweb_enabled', true)
+        .maybeSingle();
  
      if (storeError) {
        console.error('Error finding store:', storeError);
