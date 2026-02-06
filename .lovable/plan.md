@@ -1,35 +1,28 @@
 
-## Plano: Separar visualizacao de itens unicos vs pedidos com multiplos itens no Forno
+## Plano: Adicionar barra de rolagem na tela principal do Dashboard
 
-### Problema atual
+### Problema
 
-Todos os pedidos no painel do forno sao exibidos dentro de um `OrderOvenBlock` com cabecalho de pedido, contador de itens e botao "DESPACHAR". Isso e desnecessario para pedidos com apenas 1 pizza -- eles devem aparecer de forma simples, mostrando apenas o sabor com timer e o botao "PRONTO" ao lado.
-
-### Comportamento desejado
-
-- **Pedido com 1 item no forno (sem siblings pendentes):** Exibe apenas o `OvenItemRow` simples -- timer, nome/sabor e botao "PRONTO". Sem cabecalho de pedido, sem bloco agrupado, sem botao "DESPACHAR".
-- **Pedido com 2+ itens (no forno + siblings):** Mantem o `OrderOvenBlock` atual com cabecalho, contador e botao "DESPACHAR".
+O painel do Forno ocupa muito espaco vertical quando ha varios itens. As colunas abaixo (Em Producao, Buffer de Espera, Pedido Pronto, Despachados) ficam cortadas e inacessiveis porque o container pai tem altura fixa sem overflow.
 
 ### Alteracao
 
-**Arquivo: `src/components/kds/OvenTimerPanel.tsx`**
+**Arquivo: `src/components/Dashboard.tsx` (linha 278)**
 
-Na renderizacao dos `orderGroups`, verificar o total de itens do pedido (oven + siblings). Se o pedido tiver apenas 1 item no forno E nenhum sibling pendente/ready, renderizar diretamente o `OvenItemRow` avulso. Caso contrario, renderizar o `OrderOvenBlock` como hoje.
+Adicionar `overflow-y-auto` ao container principal para permitir rolagem vertical quando o conteudo excede a altura da tela.
 
-Logica:
-
+De:
 ```text
-Para cada grupo de pedido:
-  totalItens = ovenItems.length + siblingItems.length
-  Se totalItens == 1:
-    Renderizar OvenItemRow simples (timer + sabor + botao PRONTO)
-  Senao:
-    Renderizar OrderOvenBlock (cabecalho + DESPACHAR)
+<div className="flex flex-col h-[calc(100vh-5rem)]">
 ```
 
-### Detalhes tecnicos
+Para:
+```text
+<div className="flex flex-col h-[calc(100vh-5rem)] overflow-y-auto">
+```
 
-- Apenas o arquivo `OvenTimerPanel.tsx` precisa ser alterado (linhas 145-159)
-- O `OvenItemRow` ja tem toda a logica de timer, botao PRONTO e marcacao de ready -- basta renderiza-lo diretamente
-- O `handleMarkItemReady` ja funciona de forma independente para cada item
-- Nenhuma alteracao em `OrderOvenBlock.tsx` ou `OvenItemRow.tsx`
+### Resultado
+
+- Quando o painel do Forno estiver cheio, o usuario podera rolar a pagina para baixo e ver as quatro colunas normalmente
+- Quando houver poucos itens no forno, o layout continua igual ao atual
+- Nenhuma outra alteracao necessaria
