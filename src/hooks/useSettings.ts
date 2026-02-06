@@ -36,6 +36,8 @@ export interface AppSettings {
   printnode_enabled: boolean;
   printnode_printer_id: number | null;
   printnode_dispatch_enabled: boolean;
+  // Redistribution settings
+  pending_redistribution_minutes: number;
 }
 
 export function useSettings() {

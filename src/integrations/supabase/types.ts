@@ -43,6 +43,7 @@ export type Database = {
           max_order_age_hours: number | null
           max_orders_per_group: number | null
           oven_time_seconds: number | null
+          pending_redistribution_minutes: number | null
           printnode_dispatch_enabled: boolean | null
           printnode_enabled: boolean | null
           printnode_printer_id: number | null
@@ -78,6 +79,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          pending_redistribution_minutes?: number | null
           printnode_dispatch_enabled?: boolean | null
           printnode_enabled?: boolean | null
           printnode_printer_id?: number | null
@@ -113,6 +115,7 @@ export type Database = {
           max_order_age_hours?: number | null
           max_orders_per_group?: number | null
           oven_time_seconds?: number | null
+          pending_redistribution_minutes?: number | null
           printnode_dispatch_enabled?: boolean | null
           printnode_enabled?: boolean | null
           printnode_printer_id?: number | null
@@ -693,6 +696,10 @@ export type Database = {
       mark_order_ready: { Args: { order_id: string }; Returns: undefined }
       redistribute_offline_sector_items: {
         Args: { p_offline_sector_id: string }
+        Returns: number
+      }
+      redistribute_stale_pending_items: {
+        Args: { p_timeout_minutes?: number }
         Returns: number
       }
       release_item_claim: {
