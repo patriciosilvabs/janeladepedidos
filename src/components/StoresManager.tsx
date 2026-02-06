@@ -26,6 +26,13 @@ import {
 import { useStores, Store as StoreType, StoreInsert } from '@/hooks/useStores';
 import { toast } from 'sonner';
 
+const ORDER_TYPE_OPTIONS = [
+  { value: 'delivery', label: 'Delivery' },
+  { value: 'takeaway', label: 'Retirada' },
+  { value: 'dine_in', label: 'Mesa' },
+  { value: 'counter', label: 'Balcão' },
+];
+
 const DEFAULT_STORE: StoreInsert = {
   name: '',
   cardapioweb_api_token: '',
@@ -35,6 +42,7 @@ const DEFAULT_STORE: StoreInsert = {
   default_city: 'João Pessoa',
   default_region: 'PB',
   default_country: 'BR',
+  allowed_order_types: ['delivery', 'takeaway', 'dine_in', 'counter'],
 };
 
 const WEBHOOK_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhook-orders`;
@@ -65,6 +73,7 @@ export function StoresManager() {
       default_city: store.default_city || 'João Pessoa',
       default_region: store.default_region || 'PB',
       default_country: store.default_country || 'BR',
+      allowed_order_types: store.allowed_order_types || ['delivery', 'takeaway', 'dine_in', 'counter'],
     });
     setEditingStore(store);
     setShowToken(false);
@@ -398,6 +407,41 @@ export function StoresManager() {
                   onChange={(e) => setFormData({ ...formData, default_country: e.target.value })}
                   className="text-sm"
                 />
+              </div>
+            </div>
+
+            {/* Tipos de Pedido Aceitos */}
+            <div className="space-y-2">
+              <Label className="text-xs font-medium">Tipos de Pedido Aceitos</Label>
+              <p className="text-xs text-muted-foreground">
+                Apenas pedidos dos tipos selecionados serão importados para esta loja
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {ORDER_TYPE_OPTIONS.map((opt) => {
+                  const isChecked = (formData.allowed_order_types || []).includes(opt.value);
+                  return (
+                    <label
+                      key={opt.value}
+                      className={`flex items-center gap-2 p-2 rounded-md border cursor-pointer transition-colors ${
+                        isChecked ? 'border-primary bg-primary/10' : 'border-border/50 bg-muted/30'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const current = formData.allowed_order_types || [];
+                          const updated = e.target.checked
+                            ? [...current, opt.value]
+                            : current.filter((t) => t !== opt.value);
+                          setFormData({ ...formData, allowed_order_types: updated });
+                        }}
+                        className="rounded border-border"
+                      />
+                      <span className="text-sm">{opt.label}</span>
+                    </label>
+                  );
+                })}
               </div>
             </div>
           </div>

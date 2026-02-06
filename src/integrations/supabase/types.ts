@@ -558,6 +558,7 @@ export type Database = {
       }
       stores: {
         Row: {
+          allowed_order_types: string[] | null
           cardapioweb_api_token: string | null
           cardapioweb_api_url: string | null
           cardapioweb_enabled: boolean | null
@@ -571,6 +572,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allowed_order_types?: string[] | null
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null
           cardapioweb_enabled?: boolean | null
@@ -584,6 +586,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allowed_order_types?: string[] | null
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null
           cardapioweb_enabled?: boolean | null

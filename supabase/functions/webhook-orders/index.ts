@@ -72,6 +72,7 @@ const corsHeaders = {
    default_city: string | null;
    default_region: string | null;
    default_country: string | null;
+   allowed_order_types: string[] | null;
  }
  
  // ================== HELPERS ==================
@@ -162,8 +163,16 @@ const corsHeaders = {
  
    const addressData = buildAddress(order, store);
    const customerName = order.customer?.name || `Pedido #${order.display_id || order.id}`;
- 
-   console.log(`Creating order from webhook: external_id=${externalId}, type=${order.order_type}, customer=${customerName}`);
+   const mappedOrderType = mapOrderType(order.order_type);
+
+   // Check if order type is allowed for this store
+   const allowedTypes = store.allowed_order_types || ['delivery', 'takeaway', 'dine_in', 'counter'];
+   if (!allowedTypes.includes(mappedOrderType)) {
+     console.log(`Order type "${mappedOrderType}" not allowed for store "${store.name}" (allowed: ${allowedTypes.join(', ')})`);
+     return { action: 'ignored', error: `order_type_not_allowed: ${mappedOrderType}` };
+   }
+
+   console.log(`Creating order from webhook: external_id=${externalId}, type=${mappedOrderType}, customer=${customerName}`);
  
    // Insert order
    const { data: insertedOrder, error: insertError } = await supabase
@@ -174,7 +183,7 @@ const corsHeaders = {
        cardapioweb_created_at: order.created_at || payload.created_at,
        customer_name: customerName,
        customer_phone: order.customer?.phone,
-       order_type: mapOrderType(order.order_type),
+       order_type: mappedOrderType,
        store_id: store.id,
        ...addressData,
        items: order.items,
@@ -416,7 +425,7 @@ async function fetchOrderFromApi(
      // Find store by API token
      const { data: store, error: storeError } = await supabase
        .from('stores')
-       .select('id, name, default_city, default_region, default_country')
+       .select('id, name, default_city, default_region, default_country, allowed_order_types')
        .eq('cardapioweb_api_token', apiToken)
        .eq('cardapioweb_enabled', true)
        .maybeSingle();

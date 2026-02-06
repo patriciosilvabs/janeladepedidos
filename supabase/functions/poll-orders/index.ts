@@ -65,6 +65,7 @@ interface Store {
   default_city: string | null;
   default_region: string | null;
   default_country: string | null;
+  allowed_order_types: string[] | null;
 }
 
 async function pollStoreOrders(
@@ -140,10 +141,24 @@ async function pollStoreOrders(
     
     // Status finalizados (para não-mesa)
     const finalizedStatuses = ['closed', 'delivered', 'dispatched'];
+    // Allowed order types for this store
+    const allowedTypes = store.allowed_order_types || ['delivery', 'takeaway', 'dine_in', 'counter'];
     
     const activeOrders = ordersData.filter(order => {
       const status = (order.status || '').toLowerCase();
       const orderType = (order.order_type || '').toLowerCase();
+      
+      // Map to internal type for allowed check
+      const mappedType = orderType === 'takeout' ? 'takeaway' 
+        : orderType === 'onsite' ? 'counter'
+        : (orderType === 'closed_table' || orderType === 'table') ? 'dine_in'
+        : orderType || 'delivery';
+      
+      // Filter by allowed order types for this store
+      if (!allowedTypes.includes(mappedType)) {
+        console.log(`[poll-orders] Ignoring order ${order.id} - type "${mappedType}" not allowed for store "${store.name}"`);
+        return false;
+      }
       
       // Sempre ignorar cancelados
       if (cancelledStatuses.includes(status)) {
