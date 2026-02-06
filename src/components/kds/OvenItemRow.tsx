@@ -113,13 +113,15 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
 
         {/* Item info */}
         <div className="flex-1 min-w-0">
-          {orderDisplayId && (
-            <p className="text-xs text-muted-foreground font-mono mb-0.5">#{orderDisplayId}</p>
-          )}
-          <p className="text-xl font-bold text-foreground truncate">
-            {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
-            {item.product_name}
-          </p>
+          <div className="flex items-baseline gap-2">
+            {orderDisplayId && (
+              <span className="text-xl font-bold text-primary shrink-0">#{orderDisplayId}</span>
+            )}
+            <p className="text-xl font-bold text-foreground truncate">
+              {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
+              {item.product_name}
+            </p>
+          </div>
           {flavorsList.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-1">
               {flavorsList.map((flavor, idx) => (
