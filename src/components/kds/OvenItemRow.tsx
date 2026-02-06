@@ -13,9 +13,10 @@ interface OvenItemRowProps {
   audioEnabled: boolean;
   ovenTimeSeconds: number;
   isMarkedReady?: boolean;
+  orderDisplayId?: string;
 }
 
-export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, audioEnabled, ovenTimeSeconds, isMarkedReady }: OvenItemRowProps) {
+export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, audioEnabled, ovenTimeSeconds, isMarkedReady, orderDisplayId }: OvenItemRowProps) {
   const [countdown, setCountdown] = useState<number>(ovenTimeSeconds);
   const [hasPlayedAlert, setHasPlayedAlert] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -112,6 +113,9 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
 
         {/* Item info */}
         <div className="flex-1 min-w-0">
+          {orderDisplayId && (
+            <p className="text-xs text-muted-foreground font-mono mb-0.5">#{orderDisplayId}</p>
+          )}
           <p className="text-xl font-bold text-foreground truncate">
             {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
             {item.product_name}

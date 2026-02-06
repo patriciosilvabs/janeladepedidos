@@ -157,6 +157,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
                 isAnyProcessing={processingId !== null}
                 audioEnabled={audioEnabled}
                 ovenTimeSeconds={ovenTimeSeconds}
+                orderDisplayId={group.orderDisplayId}
               />
             );
           }
