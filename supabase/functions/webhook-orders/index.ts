@@ -250,46 +250,61 @@ const corsHeaders = {
    return { action: 'created', order_id: insertedOrder.id, items_created: itemsCreated };
  }
  
- async function handleOrderCancelledOrClosed(
-   supabase: SupabaseClient,
-   payload: CardapioWebWebhookPayload,
-   eventType: string
- ): Promise<{ action: string; order_id?: number; error?: string }> {
-   const externalId = payload.order_id.toString();
- 
-   console.log(`Processing ${eventType} for order ${externalId}`);
- 
-   // Find and delete the order
-   const { data: existingOrder, error: findError } = await supabase
-     .from('orders')
-     .select('id, status')
-     .eq('external_id', externalId)
-     .maybeSingle();
- 
-   if (findError) {
-     console.error('Error finding order:', findError);
-     return { action: 'error', error: findError.message };
-   }
- 
-   if (!existingOrder) {
-     console.log(`Order ${externalId} not found - ignoring ${eventType}`);
-     return { action: 'ignored', order_id: payload.order_id };
-   }
- 
-   // Delete the order (cascade will handle order_items)
-   const { error: deleteError } = await supabase
-     .from('orders')
-     .delete()
-     .eq('id', existingOrder.id);
- 
-   if (deleteError) {
-     console.error('Error deleting order:', deleteError);
-     return { action: 'error', error: deleteError.message };
-   }
- 
-   console.log(`Order ${externalId} deleted (event: ${eventType})`);
-   return { action: 'deleted', order_id: payload.order_id };
- }
+  async function handleOrderCancelledOrClosed(
+    supabase: SupabaseClient,
+    payload: CardapioWebWebhookPayload,
+    eventType: string
+  ): Promise<{ action: string; order_id?: number; error?: string }> {
+    const externalId = payload.order_id.toString();
+  
+    console.log(`Processing ${eventType} for order ${externalId}`);
+  
+    // Find the order
+    const { data: existingOrder, error: findError } = await supabase
+      .from('orders')
+      .select('id, status')
+      .eq('external_id', externalId)
+      .maybeSingle();
+  
+    if (findError) {
+      console.error('Error finding order:', findError);
+      return { action: 'error', error: findError.message };
+    }
+  
+    if (!existingOrder) {
+      console.log(`Order ${externalId} not found - ignoring ${eventType}`);
+      return { action: 'ignored', order_id: payload.order_id };
+    }
+
+    // If order is still pending/in production, use cancel_order_with_alert for KDS notification
+    if (['pending', 'waiting_buffer'].includes(existingOrder.status)) {
+      const { data: cancelResult, error: cancelError } = await supabase.rpc('cancel_order_with_alert', {
+        p_order_id: existingOrder.id,
+      });
+
+      if (cancelError) {
+        console.error('Error cancelling order with alert:', cancelError);
+        return { action: 'error', error: cancelError.message };
+      }
+
+      console.log(`Order ${externalId} marked as cancelled with alert (event: ${eventType})`, cancelResult);
+      return { action: 'cancelled_with_alert', order_id: payload.order_id };
+    }
+
+    // If already dispatched/ready, just delete
+    const { error: deleteError } = await supabase
+      .from('orders')
+      .delete()
+      .eq('id', existingOrder.id);
+  
+    if (deleteError) {
+      console.error('Error deleting order:', deleteError);
+      return { action: 'error', error: deleteError.message };
+    }
+  
+    console.log(`Order ${externalId} deleted (event: ${eventType})`);
+    return { action: 'deleted', order_id: payload.order_id };
+  }
  
 async function fetchOrderFromApi(
   store: StoreRecord & { cardapioweb_api_url?: string; cardapioweb_api_token?: string },

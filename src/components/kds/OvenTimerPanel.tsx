@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { Flame, Check, Volume2, VolumeX, AlertTriangle } from 'lucide-react';
+import { CancellationAlert } from './CancellationAlert';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
 
@@ -289,6 +290,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
+        {sectorId && <CancellationAlert sectorId={sectorId} />}
         {sortedItems.map((item) => (
           <OvenItemRow
             key={item.id}

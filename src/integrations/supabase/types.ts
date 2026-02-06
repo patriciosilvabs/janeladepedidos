@@ -644,6 +644,8 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acknowledge_cancellation: { Args: { p_order_id: string }; Returns: Json }
+      cancel_order_with_alert: { Args: { p_order_id: string }; Returns: Json }
       check_order_completion: { Args: { p_order_id: string }; Returns: boolean }
       claim_order_item: {
         Args: { p_item_id: string; p_user_id: string }
@@ -729,7 +731,7 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "admin" | "user"
-      item_status: "pending" | "in_prep" | "in_oven" | "ready"
+      item_status: "pending" | "in_prep" | "in_oven" | "ready" | "cancelled"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -858,7 +860,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["owner", "admin", "user"],
-      item_status: ["pending", "in_prep", "in_oven", "ready"],
+      item_status: ["pending", "in_prep", "in_oven", "ready", "cancelled"],
     },
   },
 } as const
