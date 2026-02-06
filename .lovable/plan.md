@@ -1,91 +1,89 @@
 
 
-## Plano: Filtro de Tipos de Pedido por Loja + Conferencia de Sabores no Despacho
+## Plano: Categorias de Produtos por Loja
+
+### Objetivo
+
+Permitir que cada loja configure quais categorias de produto (pizza, bebida, sobremesa, etc.) devem ser exibidas no tablet/KDS. Itens de categorias nao habilitadas serao ignorados na importacao.
 
 ---
 
-### Funcionalidade 1: Configuracao de Tipos de Pedido por Loja
+### Parte 1: Migracao SQL
 
-Cada loja podera escolher quais tipos de pedido devem ser importados para o sistema (delivery, retirada, mesa, balcao). Pedidos de tipos nao habilitados serao ignorados.
+Duas alteracoes no banco:
 
-#### 1.1 Migracao SQL
-
-Adicionar coluna na tabela `stores`:
+1. **Adicionar coluna `category` na tabela `order_items`** para armazenar a categoria do item importado:
 
 ```sql
-ALTER TABLE stores 
-ADD COLUMN IF NOT EXISTS allowed_order_types text[] DEFAULT ARRAY['delivery', 'takeaway', 'dine_in', 'counter'];
+ALTER TABLE order_items ADD COLUMN IF NOT EXISTS category text;
 ```
 
-Por padrao, todos os tipos sao permitidos (compatibilidade retroativa).
+2. **Adicionar coluna `allowed_categories` na tabela `stores`** para configurar as categorias permitidas por loja:
 
-#### 1.2 Interface - StoresManager
+```sql
+ALTER TABLE stores ADD COLUMN IF NOT EXISTS allowed_categories text[] DEFAULT NULL;
+```
 
-No dialogo de criar/editar loja, adicionar uma secao "Tipos de Pedido Aceitos" com 4 checkboxes:
-
-- Delivery (delivery)
-- Retirada (takeaway)
-- Mesa (dine_in)
-- Balcao (counter)
-
-#### 1.3 Edge Functions - Filtragem
-
-**webhook-orders:** Apos identificar a loja pelo token, verificar se o `order_type` mapeado esta na lista `allowed_order_types` da loja. Se nao estiver, ignorar o pedido com log.
-
-**poll-orders:** Ao iterar os pedidos retornados pela API, verificar o tipo contra a lista da loja antes de inserir.
-
-#### 1.4 Hook useStores
-
-Atualizar a interface `Store` e `StoreInsert` para incluir `allowed_order_types: string[]`.
+Quando `NULL`, todas as categorias sao aceitas (compatibilidade retroativa).
 
 ---
 
-### Funcionalidade 2: Conferencia de Sabores no Painel do Forno
+### Parte 2: Capturar Categoria na Importacao
 
-No painel de despacho, cada item que possui sabores exibira a lista de sabores com botoes individuais de confirmacao. O operador so podera marcar "PRONTO" apos conferir todos os sabores.
+**Arquivos:** `supabase/functions/webhook-orders/index.ts` e `supabase/functions/poll-orders/index.ts`
 
-#### 2.1 Modificar OvenItemRow
+- Adicionar campo `category` (ou `category_name`) na interface de item do CardapioWeb
+- Passar a categoria no JSON enviado para a RPC `create_order_items_from_json`
 
-Exibir os sabores do item (campo `flavors` da tabela `order_items`) parseados da string:
+**Arquivo:** Migracao SQL (atualizar a funcao `create_order_items_from_json`)
 
-```text
-Formato atual: "* Sabor 1\n* Sabor 2\n* Sabor 3"
-```
+- Extrair o campo `category` de cada item do JSON
+- Inserir na coluna `category` da tabela `order_items`
 
-Cada sabor aparecera como um botao/chip que o operador clica para confirmar a conferencia.
+---
 
-#### 2.2 Estado de Conferencia (local)
+### Parte 3: Filtrar por Categorias Permitidas
 
-Estado local no componente `OvenItemRow`:
+Na funcao `create_order_items_from_json`, antes de inserir cada item:
+
+- Receber o `store_id` como parametro (novo parametro `p_store_id`)
+- Buscar `allowed_categories` da loja
+- Se a lista nao for nula e a categoria do item nao estiver na lista, pular o item
+
+Alternativamente, o filtro pode ser feito nas edge functions antes de chamar a RPC, o que e mais simples:
 
 ```typescript
-const [confirmedFlavors, setConfirmedFlavors] = useState<Set<number>>(new Set());
-
-// Parsear sabores
-const flavorsList = item.flavors
-  ?.split('\n')
-  .map(f => f.replace(/^[*\-]\s*/, '').trim())
-  .filter(Boolean) || [];
-
-// Botao PRONTO bloqueado ate todos confirmados
-const allFlavorsConfirmed = flavorsList.length === 0 || confirmedFlavors.size >= flavorsList.length;
+// Filtrar itens por categorias permitidas da loja
+const allowedCategories = store.allowed_categories;
+const filteredItems = allowedCategories 
+  ? items.filter(item => {
+      const cat = (item.category || '').toLowerCase();
+      return allowedCategories.some(c => c.toLowerCase() === cat);
+    })
+  : items;
 ```
 
-#### 2.3 Visual
+---
 
-Cada sabor aparece como um botao:
-- **Nao conferido:** fundo cinza/outline, texto normal
-- **Conferido:** fundo verde, icone de check
+### Parte 4: Interface - StoresManager
 
-O botao "PRONTO" fica desabilitado (opaco) ate que todos os sabores estejam confirmados.
+No dialogo de criar/editar loja, adicionar uma secao "Categorias Exibidas no Tablet":
 
-Layout expandido do OvenItemRow:
+- Campo de texto com tags/chips para adicionar categorias (ex: Pizza, Bebida, Sobremesa, Lanche)
+- Botao para adicionar novas categorias
+- Quando vazio/nulo, significa "todas as categorias" (exibir indicador visual)
+- Sugestoes de categorias comuns pre-definidas para facilitar
 
-```text
-[Timer]  #5130  Loja Centro
-         Pizza Grande
-         [* Calabresa]  [* Mussarela]  [v Frango]   <-- botoes de sabor
-                                        [PRONTO]
+O campo sera editavel como uma lista de tags com opcao de adicionar novas.
+
+---
+
+### Parte 5: Hook useStores
+
+Atualizar as interfaces `Store` e `StoreInsert` para incluir:
+
+```typescript
+allowed_categories: string[] | null;
 ```
 
 ---
@@ -94,19 +92,20 @@ Layout expandido do OvenItemRow:
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| **Migracao SQL** | Adicionar `allowed_order_types` na tabela `stores` |
+| **Migracao SQL** | Adicionar `category` em `order_items` e `allowed_categories` em `stores` |
+| **Migracao SQL** | Atualizar `create_order_items_from_json` para salvar categoria |
 | `src/hooks/useStores.ts` | Adicionar campo na interface |
-| `src/components/StoresManager.tsx` | Adicionar checkboxes de tipos de pedido |
-| `supabase/functions/webhook-orders/index.ts` | Filtrar por tipos permitidos da loja |
-| `supabase/functions/poll-orders/index.ts` | Filtrar por tipos permitidos da loja |
-| `src/components/kds/OvenTimerPanel.tsx` | Exibir sabores com botoes de conferencia |
+| `src/components/StoresManager.tsx` | Adicionar UI de categorias com tags/chips |
+| `supabase/functions/webhook-orders/index.ts` | Capturar categoria do item e filtrar |
+| `supabase/functions/poll-orders/index.ts` | Capturar categoria do item e filtrar |
 
 ---
 
 ### Detalhes Tecnicos
 
-- A coluna `allowed_order_types` usa array de texto nativo do PostgreSQL
-- A conferencia de sabores e 100% local (sem persistencia no banco) - serve apenas como checklist visual para o operador
-- A filtragem de tipos acontece nas edge functions (server-side), pedidos ignorados nao entram no banco
-- Compatibilidade retroativa: lojas existentes recebem todos os tipos habilitados por padrao
+- A coluna `allowed_categories` usa `NULL` como default (aceita tudo) em vez de array vazio, para nao quebrar lojas existentes
+- A categoria e salva em lowercase normalizado para comparacao case-insensitive
+- O filtro acontece na edge function (server-side) antes de chamar a RPC
+- Categorias sao strings livres -- o usuario digita o nome exato que vem da API do CardapioWeb
+- Sugestoes pre-definidas: "Pizza", "Bebida", "Sobremesa", "Lanche", "Porcao", "Combo", "Acai"
 
