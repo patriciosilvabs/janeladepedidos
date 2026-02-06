@@ -22,6 +22,7 @@ interface OvenItemRowProps {
  function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, audioEnabled, ovenTimeSeconds }: OvenItemRowProps) {
   const [countdown, setCountdown] = useState<number>(ovenTimeSeconds);
   const [hasPlayedAlert, setHasPlayedAlert] = useState(false);
+  const [confirmedFlavors, setConfirmedFlavors] = useState<Set<number>>(new Set());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   const orderId = item.orders?.cardapioweb_order_id || 
@@ -75,6 +76,23 @@ interface OvenItemRowProps {
   const isUrgent = countdown <= 10 && countdown > 0;
   const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
 
+  // Parse flavors for verification checklist
+  const flavorsList = item.flavors
+    ?.split('\n')
+    .map(f => f.replace(/^[•*\-]\s*/, '').trim())
+    .filter(Boolean) || [];
+  
+  const allFlavorsConfirmed = flavorsList.length === 0 || confirmedFlavors.size >= flavorsList.length;
+
+  const toggleFlavor = (index: number) => {
+    setConfirmedFlavors(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
   return (
     <div className={cn(
       "relative p-3 rounded-lg border-2 transition-all",
@@ -119,20 +137,46 @@ interface OvenItemRowProps {
             {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
             {item.product_name}
           </p>
+          {/* Flavor verification checklist */}
+          {flavorsList.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-2">
+              {flavorsList.map((flavor, idx) => {
+                const confirmed = confirmedFlavors.has(idx);
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => toggleFlavor(idx)}
+                    className={cn(
+                      "inline-flex items-center gap-1 px-2 py-1 rounded-md text-sm font-medium border transition-all",
+                      confirmed
+                        ? "bg-green-600 border-green-600 text-white"
+                        : "bg-muted/50 border-border text-foreground hover:border-primary"
+                    )}
+                  >
+                    {confirmed && <Check className="h-3 w-3" />}
+                    {flavor}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Action */}
         <Button
           onClick={onMarkReady}
-          disabled={isProcessing || isAnyProcessing}
+          disabled={isProcessing || isAnyProcessing || !allFlavorsConfirmed}
           className={cn(
             "text-white shrink-0",
-            isProcessing 
+            !allFlavorsConfirmed
+              ? "bg-muted-foreground opacity-50 cursor-not-allowed"
+              : isProcessing 
               ? "bg-gray-500"
               : isUrgent 
               ? "bg-red-600 hover:bg-red-700" 
               : "bg-green-600 hover:bg-green-700"
           )}
+          title={!allFlavorsConfirmed ? 'Confirme todos os sabores primeiro' : ''}
         >
           <Check className="h-4 w-4 mr-1" />
           {isProcessing ? 'SALVANDO...' : 'PRONTO'}
