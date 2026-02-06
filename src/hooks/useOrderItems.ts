@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { OrderItemWithOrder, ClaimResult, OvenResult, ItemStatus } from '@/types/orderItems';
-import { useEffect, useRef, useCallback } from 'react';
+import { useEffect, useRef, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
  
  interface EdgeCompletionResult {
@@ -316,6 +316,45 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     },
   });
 
+  // Collect order IDs that have at least one in_oven item
+  const ovenOrderIds = useMemo(() => 
+    items
+      .filter(i => i.status === 'in_oven')
+      .map(i => i.order_id)
+      .filter((v, i, a) => a.indexOf(v) === i),
+    [items]
+  );
+
+  // Fetch sibling items for orders that have in_oven items
+  const { data: siblingItems = [] } = useQuery({
+    queryKey: ['order-items-siblings', ovenOrderIds],
+    queryFn: async () => {
+      if (ovenOrderIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from('order_items')
+        .select(`
+          *,
+          orders!inner(
+            id,
+            customer_name,
+            cardapioweb_order_id,
+            external_id,
+            neighborhood,
+            address,
+            stores(id, name)
+          ),
+          sectors!order_items_assigned_sector_id_fkey(id, name)
+        `)
+        .in('order_id', ovenOrderIds)
+        .neq('status', 'in_oven')
+        .neq('status', 'cancelled');
+      if (error) throw error;
+      return data as unknown as OrderItemWithOrder[];
+    },
+    enabled: ovenOrderIds.length > 0,
+    staleTime: 1000,
+  });
+
   // Group items by order
   const itemsByOrder = items.reduce((acc, item) => {
     const orderId = item.order_id;
@@ -335,6 +374,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
   return {
     items,
     itemsByOrder,
+    siblingItems,
     pendingItems,
     inPrepItems,
     inOvenItems,
