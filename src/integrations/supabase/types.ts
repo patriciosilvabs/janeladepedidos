@@ -274,6 +274,7 @@ export type Database = {
       order_items: {
         Row: {
           assigned_sector_id: string | null
+          category: string | null
           claimed_at: string | null
           claimed_by: string | null
           complements: string | null
@@ -293,6 +294,7 @@ export type Database = {
         }
         Insert: {
           assigned_sector_id?: string | null
+          category?: string | null
           claimed_at?: string | null
           claimed_by?: string | null
           complements?: string | null
@@ -312,6 +314,7 @@ export type Database = {
         }
         Update: {
           assigned_sector_id?: string | null
+          category?: string | null
           claimed_at?: string | null
           claimed_by?: string | null
           complements?: string | null
@@ -558,6 +561,7 @@ export type Database = {
       }
       stores: {
         Row: {
+          allowed_categories: string[] | null
           allowed_order_types: string[] | null
           cardapioweb_api_token: string | null
           cardapioweb_api_url: string | null
@@ -572,6 +576,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          allowed_categories?: string[] | null
           allowed_order_types?: string[] | null
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null
@@ -586,6 +591,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          allowed_categories?: string[] | null
           allowed_order_types?: string[] | null
           cardapioweb_api_token?: string | null
           cardapioweb_api_url?: string | null

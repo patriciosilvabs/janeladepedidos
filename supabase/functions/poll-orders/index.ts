@@ -66,6 +66,7 @@ interface Store {
   default_region: string | null;
   default_country: string | null;
   allowed_order_types: string[] | null;
+  allowed_categories: string[] | null;
 }
 
 async function pollStoreOrders(
@@ -288,19 +289,40 @@ async function pollStoreOrders(
 
         // Criar order_items para KDS
         if (orderDetails.items && Array.isArray(orderDetails.items)) {
-          const { data: itemsResult, error: itemsError } = await supabase.rpc(
-            'create_order_items_from_json',
-            {
-              p_order_id: insertedOrder.id,
-              p_items: orderDetails.items,
-              p_default_sector_id: null,
-            }
-          );
+          // Add category to each item and filter by allowed_categories
+          let itemsToCreate = orderDetails.items.map((item: any) => ({
+            ...item,
+            category: item.category || item.category_name || '',
+          }));
 
-          if (itemsError) {
-            console.error(`[poll-orders] Error creating order items:`, itemsError);
+          // Filter by allowed categories if configured
+          const allowedCategories = store.allowed_categories;
+          if (allowedCategories && allowedCategories.length > 0) {
+            const before = itemsToCreate.length;
+            itemsToCreate = itemsToCreate.filter((item: any) => {
+              const cat = (item.category || '').toLowerCase();
+              return !cat || allowedCategories.some((c: string) => c.toLowerCase() === cat);
+            });
+            console.log(`[poll-orders] Category filter: ${before} -> ${itemsToCreate.length} items`);
+          }
+
+          if (itemsToCreate.length === 0) {
+            console.log(`[poll-orders] No items after category filter for order ${insertedOrder.id}`);
           } else {
-            console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+            const { data: itemsResult, error: itemsError } = await supabase.rpc(
+              'create_order_items_from_json',
+              {
+                p_order_id: insertedOrder.id,
+                p_items: itemsToCreate,
+                p_default_sector_id: null,
+              }
+            );
+
+            if (itemsError) {
+              console.error(`[poll-orders] Error creating order items:`, itemsError);
+            } else {
+              console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+            }
           }
         }
       }
