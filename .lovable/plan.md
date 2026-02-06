@@ -1,116 +1,112 @@
 
 
-## Plano: Filtrar Pedidos Aguardando Pagamento
-
-### Problema Identificado
-
-O sistema está importando pedidos para o KDS/tablet antes do cliente confirmar o pagamento. No CardápioWeb, pedidos que ainda estão "Aguardando pagamento" chegam com status como `waiting_confirmation` ou `pending`, e o sistema atual os importa imediatamente.
-
-Pelas imagens:
-- Dashboard mostra pedido #5130 com badge "Aguardando pagamento"
-- Mesmo pedido já aparece no tablet de produção prontos para iniciar
+## Plano: Filtro de Tipos de Pedido por Loja + Conferencia de Sabores no Despacho
 
 ---
 
-### Solução
+### Funcionalidade 1: Configuracao de Tipos de Pedido por Loja
 
-Modificar as duas funções de importação para **ignorar pedidos que ainda não foram confirmados/pagos**. Apenas pedidos com status `confirmed`, `preparing`, `ready`, `released` ou similares devem entrar no fluxo de produção.
+Cada loja podera escolher quais tipos de pedido devem ser importados para o sistema (delivery, retirada, mesa, balcao). Pedidos de tipos nao habilitados serao ignorados.
+
+#### 1.1 Migracao SQL
+
+Adicionar coluna na tabela `stores`:
+
+```sql
+ALTER TABLE stores 
+ADD COLUMN IF NOT EXISTS allowed_order_types text[] DEFAULT ARRAY['delivery', 'takeaway', 'dine_in', 'counter'];
+```
+
+Por padrao, todos os tipos sao permitidos (compatibilidade retroativa).
+
+#### 1.2 Interface - StoresManager
+
+No dialogo de criar/editar loja, adicionar uma secao "Tipos de Pedido Aceitos" com 4 checkboxes:
+
+- Delivery (delivery)
+- Retirada (takeaway)
+- Mesa (dine_in)
+- Balcao (counter)
+
+#### 1.3 Edge Functions - Filtragem
+
+**webhook-orders:** Apos identificar a loja pelo token, verificar se o `order_type` mapeado esta na lista `allowed_order_types` da loja. Se nao estiver, ignorar o pedido com log.
+
+**poll-orders:** Ao iterar os pedidos retornados pela API, verificar o tipo contra a lista da loja antes de inserir.
+
+#### 1.4 Hook useStores
+
+Atualizar a interface `Store` e `StoreInsert` para incluir `allowed_order_types: string[]`.
 
 ---
 
-### Parte 1: Atualizar Webhook (webhook-orders)
+### Funcionalidade 2: Conferencia de Sabores no Painel do Forno
 
-**Arquivo:** `supabase/functions/webhook-orders/index.ts`
+No painel de despacho, cada item que possui sabores exibira a lista de sabores com botoes individuais de confirmacao. O operador so podera marcar "PRONTO" apos conferir todos os sabores.
 
-**Alterações:**
+#### 2.1 Modificar OvenItemRow
 
-1. Modificar o switch case (linhas 481-520) para **NÃO** processar eventos com status `pending` ou `waiting_confirmation`
-
-2. Adicionar lógica no bloco default (linha 509):
+Exibir os sabores do item (campo `flavors` da tabela `order_items`) parseados da string:
 
 ```text
-Antes:  if (status === 'confirmed' || status === 'pending' || status === 'waiting_confirmation')
-Depois: if (status === 'confirmed')
+Formato atual: "* Sabor 1\n* Sabor 2\n* Sabor 3"
 ```
 
-3. Criar handler específico para `order.confirmed` que é quando o pagamento foi aceito
+Cada sabor aparecera como um botao/chip que o operador clica para confirmar a conferencia.
 
-4. Ignorar `order.placed` e `order.created` com status não confirmado - esses eventos acontecem antes do pagamento
+#### 2.2 Estado de Conferencia (local)
 
----
-
-### Parte 2: Atualizar Polling (poll-orders)
-
-**Arquivo:** `supabase/functions/poll-orders/index.ts`
-
-**Alterações:**
-
-1. Expandir lista de status ignorados (linha 136) para incluir status de pré-pagamento:
+Estado local no componente `OvenItemRow`:
 
 ```typescript
-// Antes
-const ignoredStatuses = ['canceled', 'cancelled', 'rejected'];
+const [confirmedFlavors, setConfirmedFlavors] = useState<Set<number>>(new Set());
 
-// Depois  
-const ignoredStatuses = [
-  'canceled', 
-  'cancelled', 
-  'rejected',
-  'pending',
-  'waiting_confirmation',
-  'awaiting_payment',
-  'placed'  // Pedido realizado mas não confirmado
-];
+// Parsear sabores
+const flavorsList = item.flavors
+  ?.split('\n')
+  .map(f => f.replace(/^[*\-]\s*/, '').trim())
+  .filter(Boolean) || [];
+
+// Botao PRONTO bloqueado ate todos confirmados
+const allFlavorsConfirmed = flavorsList.length === 0 || confirmedFlavors.size >= flavorsList.length;
 ```
 
-2. Criar lista de status permitidos (abordagem mais segura):
+#### 2.3 Visual
 
-```typescript
-const allowedStatuses = [
-  'confirmed',
-  'preparing', 
-  'ready',
-  'dispatched',
-  'released',
-  'on_the_way',
-  'delivered'
-];
+Cada sabor aparece como um botao:
+- **Nao conferido:** fundo cinza/outline, texto normal
+- **Conferido:** fundo verde, icone de check
 
-// Filtrar apenas pedidos com status permitido
-const activeOrders = ordersData.filter(order => {
-  const status = (order.status || '').toLowerCase();
-  return allowedStatuses.includes(status);
-});
-```
+O botao "PRONTO" fica desabilitado (opaco) ate que todos os sabores estejam confirmados.
 
----
-
-### Fluxo Correto Após Alterações
+Layout expandido do OvenItemRow:
 
 ```text
-CardápioWeb                    Sistema
------------                    -------
-Pedido criado (pending)   -->  Ignorado
-Aguardando pagamento      -->  Ignorado  
-Pagamento confirmado      -->  IMPORTA para KDS
-(status: confirmed)            (aparece nos tablets)
+[Timer]  #5130  Loja Centro
+         Pizza Grande
+         [* Calabresa]  [* Mussarela]  [v Frango]   <-- botoes de sabor
+                                        [PRONTO]
 ```
 
 ---
 
-### Resumo das Alterações
+### Resumo das Alteracoes
 
-| Arquivo | Alteração |
+| Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/webhook-orders/index.ts` | Aceitar apenas `order.confirmed`, ignorar `pending` e `waiting_confirmation` |
-| `supabase/functions/poll-orders/index.ts` | Adicionar filtro por status permitidos (confirmed, preparing, etc.) |
+| **Migracao SQL** | Adicionar `allowed_order_types` na tabela `stores` |
+| `src/hooks/useStores.ts` | Adicionar campo na interface |
+| `src/components/StoresManager.tsx` | Adicionar checkboxes de tipos de pedido |
+| `supabase/functions/webhook-orders/index.ts` | Filtrar por tipos permitidos da loja |
+| `supabase/functions/poll-orders/index.ts` | Filtrar por tipos permitidos da loja |
+| `src/components/kds/OvenTimerPanel.tsx` | Exibir sabores com botoes de conferencia |
 
 ---
 
-### Considerações
+### Detalhes Tecnicos
 
-- **Pedidos de mesa (closed_table)**: Mantêm comportamento especial atual - são importados quando fechados
-- **Fallback**: Se um pedido nunca receber evento `confirmed`, será capturado pelo polling quando mudar de status
-- **Logs**: Adicionar log quando pedido é ignorado por status de pagamento para facilitar debug
-- **Backward compatibility**: Pedidos já importados não são afetados
+- A coluna `allowed_order_types` usa array de texto nativo do PostgreSQL
+- A conferencia de sabores e 100% local (sem persistencia no banco) - serve apenas como checklist visual para o operador
+- A filtragem de tipos acontece nas edge functions (server-side), pedidos ignorados nao entram no banco
+- Compatibilidade retroativa: lojas existentes recebem todos os tipos habilitados por padrao
 
