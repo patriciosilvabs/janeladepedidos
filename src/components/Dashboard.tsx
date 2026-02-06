@@ -275,7 +275,7 @@ export function Dashboard() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5rem)]">
+    <div className="flex flex-col h-[calc(100vh-5rem)] overflow-y-auto">
       {/* Action Bar - Always visible */}
       <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border-b border-border/50">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
