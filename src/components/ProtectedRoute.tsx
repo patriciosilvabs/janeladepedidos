@@ -25,7 +25,7 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     if (!loading) {
       // If we previously had a user and now don't, wait a bit before redirecting
       // This gives the token refresh time to complete
-      const delay = hadUserRef.current && !user ? 200 : 50;
+      const delay = hadUserRef.current && !user ? 500 : 50;
       const timer = setTimeout(() => {
         setIsChecking(false);
       }, delay);
