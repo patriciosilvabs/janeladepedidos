@@ -1,47 +1,61 @@
 
-## Plano: Funcao de Recuperar Senha
 
-### O que sera feito
+## Problema: Pedidos voltando para produção em loop
 
-Adicionar o fluxo completo de "Esqueci minha senha" na tela de login, usando o sistema de autenticacao nativo do projeto.
+### Causa raiz
 
-### Fluxo do usuario
+O ciclo acontece entre duas funções do backend:
 
-1. Na tela de login, clicar em "Esqueceu sua senha?"
-2. Informar o email
-3. Receber um email com link de redefinicao
-4. Ao clicar no link, ser redirecionado para uma pagina onde define a nova senha
-5. Apos redefinir, ser redirecionado para o app
+1. **sync-orders-status** verifica pedidos com status `pending`, `waiting_buffer` e `ready` no CardapioWeb
+2. Quando o CardapioWeb responde que o pedido esta `closed` ou `delivered`, a funcao **DELETA** o pedido do banco de dados (hard delete)
+3. Na proxima execucao do **poll-orders**, como o `external_id` nao existe mais no banco, o pedido e re-importado como novo
+4. O pedido volta para producao com status `pending` - e o loop recomeça
+
+```text
+poll-orders          sync-orders-status          poll-orders
+   |                        |                        |
+   | importa pedido         |                        |
+   | status: pending        |                        |
+   |          ...           |                        |
+   |    (pedido finalizado) |                        |
+   |    status: ready       |                        |
+   |                        | ve status "closed"     |
+   |                        | no CardapioWeb         |
+   |                        |                        |
+   |                        | DELETA pedido          |
+   |                        | do banco               |
+   |                        |                        |
+   |                        |                        | external_id sumiu
+   |                        |                        | re-importa como novo!
+   |                        |                        | status: pending (LOOP)
+```
+
+### Solucao
+
+Em vez de deletar (hard delete) os pedidos finalizados, mudar o status para um valor terminal (`closed` ou `cancelled`). Assim o `external_id` permanece no banco e o poll-orders nao reimporta.
 
 ### Alteracoes
 
-**1. `src/contexts/AuthContext.tsx`**
-- Adicionar funcao `resetPassword(email)` que chama `supabase.auth.resetPasswordForEmail` com `redirectTo` apontando para `/auth/reset`
-- Adicionar funcao `updatePassword(newPassword)` que chama `supabase.auth.updateUser({ password })`
-- Atualizar a interface `AuthContextType` com essas duas funcoes
+**1. `supabase/functions/sync-orders-status/index.ts`**
 
-**2. `src/hooks/useAuth.ts`**
-- Nenhuma alteracao (ja re-exporta o contexto)
+- Substituir todas as chamadas `.delete()` de pedidos cancelados/finalizados por `.update({ status: 'closed' })` ou `.update({ status: 'cancelled' })`
+- Pedidos cancelados no CardapioWeb: `status = 'cancelled'`
+- Pedidos finalizados (closed/delivered): `status = 'closed'`
+- Pedidos 404 (nao encontrados): `status = 'cancelled'`
+- Remover `ready` do filtro de status na query (linha 54), pois pedidos ready ja foram processados localmente e nao devem ser re-sincronizados com a API externa. Manter apenas `['pending', 'waiting_buffer']`
 
-**3. `src/pages/Auth.tsx`**
-- Adicionar um terceiro estado de tela: `login`, `signup`, `forgot`
-- No modo `forgot`: exibir apenas campo de email + botao "Enviar link de recuperacao"
-- Adicionar link "Esqueceu sua senha?" abaixo do botao de login
-- Tratar mensagem de sucesso ("Verifique seu email")
+**2. `supabase/functions/poll-orders/index.ts`**
 
-**4. Criar `src/pages/ResetPassword.tsx`** (nova pagina)
-- Formulario com campos "Nova senha" e "Confirmar senha"
-- Validacao com zod (minimo 6 caracteres, senhas iguais)
-- Chama `updatePassword` ao submeter
-- Apos sucesso, redireciona para `/`
-- Mesma aparencia visual da pagina de login (Card, icone, etc.)
+- Na query que busca `external_id` existentes (linhas 195-199), nenhuma mudanca necessaria -- ela ja busca sem filtro de status, entao pedidos com status `closed`/`cancelled` serao encontrados e bloqueiam reimportacao
+- Na verificacao de pedidos pendentes cancelados (linhas 332-387), trocar a chamada `cancel_order_with_alert` para tambem garantir que o pedido nao e deletado (verificar a RPC)
 
-**5. `src/App.tsx`**
-- Adicionar rota `/auth/reset` apontando para `ResetPassword`
+**3. `supabase/functions/cleanup-old-orders/index.ts`**
+
+- Adicionar limpeza de pedidos com status `closed` e `cancelled` que sejam mais antigos que `maxAgeHours` -- isso substitui a limpeza que antes era imediata
+- Assim os pedidos terminais ficam no banco tempo suficiente para nao serem reimportados, mas nao acumulam indefinidamente
 
 ### Detalhes tecnicos
 
-- `supabase.auth.resetPasswordForEmail` envia o email automaticamente usando o sistema de autenticacao do projeto -- nao precisa de edge function nem Resend
-- O `redirectTo` sera `window.location.origin + '/auth/reset'` para que o link do email leve o usuario a pagina de redefinicao
-- O evento `PASSWORD_RECOVERY` do `onAuthStateChange` ja cria uma sessao temporaria automaticamente, permitindo que `supabase.auth.updateUser` funcione na pagina de reset
-- O `AuthContext` tambem tratara o evento `PASSWORD_RECOVERY` no `onAuthStateChange` para setar `loading = false`
+- Os status `closed` e `cancelled` nao aparecem em nenhuma query de dashboard (que filtram por `pending`, `waiting_buffer`, `ready`, `dispatched`), entao nao afetam a interface
+- A funcao `cancel_order_with_alert` (RPC) precisa ser verificada para garantir que faz update de status e nao delete -- se deletar, precisa ser ajustada tambem
+- Nenhuma mudanca no frontend e necessaria
