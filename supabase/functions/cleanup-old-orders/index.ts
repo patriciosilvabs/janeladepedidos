@@ -53,6 +53,23 @@ Deno.serve(async (req) => {
       .in('status', ['pending', 'waiting_buffer'])
       .select('id, customer_name, status, created_at');
 
+    // 3b. Delete old terminal orders (closed/cancelled) - these are soft-deleted orders
+    // that stayed long enough to prevent re-import loops
+    let deletedTerminalCount = 0;
+    const { data: deletedTerminalOrders, error: deleteTerminalError } = await supabase
+      .from('orders')
+      .delete()
+      .lt('created_at', cutoffISO)
+      .in('status', ['closed', 'cancelled'])
+      .select('id, customer_name, status, created_at');
+
+    if (deleteTerminalError) {
+      console.error('Error deleting old terminal orders:', deleteTerminalError);
+    } else {
+      deletedTerminalCount = deletedTerminalOrders?.length || 0;
+      console.log(`Deleted ${deletedTerminalCount} old closed/cancelled orders`);
+    }
+
     if (deleteError) {
       console.error('Error deleting old pending orders:', deleteError);
       throw new Error('Failed to delete old pending orders');
@@ -131,13 +148,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    const totalDeletedCount = deletedPendingCount + deletedDispatchedCount + deletedErrorsCount;
+    const totalDeletedCount = deletedPendingCount + deletedDispatchedCount + deletedErrorsCount + deletedTerminalCount;
 
     // Log summary
     console.log('Cleanup summary:', {
       pending: deletedPendingCount,
       dispatched: deletedDispatchedCount,
       errors: deletedErrorsCount,
+      terminal: deletedTerminalCount,
       total: totalDeletedCount,
     });
 
@@ -159,6 +177,7 @@ Deno.serve(async (req) => {
       deletedPending: deletedPendingCount,
       deletedDispatched: deletedDispatchedCount,
       deletedErrors: deletedErrorsCount,
+      deletedTerminal: deletedTerminalCount,
       orphanedGroupsCleaned: orphanedGroupsCount,
       maxAgeHours,
       cutoffDate: cutoffISO,
