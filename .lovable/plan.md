@@ -1,30 +1,51 @@
 
-## Correcao: Force Close deletando pedidos (mesmo bug do loop)
 
-### Problema
-A funcao `force-close-order` ainda usa `.delete()` (hard delete) em todos os cenarios. Isso causa o mesmo loop que ja corrigimos no `sync-orders-status`: o pedido e deletado, o `poll-orders` nao encontra o `external_id` no banco, e reimporta como novo.
+# Corrigir Logout Global que Desloga Todos os Dispositivos
 
-### Alteracao
+## Problema Identificado
 
-**`supabase/functions/force-close-order/index.ts`**
+A funcao `signOut()` no `AuthContext.tsx` usa `supabase.auth.signOut()` sem especificar o escopo. O comportamento padrao e `scope: 'global'`, que **revoga todos os tokens de refresh** do usuario em todos os dispositivos. Isso causa:
 
-Substituir TODAS as chamadas `.delete()` por `.update({ status: 'closed' })`. Sao 4 locais:
+1. Usuario faz logout no PC -> token do tablet e invalidado
+2. Tablet tenta renovar o token -> falha -> redireciona para `/auth`
+3. Mesmo sem logout explicito, um novo login pode causar conflito com tokens existentes
 
-1. Linha 48-51: pedido sem `external_id` -- update para `closed`
-2. Linha 71-73: pedido sem `store_id` -- update para `closed`
-3. Linha 109-112: CardapioWeb nao configurado -- update para `closed`
-4. Linha 149-152: apos fechar no CardapioWeb com sucesso -- update para `closed`
+## Solucao
 
-Tambem deletar os `order_items` associados em todos os casos (para nao deixar itens orfaos no KDS):
+Alterar o `signOut` para usar `scope: 'local'`, que revoga apenas a sessao do dispositivo atual, mantendo os outros dispositivos logados normalmente.
 
-```sql
-DELETE FROM order_items WHERE order_id = orderId
+## Mudancas Tecnicas
+
+### 1. `src/contexts/AuthContext.tsx`
+
+Alterar a funcao `signOut` de:
+
+```typescript
+const signOut = async () => {
+  const { error } = await supabase.auth.signOut();
+  return { error };
+};
 ```
 
-### Resumo tecnico
+Para:
 
-- Trocar `.delete().eq('id', orderId)` por `.update({ status: 'closed' }).eq('id', orderId)` nos 4 pontos
-- Antes de cada update, deletar os order_items do pedido
-- O status `closed` nao aparece em nenhuma query do dashboard, entao o pedido some da interface
-- O `external_id` permanece no banco, impedindo reimportacao pelo `poll-orders`
-- O `cleanup-old-orders` (ja corrigido) vai limpar pedidos `closed` antigos automaticamente
+```typescript
+const signOut = async () => {
+  const { error } = await supabase.auth.signOut({ scope: 'local' });
+  return { error };
+};
+```
+
+### 2. `src/components/ProtectedRoute.tsx`
+
+Aumentar o grace period para dar mais tempo ao token refresh e evitar redirecionamentos falsos durante renovacao de token:
+
+- Aumentar o delay de `200ms` para `500ms` quando havia usuario previamente logado
+- Isso previne o flash de redirecionamento durante renovacoes de token que demoram um pouco mais
+
+### Resultado Esperado
+
+- Fazer logout em um dispositivo NAO afetara outros dispositivos
+- Cada tablet/PC mantera sua propria sessao independente
+- Tokens de refresh continuarao funcionando normalmente em todos os dispositivos
+
