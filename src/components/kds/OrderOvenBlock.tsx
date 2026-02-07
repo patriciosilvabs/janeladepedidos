@@ -173,27 +173,45 @@ export function OrderOvenBlock({
         {/* Waiting items */}
         {waitingItems.length > 0 && (
           <div className="space-y-2 mt-2">
-            {waitingItems.map((item) => (
-              <div
-                key={item.id}
-                className="p-3 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/20 opacity-40 animate-pulse"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 font-mono text-lg font-bold min-w-[80px] text-muted-foreground">
-                    <Clock className="h-4 w-4" />
+        {waitingItems.map((item) => {
+              const flavorsList = item.flavors
+                ?.split('\n')
+                .map(f => f.replace(/^[•*\-]\s*/, '').trim())
+                .filter(Boolean) || [];
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 rounded-lg border-2 border-dashed border-muted-foreground/30 bg-muted/20 opacity-50"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2 font-mono text-lg font-bold min-w-[80px] text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-lg font-medium text-muted-foreground truncate">
+                        {item.quantity > 1 && `${item.quantity}x `}
+                        {item.product_name}
+                      </p>
+                      {flavorsList.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {flavorsList.map((flavor, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center px-2 py-0.5 rounded-md text-sm font-medium border bg-muted/50 border-border text-muted-foreground"
+                            >
+                              {flavor}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-base font-semibold text-muted-foreground animate-pulse shrink-0">
+                      Aguardando...
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-lg font-medium text-muted-foreground truncate">
-                      {item.quantity > 1 && `${item.quantity}x `}
-                      {item.product_name}
-                    </p>
-                  </div>
-                  <span className="text-sm text-muted-foreground italic shrink-0">
-                    Aguardando...
-                  </span>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
