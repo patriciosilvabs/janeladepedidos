@@ -1,61 +1,23 @@
 
 
-## Problema: Pedidos voltando para produção em loop
+## Melhorias nos itens "Aguardando..." no Painel do Forno
 
-### Causa raiz
+### Problema
+Na seção de itens aguardando dentro do bloco de pedido no Painel do Forno, aparece apenas o nome da categoria (ex: "Pizza Grande - 1 Sabor"), sem mostrar o sabor. O funcionário precisa ver qual pizza está aguardando para poder conferir. Além disso, o texto "Aguardando..." precisa ser mais visível (maior e piscando).
 
-O ciclo acontece entre duas funções do backend:
+### Alterações
 
-1. **sync-orders-status** verifica pedidos com status `pending`, `waiting_buffer` e `ready` no CardapioWeb
-2. Quando o CardapioWeb responde que o pedido esta `closed` ou `delivered`, a funcao **DELETA** o pedido do banco de dados (hard delete)
-3. Na proxima execucao do **poll-orders**, como o `external_id` nao existe mais no banco, o pedido e re-importado como novo
-4. O pedido volta para producao com status `pending` - e o loop recomeça
+**`src/components/kds/OrderOvenBlock.tsx`** (linhas 174-198)
 
-```text
-poll-orders          sync-orders-status          poll-orders
-   |                        |                        |
-   | importa pedido         |                        |
-   | status: pending        |                        |
-   |          ...           |                        |
-   |    (pedido finalizado) |                        |
-   |    status: ready       |                        |
-   |                        | ve status "closed"     |
-   |                        | no CardapioWeb         |
-   |                        |                        |
-   |                        | DELETA pedido          |
-   |                        | do banco               |
-   |                        |                        |
-   |                        |                        | external_id sumiu
-   |                        |                        | re-importa como novo!
-   |                        |                        | status: pending (LOOP)
-```
+Na seção de `waitingItems`, fazer duas mudanças:
 
-### Solucao
+1. **Exibir os sabores** abaixo do nome do produto, usando a mesma lógica de parse de `item.flavors` já usada no `OvenItemRow` (split por `\n`, limpar bullets). Mostrar como badges/chips igual ao item no forno.
 
-Em vez de deletar (hard delete) os pedidos finalizados, mudar o status para um valor terminal (`closed` ou `cancelled`). Assim o `external_id` permanece no banco e o poll-orders nao reimporta.
+2. **Destacar o "Aguardando..."**: aumentar o tamanho do texto para `text-base font-semibold` e adicionar a classe `animate-pulse` especificamente nele (mantendo a opacidade reduzida do container mas com o texto "Aguardando..." pulsando de forma mais evidente).
 
-### Alteracoes
+### Detalhes visuais
 
-**1. `supabase/functions/sync-orders-status/index.ts`**
+- Sabores aparecem como badges abaixo do nome do produto (mesma formatação do `OvenItemRow`)
+- "Aguardando..." fica com fonte maior (`text-base`) e bold, pulsando (`animate-pulse`)
+- O container mantém a borda tracejada e opacidade reduzida para diferenciar dos itens no forno
 
-- Substituir todas as chamadas `.delete()` de pedidos cancelados/finalizados por `.update({ status: 'closed' })` ou `.update({ status: 'cancelled' })`
-- Pedidos cancelados no CardapioWeb: `status = 'cancelled'`
-- Pedidos finalizados (closed/delivered): `status = 'closed'`
-- Pedidos 404 (nao encontrados): `status = 'cancelled'`
-- Remover `ready` do filtro de status na query (linha 54), pois pedidos ready ja foram processados localmente e nao devem ser re-sincronizados com a API externa. Manter apenas `['pending', 'waiting_buffer']`
-
-**2. `supabase/functions/poll-orders/index.ts`**
-
-- Na query que busca `external_id` existentes (linhas 195-199), nenhuma mudanca necessaria -- ela ja busca sem filtro de status, entao pedidos com status `closed`/`cancelled` serao encontrados e bloqueiam reimportacao
-- Na verificacao de pedidos pendentes cancelados (linhas 332-387), trocar a chamada `cancel_order_with_alert` para tambem garantir que o pedido nao e deletado (verificar a RPC)
-
-**3. `supabase/functions/cleanup-old-orders/index.ts`**
-
-- Adicionar limpeza de pedidos com status `closed` e `cancelled` que sejam mais antigos que `maxAgeHours` -- isso substitui a limpeza que antes era imediata
-- Assim os pedidos terminais ficam no banco tempo suficiente para nao serem reimportados, mas nao acumulam indefinidamente
-
-### Detalhes tecnicos
-
-- Os status `closed` e `cancelled` nao aparecem em nenhuma query de dashboard (que filtram por `pending`, `waiting_buffer`, `ready`, `dispatched`), entao nao afetam a interface
-- A funcao `cancel_order_with_alert` (RPC) precisa ser verificada para garantir que faz update de status e nao delete -- se deletar, precisa ser ajustada tambem
-- Nenhuma mudanca no frontend e necessaria
