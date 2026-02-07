@@ -1,23 +1,30 @@
 
-
-## Melhorias nos itens "Aguardando..." no Painel do Forno
+## Correcao: Force Close deletando pedidos (mesmo bug do loop)
 
 ### Problema
-Na seção de itens aguardando dentro do bloco de pedido no Painel do Forno, aparece apenas o nome da categoria (ex: "Pizza Grande - 1 Sabor"), sem mostrar o sabor. O funcionário precisa ver qual pizza está aguardando para poder conferir. Além disso, o texto "Aguardando..." precisa ser mais visível (maior e piscando).
+A funcao `force-close-order` ainda usa `.delete()` (hard delete) em todos os cenarios. Isso causa o mesmo loop que ja corrigimos no `sync-orders-status`: o pedido e deletado, o `poll-orders` nao encontra o `external_id` no banco, e reimporta como novo.
 
-### Alterações
+### Alteracao
 
-**`src/components/kds/OrderOvenBlock.tsx`** (linhas 174-198)
+**`supabase/functions/force-close-order/index.ts`**
 
-Na seção de `waitingItems`, fazer duas mudanças:
+Substituir TODAS as chamadas `.delete()` por `.update({ status: 'closed' })`. Sao 4 locais:
 
-1. **Exibir os sabores** abaixo do nome do produto, usando a mesma lógica de parse de `item.flavors` já usada no `OvenItemRow` (split por `\n`, limpar bullets). Mostrar como badges/chips igual ao item no forno.
+1. Linha 48-51: pedido sem `external_id` -- update para `closed`
+2. Linha 71-73: pedido sem `store_id` -- update para `closed`
+3. Linha 109-112: CardapioWeb nao configurado -- update para `closed`
+4. Linha 149-152: apos fechar no CardapioWeb com sucesso -- update para `closed`
 
-2. **Destacar o "Aguardando..."**: aumentar o tamanho do texto para `text-base font-semibold` e adicionar a classe `animate-pulse` especificamente nele (mantendo a opacidade reduzida do container mas com o texto "Aguardando..." pulsando de forma mais evidente).
+Tambem deletar os `order_items` associados em todos os casos (para nao deixar itens orfaos no KDS):
 
-### Detalhes visuais
+```sql
+DELETE FROM order_items WHERE order_id = orderId
+```
 
-- Sabores aparecem como badges abaixo do nome do produto (mesma formatação do `OvenItemRow`)
-- "Aguardando..." fica com fonte maior (`text-base`) e bold, pulsando (`animate-pulse`)
-- O container mantém a borda tracejada e opacidade reduzida para diferenciar dos itens no forno
+### Resumo tecnico
 
+- Trocar `.delete().eq('id', orderId)` por `.update({ status: 'closed' }).eq('id', orderId)` nos 4 pontos
+- Antes de cada update, deletar os order_items do pedido
+- O status `closed` nao aparece em nenhuma query do dashboard, entao o pedido some da interface
+- O `external_id` permanece no banco, impedindo reimportacao pelo `poll-orders`
+- O `cleanup-old-orders` (ja corrigido) vai limpar pedidos `closed` antigos automaticamente
