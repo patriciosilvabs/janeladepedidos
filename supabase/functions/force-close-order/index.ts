@@ -45,21 +45,23 @@ Deno.serve(async (req) => {
     if (!order.external_id) {
       console.log(`Order ${orderId} has no external_id, deleting locally only`);
       
-      const { error: deleteError } = await supabase
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+
+      const { error: updateError } = await supabase
         .from('orders')
-        .delete()
+        .update({ status: 'closed' })
         .eq('id', orderId);
 
-      if (deleteError) {
-        console.error(`Error deleting order ${orderId}:`, deleteError);
+      if (updateError) {
+        console.error(`Error closing order ${orderId}:`, updateError);
         return new Response(
-          JSON.stringify({ success: false, error: deleteError.message }),
+          JSON.stringify({ success: false, error: updateError.message }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Order deleted locally (no CardápioWeb link)' }),
+        JSON.stringify({ success: true, message: 'Order closed locally (no CardápioWeb link)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -68,21 +70,23 @@ Deno.serve(async (req) => {
     if (!order.store_id) {
       console.log(`Order ${orderId} has no store_id, deleting locally only`);
       
-      const { error: deleteError } = await supabase
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+
+      const { error: updateError } = await supabase
         .from('orders')
-        .delete()
+        .update({ status: 'closed' })
         .eq('id', orderId);
 
-      if (deleteError) {
-        console.error(`Error deleting order ${orderId}:`, deleteError);
+      if (updateError) {
+        console.error(`Error closing order ${orderId}:`, updateError);
         return new Response(
-          JSON.stringify({ success: false, error: deleteError.message }),
+          JSON.stringify({ success: false, error: updateError.message }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Order deleted locally (no store linked)' }),
+        JSON.stringify({ success: true, message: 'Order closed locally (no store linked)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -106,21 +110,23 @@ Deno.serve(async (req) => {
     if (!store.cardapioweb_enabled || !store.cardapioweb_api_url || !store.cardapioweb_api_token) {
       console.log(`CardápioWeb not configured for store ${order.store_id}, deleting locally only`);
       
-      const { error: deleteError } = await supabase
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+
+      const { error: updateError } = await supabase
         .from('orders')
-        .delete()
+        .update({ status: 'closed' })
         .eq('id', orderId);
 
-      if (deleteError) {
-        console.error(`Error deleting order ${orderId}:`, deleteError);
+      if (updateError) {
+        console.error(`Error closing order ${orderId}:`, updateError);
         return new Response(
-          JSON.stringify({ success: false, error: deleteError.message }),
+          JSON.stringify({ success: false, error: updateError.message }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
 
       return new Response(
-        JSON.stringify({ success: true, message: 'Order deleted locally (CardápioWeb not configured)' }),
+        JSON.stringify({ success: true, message: 'Order closed locally (CardápioWeb not configured)' }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -146,15 +152,17 @@ Deno.serve(async (req) => {
     if (response.ok || response.status === 409 || response.status === 404) {
       console.log(`CardápioWeb close successful for order ${order.external_id}, deleting from local DB`);
       
-      const { error: deleteError } = await supabase
+      await supabase.from('order_items').delete().eq('order_id', orderId);
+
+      const { error: updateError } = await supabase
         .from('orders')
-        .delete()
+        .update({ status: 'closed' })
         .eq('id', orderId);
 
-      if (deleteError) {
-        console.error(`Error deleting order ${orderId}:`, deleteError);
+      if (updateError) {
+        console.error(`Error closing order ${orderId}:`, updateError);
         return new Response(
-          JSON.stringify({ success: false, error: `CardápioWeb closed but local delete failed: ${deleteError.message}` }),
+          JSON.stringify({ success: false, error: `CardápioWeb closed but local update failed: ${updateError.message}` }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
