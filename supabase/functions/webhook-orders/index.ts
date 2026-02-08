@@ -215,24 +215,18 @@ const corsHeaders = {
         console.log(`[webhook] First item raw:`, JSON.stringify(order.items[0]).substring(0, 500));
       }
 
-      // Add category to each item - try multiple possible field names
-      let itemsToCreate = order.items.map(item => ({
-        ...item,
-        category: (item as any).category || (item as any).category_name || (item as any).group || (item as any).group_name || (item as any).type || '',
-      }));
+      let itemsToCreate = order.items as any[];
 
-      // Filter by allowed categories if configured
+      // Filter by allowed categories using product NAME (API has no category field)
       const allowedCategories = store.allowed_categories;
       if (allowedCategories && allowedCategories.length > 0) {
         const before = itemsToCreate.length;
-        itemsToCreate = itemsToCreate.filter(item => {
-          const cat = (item.category || '').toLowerCase();
-          // If item has no category and filter is active, block it
-          if (!cat) return false;
-          // Partial match: "Pizza" matches "Pizzas Especiais", "Bebida" matches "Bebidas"
-          return allowedCategories.some(c => cat.includes(c.toLowerCase()));
+        itemsToCreate = itemsToCreate.filter((item: any) => {
+          const name = (item.name || '').toLowerCase();
+          if (!name) return true; // safety net
+          return allowedCategories.some(c => name.includes(c.toLowerCase()));
         });
-        console.log(`Category filter: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
+        console.log(`Category filter by name: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
       }
 
       if (itemsToCreate.length === 0) {
@@ -379,7 +373,7 @@ async function fetchOrderFromApi(
         observation: item.notes || item.observation,
         unit_price: item.price || item.unit_price,
         total_price: item.total || item.total_price,
-        category: item.category || item.category_name || item.group || item.group_name || item.type || '',
+        category: item.category || item.category_name || '',
       })),
       total: orderData.total,
       delivery_fee: orderData.delivery_fee,
