@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Check, AlertTriangle } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { OrderTypeBadge } from '@/lib/orderTypeUtils';
 
@@ -56,11 +56,6 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
     return () => clearInterval(interval);
   }, [item.estimated_exit_at, hasPlayedAlert, audioEnabled]);
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   const isFinished = countdown === 0;
   const isUrgent = countdown <= 10 && countdown > 0;
@@ -94,21 +89,6 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
       )}
 
       <div className="relative flex items-center gap-3">
-        {/* Timer */}
-        {alreadyReady ? (
-          <div className="flex items-center gap-2 font-mono text-3xl font-bold min-w-[90px] text-green-500">
-            <Check className="h-6 w-6" />
-            OK
-          </div>
-        ) : (
-          <div className={cn(
-            "flex items-center gap-2 font-mono text-3xl font-bold min-w-[90px]",
-            isFinished ? "text-red-600" : isUrgent ? "text-red-500" : "text-orange-500"
-          )}>
-            {(isFinished || isUrgent) && <AlertTriangle className="h-6 w-6 animate-bounce" />}
-            {formatTime(countdown)}
-          </div>
-        )}
 
         {/* Item info */}
         <div className="flex-1 min-w-0">

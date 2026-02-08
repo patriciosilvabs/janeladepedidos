@@ -144,10 +144,6 @@ export function OrderOvenBlock({
         {dbReadyItems.map((item) => (
           <div key={item.id} className="p-3 rounded-lg border-2 border-green-500 bg-green-500/10">
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 font-mono text-3xl font-bold min-w-[90px] text-green-500">
-                <Check className="h-6 w-6" />
-                OK
-              </div>
               <div className="flex-1 min-w-0">
                 <p className="text-2xl font-bold text-foreground truncate">
                   {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
