@@ -3,7 +3,8 @@ import { OvenTimerPanel } from '@/components/kds/OvenTimerPanel';
 import { Flame } from 'lucide-react';
 
 export function DispatchDashboard() {
-  const { inOvenItems } = useOrderItems({ status: 'in_oven' });
+  const { items } = useOrderItems({ status: ['in_oven', 'ready'] });
+  const activeItems = items.filter(i => i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at));
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] p-4 md:p-6">
@@ -20,7 +21,7 @@ export function DispatchDashboard() {
 
       {/* Content */}
       <div className="flex-1 overflow-auto">
-        {inOvenItems.length === 0 ? (
+        {activeItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center">
             <Flame className="h-16 w-16 text-muted-foreground/30 mb-4" />
             <h2 className="text-xl font-semibold text-muted-foreground">

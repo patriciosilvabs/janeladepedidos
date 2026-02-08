@@ -18,11 +18,12 @@ interface OvenTimerPanelProps {
 }
 
 export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
-  const { inOvenItems, siblingItems, markItemReady } = useOrderItems({ status: 'in_oven', sectorId });
+  const { items, siblingItems, markItemReady } = useOrderItems({ status: ['in_oven', 'ready'], sectorId });
   const { settings } = useSettings();
   const { printRaw } = usePrintNode();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [dispatchedOrderIds, setDispatchedOrderIds] = useState<Set<string>>(new Set());
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
@@ -38,7 +39,11 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     };
   }, []);
 
-  // Group oven items by order
+  // Separate items by status
+  const inOvenItems = items.filter(i => i.status === 'in_oven');
+  const readyFromOvenItems = items.filter(i => i.status === 'ready' && i.oven_entry_at);
+
+  // Group oven + ready-from-oven items by order
   const orderGroups = useMemo(() => {
     const groups: Record<string, {
       orderId: string;
@@ -49,7 +54,24 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       siblingItems: OrderItemWithOrder[];
     }> = {};
 
+    // Add in_oven items
     for (const item of inOvenItems) {
+      if (!groups[item.order_id]) {
+        const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
+        groups[item.order_id] = {
+          orderId: item.order_id,
+          orderDisplayId: displayId,
+          storeName: item.orders?.stores?.name || null,
+          customerName: item.orders?.customer_name || 'Cliente',
+          ovenItems: [],
+          siblingItems: [],
+        };
+      }
+      groups[item.order_id].ovenItems.push(item);
+    }
+
+    // Add ready-from-oven items (they stay as ovenItems so they render in the block)
+    for (const item of readyFromOvenItems) {
       if (!groups[item.order_id]) {
         const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
         groups[item.order_id] = {
@@ -72,12 +94,14 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
     }
 
     // Sort groups by earliest exit time
-    return Object.values(groups).sort((a, b) => {
-      const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
-      const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
-      return aMin - bMin;
-    });
-  }, [inOvenItems, siblingItems]);
+    return Object.values(groups)
+      .filter(g => !dispatchedOrderIds.has(g.orderId))
+      .sort((a, b) => {
+        const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
+        const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
+        return aMin - bMin;
+      });
+  }, [inOvenItems, readyFromOvenItems, siblingItems, dispatchedOrderIds]);
 
   const handleMarkItemReady = async (itemId: string) => {
     if (processingId) return;
@@ -99,6 +123,8 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   };
 
   const handleMasterReady = async (ovenItems: OrderItemWithOrder[]) => {
+    const orderId = ovenItems[0]?.order_id;
+    
     // Print dispatch ticket for the first item (contains order info)
     if (printEnabled && dispatchPrintEnabled && printerId && ovenItems.length > 0) {
       try {
@@ -109,11 +135,16 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
         console.error('Erro ao imprimir ticket de despacho:', printError);
       }
     }
+
+    // Hide block immediately
+    if (orderId) {
+      setDispatchedOrderIds(prev => new Set(prev).add(orderId));
+    }
   };
 
-  const totalOvenItems = inOvenItems.length;
+  const totalActiveOvenItems = inOvenItems.length;
 
-  if (totalOvenItems === 0) {
+  if (orderGroups.length === 0) {
     return null;
   }
 
@@ -125,7 +156,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
             <Flame className="h-5 w-5 text-orange-500" />
             Forno
             <Badge className="bg-orange-500 text-white">
-              {totalOvenItems}
+              {totalActiveOvenItems}
             </Badge>
           </CardTitle>
           <Button
