@@ -12,6 +12,7 @@ import { OrderOvenBlock } from './OrderOvenBlock';
 import { OvenItemRow } from './OvenItemRow';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface DispatchedOrder {
   orderId: string;
@@ -33,9 +34,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const { printRaw } = usePrintNode();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
-  const [dispatchedOrderIds, setDispatchedOrderIds] = useState<Set<string>>(new Set());
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const knownOvenOrderIds = useRef<Set<string>>(new Set());
   
   
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
@@ -56,7 +55,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const readyFromOvenItems = items.filter(i => i.status === 'ready' && i.oven_entry_at);
 
 
-  // Group oven + ready-from-oven items by order
+  // Group oven + ready-from-oven items by order (DB-based, no session memory)
   const orderGroups = useMemo(() => {
     const groups: Record<string, {
       orderId: string;
@@ -67,7 +66,8 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       siblingItems: OrderItemWithOrder[];
     }> = {};
 
-    for (const item of inOvenItems) {
+    // Helper to create/get a group for an order
+    const ensureGroup = (item: OrderItemWithOrder) => {
       if (!groups[item.order_id]) {
         const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
         groups[item.order_id] = {
@@ -79,34 +79,18 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
           siblingItems: [],
         };
       }
-      groups[item.order_id].ovenItems.push(item);
-    }
+      return groups[item.order_id];
+    };
 
-    // Track orders seen with in_oven items this session
     for (const item of inOvenItems) {
-      knownOvenOrderIds.current.add(item.order_id);
-    }
-    // Clean dispatched from known
-    for (const id of dispatchedOrderIds) {
-      knownOvenOrderIds.current.delete(id);
+      ensureGroup(item).ovenItems.push(item);
     }
 
+    // Ready items with oven_entry_at always join their group (no session check needed)
     for (const item of readyFromOvenItems) {
-      // Allow ready items to create groups if order is known from session
-      if (!groups[item.order_id] && knownOvenOrderIds.current.has(item.order_id)) {
-        const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
-        groups[item.order_id] = {
-          orderId: item.order_id,
-          orderDisplayId: displayId,
-          storeName: item.orders?.stores?.name || null,
-          customerName: item.orders?.customer_name || 'Cliente',
-          ovenItems: [],
-          siblingItems: [],
-        };
-      }
-      if (groups[item.order_id]) {
-        groups[item.order_id].ovenItems.push(item);
-      }
+      // Skip items from already-dispatched orders
+      if (item.orders?.dispatched_at) continue;
+      ensureGroup(item).ovenItems.push(item);
     }
 
     for (const item of siblingItems) {
@@ -119,13 +103,13 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     }
 
     return Object.values(groups)
-      .filter(g => !dispatchedOrderIds.has(g.orderId))
+      .filter(g => !g.ovenItems[0]?.orders?.dispatched_at)
       .sort((a, b) => {
         const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
         const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
         return aMin - bMin;
       });
-  }, [inOvenItems, readyFromOvenItems, siblingItems, dispatchedOrderIds]);
+  }, [inOvenItems, readyFromOvenItems, siblingItems]);
 
   const handleMarkItemReady = async (itemId: string) => {
     if (processingId) return;
@@ -170,10 +154,13 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       }
     }
 
-    // Move to history and clean session tracking
+    // Persist dispatch in database and notify history
     if (orderId) {
-      knownOvenOrderIds.current.delete(orderId);
-      setDispatchedOrderIds(prev => new Set(prev).add(orderId));
+      try {
+        await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
+      } catch (dbError) {
+        console.error('Erro ao persistir despacho:', dbError);
+      }
       
       // Find group info to pass to history
       const group = orderGroups.find(g => g.orderId === orderId);
