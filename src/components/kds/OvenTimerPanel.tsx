@@ -102,6 +102,8 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
 
     return Object.values(groups)
       .filter(g => !dispatchedOrderIds.has(g.orderId))
+      // Only show groups that still have at least one in_oven item
+      .filter(g => g.ovenItems.some(i => i.status === 'in_oven'))
       .sort((a, b) => {
         const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
         const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
@@ -117,6 +119,17 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     
     try {
       await markItemReady.mutateAsync(itemId);
+      
+      // Auto-dispatch: find the group this item belongs to
+      const group = orderGroups.find(g => g.ovenItems.some(i => i.id === itemId));
+      if (group) {
+        // Check if this was the last in_oven item (all others are already ready)
+        const remainingInOven = group.ovenItems.filter(i => i.id !== itemId && i.status === 'in_oven');
+        if (remainingInOven.length === 0) {
+          // All items are now ready — auto-dispatch to history
+          handleMasterReady(group.ovenItems);
+        }
+      }
     } catch (error) {
       console.error('Erro ao marcar item como pronto:', error);
     } finally {
