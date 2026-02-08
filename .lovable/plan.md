@@ -1,39 +1,26 @@
 
-# Remover o bloco "Forno" que envolve os cards
+# Remover timer numerico e manter apenas a barra de progresso
 
-## Problema
+## O que muda
 
-O painel do forno esta envolto em um `Card` com header ("Forno", icone de fogo, badge de contagem, botao de audio) e borda laranja. Isso consome espaco visual desnecessario no tablet.
+No componente `OvenItemRow`, o timer numerico (ex: "0:00", "1:30") que aparece no lado esquerdo do card sera removido. A barra de progresso que ja existe (o fundo que vai preenchendo) continuara funcionando normalmente como indicador visual do tempo restante.
 
-## Solucao
+## Detalhes
 
-Remover o wrapper `Card`/`CardHeader`/`CardContent` do `OvenTimerPanel`, renderizando os cards dos itens diretamente em um `div` simples com spacing. O botao de audio sera mantido discretamente no canto, pois controla funcionalidade real (alerta sonoro).
+**Arquivo:** `src/components/kds/OvenItemRow.tsx`
 
-## Detalhe Tecnico
+1. **Remover o bloco do timer numerico** (linhas 97-111) - o `div` com `formatTime(countdown)` e o icone de alerta triangular serao removidos
+2. **Remover o bloco "OK" de itens prontos** (linhas 98-102) - o indicador verde com "OK" no lado esquerdo tambem sera removido (o badge "PRONTO" verde no lado direito ja cumpre essa funcao)
+3. **Remover a funcao `formatTime`** (linhas 59-63) que nao sera mais utilizada
+4. **Remover import do `AlertTriangle`** que nao sera mais necessario
+5. **Manter toda a logica do countdown** internamente, pois ela alimenta a barra de progresso, as cores de urgencia e o alerta sonoro
+6. **Manter a barra de fundo** (linhas 86-94) que preenche visualmente conforme o tempo passa
 
-**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
+O mesmo se aplica ao `OrderOvenBlock.tsx` onde itens "ready" exibem "OK" no lado esquerdo (linhas 147-149) - esse indicador tambem sera removido pois o badge "PRONTO" ja indica o status.
 
-Substituir a estrutura atual:
+## Resultado visual
 
-```
-<Card className="border-orange-500/30 ...">
-  <CardHeader>
-    <Flame /> Forno <Badge>1</Badge>
-    <Button audio />
-  </CardHeader>
-  <CardContent className="space-y-4">
-    {items...}
-  </CardContent>
-</Card>
-```
+Antes: `[0:00] [#6609] [Retirada] Pizza Grande... [PRONTO]`
+Depois: `[#6609] [Retirada] Pizza Grande... [PRONTO]`
 
-Por uma estrutura simples:
-
-```
-<div className="space-y-4">
-  {sectorId && <CancellationAlert />}
-  {items...}
-</div>
-```
-
-O botao de audio e o badge de contagem que estavam no header serao removidos da visualizacao (a funcionalidade de audio continua ativa internamente com o estado `audioEnabled` que ja tem default `true`). Os imports de `Card`, `CardHeader`, `CardTitle`, `CardContent`, `Flame`, `Volume2`, `VolumeX`, `Badge` e `Button` que ficarem sem uso serao removidos.
+Mais espaco horizontal para as informacoes do produto, e a barra de fundo continua indicando o progresso do tempo.
