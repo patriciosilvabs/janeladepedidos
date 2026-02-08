@@ -50,7 +50,7 @@ function KDSOrderCard({ order, onMarkReady, onMarkReadyUrgent, isProcessing, isU
     <div className={cn(
       "bg-card border rounded-lg pt-2 px-2 pb-0 flex flex-col shadow-sm transition-all duration-300",
       isUrgent 
-        ? "border-red-500 border-2 ring-2 ring-red-500/20 animate-pulse" 
+        ? "border-red-500 border-2 ring-2 ring-red-500/20" 
         : "border-border"
     )}>
       {/* Urgent Badge */}
@@ -246,7 +246,7 @@ export function KDSDashboard({ userSector }: KDSDashboardProps) {
             {pendingOrders.length}
           </span>
           {urgentCount > 0 && (
-            <Badge variant="destructive" className="gap-1 animate-pulse">
+            <Badge variant="destructive" className="gap-1">
               <AlertTriangle className="h-3 w-3" />
               {urgentCount} URGENTE{urgentCount > 1 ? 'S' : ''}
             </Badge>

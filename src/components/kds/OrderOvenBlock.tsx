@@ -107,7 +107,7 @@ export function OrderOvenBlock({
           className={cn(
             "text-white font-bold text-lg px-8 py-3",
             masterEnabled
-              ? "bg-green-600 hover:bg-green-700 animate-pulse"
+              ? "bg-green-600 hover:bg-green-700"
               : "bg-gray-400 cursor-not-allowed"
           )}
         >
@@ -154,7 +154,7 @@ export function OrderOvenBlock({
                   {item.product_name}
                 </p>
                 {item.edge_type && (
-                  <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                  <div className="mt-1 p-1.5 bg-orange-600 rounded-md">
                     <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
                   </div>
                 )}
@@ -162,7 +162,7 @@ export function OrderOvenBlock({
                   <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
                 )}
                 {item.notes && (
-                  <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                  <div className="mt-1 p-1.5 bg-red-600 rounded-md">
                     <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
                   </div>
                 )}
@@ -204,7 +204,7 @@ export function OrderOvenBlock({
                         </div>
                       )}
                       {item.edge_type && (
-                        <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                        <div className="mt-1 p-1.5 bg-orange-600 rounded-md">
                           <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
                         </div>
                       )}
@@ -212,12 +212,12 @@ export function OrderOvenBlock({
                         <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
                       )}
                       {item.notes && (
-                        <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                        <div className="mt-1 p-1.5 bg-red-600 rounded-md">
                           <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
                         </div>
                       )}
                     </div>
-                    <span className="text-lg font-semibold text-muted-foreground animate-pulse shrink-0">
+                    <span className="text-lg font-semibold text-muted-foreground shrink-0">
                       Aguardando...
                     </span>
                   </div>

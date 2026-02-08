@@ -124,7 +124,7 @@ export function BufferPanel({
 
   const getTimerColor = () => {
     if (timeLeft === null) return '';
-    if (timeLeft <= 0) return 'text-destructive animate-pulse';
+    if (timeLeft <= 0) return 'text-destructive';
     if (timeLeft <= 120) return 'text-destructive';
     if (timeLeft <= 300) return 'text-yellow-500';
     return 'text-green-500';
@@ -203,7 +203,7 @@ export function BufferPanel({
       {timeLeft !== null && (
         <Card className={cn(
           'border-2 border-primary bg-primary/10',
-          isUrgent && 'border-destructive bg-destructive/10 shadow-lg animate-pulse'
+          isUrgent && 'border-destructive bg-destructive/10 shadow-lg'
         )}>
           <CardContent className="py-4">
             <div className={cn(

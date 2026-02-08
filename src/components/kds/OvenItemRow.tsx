@@ -78,9 +78,9 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
       alreadyReady
         ? "border-green-500 bg-green-500/10"
         : isFinished 
-          ? "border-red-600 bg-red-600/20 animate-[pulse_0.5s_ease-in-out_infinite]" 
+          ? "border-red-600 bg-red-600/20" 
           : isUrgent 
-            ? "border-red-500 bg-red-500/10 animate-pulse" 
+            ? "border-red-500 bg-red-500/10" 
             : "border-orange-500/30 bg-orange-500/5"
     )}>
       {!alreadyReady && (
@@ -135,7 +135,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             </div>
           )}
           {item.edge_type && (
-            <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+            <div className="mt-1 p-1.5 bg-orange-600 rounded-md">
               <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
             </div>
           )}
@@ -143,7 +143,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
           )}
           {item.notes && (
-            <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+            <div className="mt-1 p-1.5 bg-red-600 rounded-md">
               <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
             </div>
           )}
