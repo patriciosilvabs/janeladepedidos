@@ -222,9 +222,9 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       <CardContent className="space-y-4">
         {sectorId && <CancellationAlert sectorId={sectorId} />}
         {orderGroups.map((group) => {
-          const totalItems = group.ovenItems.length + group.siblingItems.length;
+          const pendingSiblings = group.siblingItems.filter(i => i.status !== 'ready');
           
-          if (totalItems === 1 && group.ovenItems.length === 1) {
+          if (group.ovenItems.length === 1 && pendingSiblings.length === 0) {
             return (
               <OvenItemRow
                 key={group.ovenItems[0].id}
