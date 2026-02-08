@@ -29,8 +29,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
         k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
       );
       const isFlavor = !isEdge && flavorKeywords.some(k =>
-        name.includes(k.toLowerCase()) ||
-        (opt.option_group_name || '').toLowerCase().includes(k.toLowerCase())
+        name.includes(k.toLowerCase())
       );
 
       if (isEdge) {
