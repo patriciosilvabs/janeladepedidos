@@ -316,10 +316,10 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     },
   });
 
-  // Collect order IDs that have at least one in_oven item
+  // Collect order IDs that have at least one in_oven OR ready-from-oven item
   const ovenOrderIds = useMemo(() => 
     items
-      .filter(i => i.status === 'in_oven')
+      .filter(i => i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at))
       .map(i => i.order_id)
       .filter((v, i, a) => a.indexOf(v) === i),
     [items]
