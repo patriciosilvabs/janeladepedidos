@@ -13,6 +13,7 @@ import {
    XCircle,
    ArrowRight
 } from 'lucide-react';
+import { OrderTypeBadge } from '@/lib/orderTypeUtils';
 
 export interface FifoSettings {
   enabled: boolean;
@@ -227,16 +228,19 @@ export function KDSItemCard({
 
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
-        <Badge variant="outline" className="font-mono text-2xl font-bold px-3 py-1">
-          #{orderId}
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="font-mono text-2xl font-bold px-3 py-1">
+            #{orderId}
+          </Badge>
+          <OrderTypeBadge orderType={item.orders?.order_type} />
+        </div>
         <div className="flex items-center gap-1 text-muted-foreground text-xs">
           <Clock className="h-3 w-3" />
           {formatTime(elapsedTime)}
         </div>
       </div>
 
-      {/* Product Info - texto menor, secundário */}
+      {/* Product Info */}
       <div className="mb-3">
         <span className="text-sm text-muted-foreground">
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
@@ -244,21 +248,21 @@ export function KDSItemCard({
         </span>
       </div>
 
-      {/* Borda - Tarja LARANJA piscante */}
-      {item.edge_type && (
-        <div className="mb-2 p-2 bg-orange-600 rounded-md animate-pulse w-fit">
-          <p className="text-sm text-white font-bold whitespace-pre-line">
-            {item.edge_type}
-          </p>
-        </div>
-      )}
-
       {/* Sabores - FONTE GRANDE, destaque principal */}
       {item.flavors && (
         <div className="mb-3">
           <div className="text-2xl font-bold text-foreground whitespace-pre-line leading-tight">
             {item.flavors}
           </div>
+        </div>
+      )}
+
+      {/* Borda - Tarja LARANJA piscante (após sabores) */}
+      {item.edge_type && (
+        <div className="mb-2 p-2 bg-orange-600 rounded-md animate-pulse w-fit">
+          <p className="text-sm text-white font-bold whitespace-pre-line">
+            {item.edge_type}
+          </p>
         </div>
       )}
 
