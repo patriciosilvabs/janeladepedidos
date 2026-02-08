@@ -1,52 +1,53 @@
 
-
-# Filtrar pedidos antigos do painel de Forno
+# Corrigir pedidos prontos aparecendo no Forno
 
 ## Problema
 
-A query busca TODOS os itens com status `ready` que possuem `oven_entry_at`. Isso inclui pedidos antigos que ja foram finalizados ha horas, que nao deveriam aparecer no painel ativo do Forno.
+O `knownOvenOrderIds` (ref) guarda os IDs dos pedidos para sempre durante a sessao. Mesmo depois que TODOS os itens de um pedido ficam prontos, o pedido continua aparecendo no Forno porque o ID ainda esta no ref. Isso causa a poluicao visual mostrada no screenshot.
 
 ## Solucao
 
-Usar um `useRef` para rastrear quais pedidos foram "vistos" com pelo menos um item `in_oven` durante a sessao. Somente esses pedidos podem aparecer no painel. Itens `ready` de pedidos que nunca tiveram um item `in_oven` nesta sessao serao ignorados.
+Duas mudancas simples:
 
-## Detalhes Tecnicos
+### 1. Filtrar grupos que nao tem mais itens no forno
 
-### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
+Adicionar de volta o filtro no `orderGroups` para exigir pelo menos um item com status `in_oven`:
 
-1. Adicionar um `useRef<Set<string>>` chamado `knownOvenOrderIds` que armazena IDs de pedidos que ja tiveram pelo menos um item `in_oven` durante a sessao atual.
-
-2. No bloco `useMemo`, antes de agrupar:
-   - Percorrer `inOvenItems` e adicionar seus `order_id` ao `knownOvenOrderIds`.
-   - Remover IDs de pedidos ja despachados do set.
-
-3. Ao processar `readyFromOvenItems`, so criar/adicionar ao grupo se o `order_id` estiver no `knownOvenOrderIds`.
-
-4. Isso garante que:
-   - Pedidos antigos com status `ready` nao aparecem (nunca foram vistos com `in_oven` nesta sessao).
-   - Pedidos combo cujo ultimo item foi marcado como pronto continuam visiveis (o `order_id` ja esta no set).
-   - Ao despachar, o `order_id` e removido do set e do `dispatchedOrderIds`.
-
-### Fluxo
-
-```text
-Sessao inicia -> knownOvenOrderIds = {}
-
-Item do pedido #6255 chega com in_oven
--> knownOvenOrderIds = {6255}
--> Bloco aparece
-
-Operador marca item pronto (ready)
--> knownOvenOrderIds ainda tem 6255
--> Bloco permanece
-
-Operador clica DESPACHAR
--> dispatchedOrderIds.add(6255)
--> knownOvenOrderIds.delete(6255)
--> Bloco some
-
-Pedido antigo #6253 com ready + oven_entry_at chega da query
--> 6253 nao esta em knownOvenOrderIds
--> Ignorado, nao aparece
+```
+.filter(g => !dispatchedOrderIds.has(g.orderId) && g.ovenItems.some(i => i.status === 'in_oven'))
 ```
 
+Isso garante que:
+- Pedidos cujos itens ja estao todos prontos NAO aparecem no Forno
+- Combos com alguns itens prontos e outros no forno CONTINUAM visiveis (o bloco mostra os prontos em verde e os ativos com timer)
+
+### 2. Auto-despachar TODOS os pedidos quando o ultimo item fica pronto
+
+Remover a condicao `totalItems === 1` do auto-despacho. Quando o ultimo item `in_oven` de qualquer pedido (combo ou simples) for marcado como pronto, despachar automaticamente para o Historico:
+
+```
+// ANTES: if (totalItems === 1 && remainingInOven.length === 0)
+// DEPOIS: if (remainingInOven.length === 0)
+```
+
+### 3. Remover `knownOvenOrderIds`
+
+O ref `knownOvenOrderIds` nao e mais necessario, pois o filtro por `in_oven` ja resolve o problema de pedidos antigos. Remover o ref e toda a logica associada para simplificar o codigo.
+
+## Fluxo esperado
+
+```text
+Combo (3 itens no forno):
+1. Itens vao pro forno -> bloco aparece com 3 timers
+2. Item 1 marcado PRONTO -> bloco permanece (2 itens ainda in_oven)
+3. Item 2 marcado PRONTO -> bloco permanece (1 item ainda in_oven)
+4. Item 3 marcado PRONTO -> auto-despacho para Historico (0 in_oven)
+
+Pedido simples (1 item):
+1. Item vai pro forno -> aparece
+2. Marcado PRONTO -> auto-despacho para Historico
+```
+
+## Arquivo alterado
+
+- `src/components/kds/OvenTimerPanel.tsx`
