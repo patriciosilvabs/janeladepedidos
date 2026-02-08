@@ -295,24 +295,18 @@ async function pollStoreOrders(
             console.log(`[poll-orders] First item raw:`, JSON.stringify(orderDetails.items[0]).substring(0, 500));
           }
 
-          // Add category to each item - try multiple possible field names
-          let itemsToCreate = orderDetails.items.map((item: any) => ({
-            ...item,
-            category: item.category || item.category_name || item.group || item.group_name || item.type || '',
-          }));
+          let itemsToCreate = orderDetails.items;
 
-          // Filter by allowed categories if configured
+          // Filter by allowed categories using product NAME (API has no category field)
           const allowedCategories = store.allowed_categories;
           if (allowedCategories && allowedCategories.length > 0) {
             const before = itemsToCreate.length;
             itemsToCreate = itemsToCreate.filter((item: any) => {
-              const cat = (item.category || '').toLowerCase();
-              // If item has no category and filter is active, block it
-              if (!cat) return false;
-              // Partial match: "Pizza" matches "Pizzas Especiais", "Bebida" matches "Bebidas"
-              return allowedCategories.some((c: string) => cat.includes(c.toLowerCase()));
+              const name = (item.name || '').toLowerCase();
+              if (!name) return true; // safety net
+              return allowedCategories.some((c: string) => name.includes(c.toLowerCase()));
             });
-            console.log(`[poll-orders] Category filter: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
+            console.log(`[poll-orders] Category filter by name: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
           }
 
           if (itemsToCreate.length === 0) {
