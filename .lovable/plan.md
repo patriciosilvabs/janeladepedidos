@@ -1,49 +1,46 @@
 
 
-# Ajustes de fonte e correcao de cores no painel do Forno
+# Corrigir atraso visual do botao PRONTO no tablet
 
-## 1. Ajustar tamanhos de fonte (OvenItemRow.tsx)
+## Problema
 
-**Categoria (nome do produto):** Reduzir de `text-2xl` para `text-base` (linha 101)
+Quando o usuario toca em "PRONTO" no tablet, o React troca o `<Button>` pelo `<Badge>` verde. Porem, navegadores em tablets mantem o estado de "hover/active" do toque anterior, o que pode bloquear o repaint ate que o usuario toque em outro lugar da tela.
 
-**Sabores:** Aumentar de `text-base` para `text-2xl font-bold` (linha 110)
+## Solucao
 
-Resultado visual:
-```text
-[#6623] [Retirada]
-Pizza Grande - 1 Sabor        <-- text-base (menor)
-AMERICANA (G)                 <-- text-2xl bold (maior)
-```
+Aplicar a cor verde via `style={{ backgroundColor }}` inline no Badge, em vez de depender apenas da classe Tailwind. Cores inline tem prioridade absoluta e forcam o navegador a repintar imediatamente, sem depender da resolucao de classes CSS.
 
-## 2. Corrigir cores do botao PRONTO no tablet (OvenItemRow.tsx)
+Adicionalmente, adicionar um estado local `localReady` que e setado imediatamente ao clicar, para que a troca visual de Button para Badge aconteca instantaneamente no componente, sem esperar a resposta do servidor.
 
-O problema e que o Tailwind pode nao aplicar `bg-blue-600` e `bg-green-600` corretamente dentro de `cn()` com condicoes, pois classes conflitantes do `className` base podem ter prioridade.
+## Alteracoes
 
-**Correcao:** Usar `!bg-blue-600` e `!bg-green-600` (important) para garantir que as cores sejam aplicadas, ou reestruturar para que as classes de cor nao compitam entre si. A abordagem mais segura e separar a cor de fundo da string base e coloca-la apenas nas condicionais.
+**Arquivo:** `src/components/kds/OvenItemRow.tsx`
 
-Linha 142-148 atual:
+1. Adicionar estado local `localReady`:
 ```tsx
-className={cn(
-  "text-white shrink-0 text-lg px-4 py-2",
-  isProcessing 
-    ? "bg-gray-500"
-    : isUrgent 
-    ? "bg-red-600 hover:bg-red-700" 
-    : "bg-blue-600 hover:bg-blue-700"
-)}
+const [localReady, setLocalReady] = useState(false);
 ```
 
-O Badge verde (linha 134) tambem sera reforçado com `!important`:
+2. Atualizar `alreadyReady` para incluir o estado local:
 ```tsx
-className="!bg-green-600 text-white shrink-0 text-lg px-4 py-1.5"
+const alreadyReady = localReady || isMarkedReady || item.status === 'ready';
 ```
 
-## Resumo de alteracoes
+3. Envolver `onMarkReady` para setar `localReady` imediatamente:
+```tsx
+const handleReady = () => {
+  setLocalReady(true);
+  onMarkReady();
+};
+```
 
-**Arquivo unico:** `src/components/kds/OvenItemRow.tsx`
+4. Usar `style` inline no Badge verde para forcar repaint:
+```tsx
+<Badge 
+  className="text-white shrink-0 text-lg px-4 py-1.5"
+  style={{ backgroundColor: '#16a34a' }}
+>
+```
 
-- Linha 101: `text-2xl` -> `text-base` (categoria menor)
-- Linha 110: `text-base` -> `text-2xl font-bold` (sabores maiores)
-- Linha 134: Adicionar `!` prefix no `bg-green-600` do Badge PRONTO
-- Linha 142-148: Adicionar `!` prefix nas classes de cor do Button para forcar aplicacao no tablet
+5. Atualizar o `onClick` do Button para usar `handleReady`.
 
