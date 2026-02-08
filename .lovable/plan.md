@@ -1,39 +1,49 @@
 
 
-# Separar nome do produto em linha propria no painel do Forno
+# Ajustes de fonte e correcao de cores no painel do Forno
 
-## Problema
+## 1. Ajustar tamanhos de fonte (OvenItemRow.tsx)
 
-No `OvenItemRow.tsx`, o nome do produto (ex: "Pizza Grande - 1 Sabor") aparece na mesma linha que o numero do pedido e o badge de tipo. O padrao correto e:
+**Categoria (nome do produto):** Reduzir de `text-2xl` para `text-base` (linha 101)
 
+**Sabores:** Aumentar de `text-base` para `text-2xl font-bold` (linha 110)
+
+Resultado visual:
 ```text
-Linha 1: [#6623] [Retirada]
-Linha 2: Pizza Grande - 1 Sabor
-Linha 3: AMERICANA (G)
-Linha 4: Borda / Observacao
+[#6623] [Retirada]
+Pizza Grande - 1 Sabor        <-- text-base (menor)
+AMERICANA (G)                 <-- text-2xl bold (maior)
 ```
 
-## Mudanca
+## 2. Corrigir cores do botao PRONTO no tablet (OvenItemRow.tsx)
 
-**Arquivo:** `src/components/kds/OvenItemRow.tsx` (linhas 95-104)
+O problema e que o Tailwind pode nao aplicar `bg-blue-600` e `bg-green-600` corretamente dentro de `cn()` com condicoes, pois classes conflitantes do `className` base podem ter prioridade.
 
-Mover o `<p>` do nome do produto para fora do `<div>` que contem o ID e o badge, criando uma linha separada:
+**Correcao:** Usar `!bg-blue-600` e `!bg-green-600` (important) para garantir que as cores sejam aplicadas, ou reestruturar para que as classes de cor nao compitam entre si. A abordagem mais segura e separar a cor de fundo da string base e coloca-la apenas nas condicionais.
 
+Linha 142-148 atual:
 ```tsx
-{/* Linha 1: ID + Tipo */}
-<div className="flex items-center gap-2 flex-wrap">
-  {orderDisplayId && (
-    <span className="text-2xl font-bold shrink-0 bg-foreground text-background px-2 py-0.5 rounded">#{orderDisplayId}</span>
-  )}
-  <OrderTypeBadge orderType={item.orders?.order_type} className="text-base px-3 py-1" />
-</div>
-
-{/* Linha 2: Nome do produto */}
-<p className="text-2xl font-bold text-foreground truncate mt-1">
-  {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
-  {item.product_name}
-</p>
+className={cn(
+  "text-white shrink-0 text-lg px-4 py-2",
+  isProcessing 
+    ? "bg-gray-500"
+    : isUrgent 
+    ? "bg-red-600 hover:bg-red-700" 
+    : "bg-blue-600 hover:bg-blue-700"
+)}
 ```
 
-Apenas essa separacao. A ordem dos demais elementos (sabores, borda, complementos, obs) ja esta correta.
+O Badge verde (linha 134) tambem sera reforçado com `!important`:
+```tsx
+className="!bg-green-600 text-white shrink-0 text-lg px-4 py-1.5"
+```
+
+## Resumo de alteracoes
+
+**Arquivo unico:** `src/components/kds/OvenItemRow.tsx`
+
+- Linha 101: `text-2xl` -> `text-base` (categoria menor)
+- Linha 110: `text-base` -> `text-2xl font-bold` (sabores maiores)
+- Linha 134: Adicionar `!` prefix no `bg-green-600` do Badge PRONTO
+- Linha 142-148: Adicionar `!` prefix nas classes de cor do Button para forcar aplicacao no tablet
 
