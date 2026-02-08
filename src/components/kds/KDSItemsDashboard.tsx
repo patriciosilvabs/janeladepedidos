@@ -51,19 +51,9 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
 
   const ovenTabContent = showOvenTab && (
     <TabsContent value="__oven__" className="flex-1 mt-4">
-      {inOvenItems.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-full text-center py-16">
-          <Flame className="h-16 w-16 text-muted-foreground/30 mb-4" />
-          <h2 className="text-xl font-semibold text-muted-foreground">Nenhum item no forno</h2>
-          <p className="text-sm text-muted-foreground/70 mt-2">
-            Os itens aparecerão aqui quando as bancadas enviarem para o forno
-          </p>
-        </div>
-      ) : (
-        <div className="max-w-2xl mx-auto">
-          <OvenTimerPanel />
-        </div>
-      )}
+      <div className="max-w-2xl mx-auto">
+        <OvenTimerPanel />
+      </div>
     </TabsContent>
   );
 
