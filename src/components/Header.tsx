@@ -6,6 +6,7 @@ import { SettingsDialog } from '@/components/SettingsDialog';
 import { EditProfileDialog } from '@/components/EditProfileDialog';
 import { OrderSimulator } from '@/components/OrderSimulator';
 import { useAuth } from '@/hooks/useAuth';
+import { APP_VERSION } from '@/lib/version';
 import { useToast } from '@/hooks/use-toast';
 import { useState, useEffect } from 'react';
 
@@ -70,7 +71,7 @@ export function Header({ sectorName, children, isFullscreen = false }: HeaderPro
           <Truck className="h-6 w-6 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-foreground">Buffer Logístico <span className="text-xs font-normal text-muted-foreground">v1.0.0</span></h1>
+          <h1 className="text-xl font-bold text-foreground">Buffer Logístico <span className="text-xs font-normal text-muted-foreground">{APP_VERSION}</span></h1>
           <p className="text-sm text-muted-foreground">
             Agrupamento inteligente de entregas
           </p>
