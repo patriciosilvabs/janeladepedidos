@@ -98,7 +98,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             )}
             <OrderTypeBadge orderType={item.orders?.order_type} className="text-base px-3 py-1" />
           </div>
-          <p className="text-2xl font-bold text-foreground truncate mt-1">
+          <p className="text-base font-bold text-foreground truncate mt-1">
             {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
             {item.product_name}
           </p>
@@ -107,7 +107,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
               {flavorsList.map((flavor, idx) => (
                 <span
                   key={idx}
-                  className="inline-flex items-center px-2 py-0.5 rounded-md text-base font-medium border bg-muted/50 border-border text-foreground"
+                  className="inline-flex items-center px-2 py-0.5 rounded-md text-2xl font-bold border bg-muted/50 border-border text-foreground"
                 >
                   {flavor}
                 </span>
@@ -131,7 +131,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
 
         {/* Action */}
         {alreadyReady ? (
-          <Badge className="bg-green-600 text-white shrink-0 text-lg px-4 py-1.5">
+          <Badge className="!bg-green-600 text-white shrink-0 text-lg px-4 py-1.5">
             <Check className="h-5 w-5 mr-1" />
             PRONTO
           </Badge>
@@ -142,10 +142,10 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             className={cn(
               "text-white shrink-0 text-lg px-4 py-2",
               isProcessing 
-                ? "bg-gray-500"
+                ? "!bg-gray-500"
                 : isUrgent 
-                ? "bg-red-600 hover:bg-red-700" 
-                : "bg-blue-600 hover:bg-blue-700"
+                ? "!bg-red-600 hover:!bg-red-700" 
+                : "!bg-blue-600 hover:!bg-blue-700"
             )}
           >
             <Check className="h-5 w-5 mr-1" />
