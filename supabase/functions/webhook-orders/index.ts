@@ -209,10 +209,16 @@ const corsHeaders = {
    // Create order_items using RPC
     let itemsCreated = 0;
     if (order.items && order.items.length > 0) {
-      // Add category to each item and filter by allowed_categories
+      // Log item keys for debugging category field
+      if (order.items[0]) {
+        console.log(`[webhook] Item keys sample:`, Object.keys(order.items[0]));
+        console.log(`[webhook] First item raw:`, JSON.stringify(order.items[0]).substring(0, 500));
+      }
+
+      // Add category to each item - try multiple possible field names
       let itemsToCreate = order.items.map(item => ({
         ...item,
-        category: item.category || item.category_name || '',
+        category: (item as any).category || (item as any).category_name || (item as any).group || (item as any).group_name || (item as any).type || '',
       }));
 
       // Filter by allowed categories if configured
@@ -221,7 +227,10 @@ const corsHeaders = {
         const before = itemsToCreate.length;
         itemsToCreate = itemsToCreate.filter(item => {
           const cat = (item.category || '').toLowerCase();
-          return !cat || allowedCategories.some(c => c.toLowerCase() === cat);
+          // If item has no category and filter is active, block it
+          if (!cat) return false;
+          // Partial match: "Pizza" matches "Pizzas Especiais", "Bebida" matches "Bebidas"
+          return allowedCategories.some(c => cat.includes(c.toLowerCase()));
         });
         console.log(`Category filter: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
       }
@@ -370,7 +379,7 @@ async function fetchOrderFromApi(
         observation: item.notes || item.observation,
         unit_price: item.price || item.unit_price,
         total_price: item.total || item.total_price,
-        category: item.category || item.category_name || '',
+        category: item.category || item.category_name || item.group || item.group_name || item.type || '',
       })),
       total: orderData.total,
       delivery_fee: orderData.delivery_fee,

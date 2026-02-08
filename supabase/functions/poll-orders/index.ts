@@ -289,10 +289,16 @@ async function pollStoreOrders(
 
         // Criar order_items para KDS
         if (orderDetails.items && Array.isArray(orderDetails.items)) {
-          // Add category to each item and filter by allowed_categories
+          // Log item keys for debugging category field
+          if (orderDetails.items[0]) {
+            console.log(`[poll-orders] Item keys sample:`, Object.keys(orderDetails.items[0]));
+            console.log(`[poll-orders] First item raw:`, JSON.stringify(orderDetails.items[0]).substring(0, 500));
+          }
+
+          // Add category to each item - try multiple possible field names
           let itemsToCreate = orderDetails.items.map((item: any) => ({
             ...item,
-            category: item.category || item.category_name || '',
+            category: item.category || item.category_name || item.group || item.group_name || item.type || '',
           }));
 
           // Filter by allowed categories if configured
@@ -301,9 +307,12 @@ async function pollStoreOrders(
             const before = itemsToCreate.length;
             itemsToCreate = itemsToCreate.filter((item: any) => {
               const cat = (item.category || '').toLowerCase();
-              return !cat || allowedCategories.some((c: string) => c.toLowerCase() === cat);
+              // If item has no category and filter is active, block it
+              if (!cat) return false;
+              // Partial match: "Pizza" matches "Pizzas Especiais", "Bebida" matches "Bebidas"
+              return allowedCategories.some((c: string) => cat.includes(c.toLowerCase()));
             });
-            console.log(`[poll-orders] Category filter: ${before} -> ${itemsToCreate.length} items`);
+            console.log(`[poll-orders] Category filter: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
           }
 
           if (itemsToCreate.length === 0) {
