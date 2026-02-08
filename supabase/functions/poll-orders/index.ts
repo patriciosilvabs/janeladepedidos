@@ -475,6 +475,92 @@ async function pollStoreOrders(
       
       for (const order of existingPendingOrders) {
         try {
+          // === AUTO-REPAIR: Check if order has items, if not, re-create them ===
+          const { data: orderItems } = await supabase
+            .from('order_items')
+            .select('id')
+            .eq('order_id', order.id)
+            .limit(1);
+
+          if (!orderItems || orderItems.length === 0) {
+            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} (${order.id}) has NO items, repairing...`);
+            
+            try {
+              const repairResponse = await fetch(
+                `${baseUrl}/api/partner/v1/orders/${order.external_id}`,
+                {
+                  method: 'GET',
+                  headers: {
+                    'X-API-KEY': token,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json',
+                  },
+                }
+              );
+
+              if (repairResponse.ok) {
+                const repairDetails = await repairResponse.json();
+                
+                if (repairDetails.items && Array.isArray(repairDetails.items) && repairDetails.items.length > 0) {
+                  let itemsToRepair = repairDetails.items;
+
+                  // Apply category filter
+                  const allowedCategories = store.allowed_categories;
+                  if (allowedCategories && allowedCategories.length > 0) {
+                    itemsToRepair = itemsToRepair.filter((item: any) => {
+                      const name = (item.name || '').toLowerCase();
+                      const kind = (item.kind || '').toLowerCase();
+                      if (!name && !kind) return true;
+                      return allowedCategories.some((c: string) => {
+                        const keyword = c.toLowerCase();
+                        return kind.includes(keyword) || name.includes(keyword);
+                      });
+                    });
+                  }
+
+                  if (itemsToRepair.length > 0) {
+                    // Explode combos
+                    try {
+                      const { data: settingsData } = await supabase
+                        .from('app_settings')
+                        .select('kds_edge_keywords, kds_flavor_keywords')
+                        .eq('id', 'default')
+                        .maybeSingle();
+                      
+                      const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
+                      const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
+                      itemsToRepair = explodeComboItems(itemsToRepair, edgeKw, flavorKw);
+                    } catch (explodeErr) {
+                      console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
+                    }
+
+                    const { data: repairResult, error: repairError } = await supabase.rpc(
+                      'create_order_items_from_json',
+                      {
+                        p_order_id: order.id,
+                        p_items: itemsToRepair,
+                        p_default_sector_id: null,
+                      }
+                    );
+
+                    if (repairError) {
+                      console.error(`[poll-orders] Repair: Error creating items for order ${order.id}:`, repairError);
+                    } else {
+                      console.log(`[poll-orders] Repair: Created ${repairResult} items for order ${order.cardapioweb_order_id}`);
+                    }
+                  }
+                } else {
+                  console.log(`[poll-orders] Repair: No items found in API for order ${order.cardapioweb_order_id}`);
+                }
+              } else {
+                console.log(`[poll-orders] Repair: API returned ${repairResponse.status} for order ${order.external_id}`);
+              }
+            } catch (repairErr) {
+              console.error(`[poll-orders] Repair: Error repairing order ${order.id}:`, repairErr);
+            }
+          }
+          // === END AUTO-REPAIR ===
+
           const statusResponse = await fetch(
             `${baseUrl}/api/partner/v1/orders/${order.external_id}`,
             {

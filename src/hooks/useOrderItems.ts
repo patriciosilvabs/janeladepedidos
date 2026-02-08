@@ -62,10 +62,10 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
       if (error) throw error;
       return data as unknown as OrderItemWithOrder[];
     },
-    staleTime: 1000,
+    staleTime: 2000,
     refetchInterval: sectorId ? 3000 : 5000,
     refetchOnWindowFocus: true,
-    refetchIntervalInBackground: true,
+    structuralSharing: true,
   });
 
   // Realtime subscription with debounce
