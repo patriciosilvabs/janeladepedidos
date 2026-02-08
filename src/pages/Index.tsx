@@ -81,7 +81,7 @@ const Index = () => {
   const showMainViewTabs = isAdmin && !isKDSSector && !isDispatchSector;
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
       <Header sectorName={userSector?.name} isFullscreen={isFullscreen}>
         {/* Main view tabs for admins without KDS sector */}
         {showMainViewTabs && !isFullscreen && (
@@ -122,6 +122,9 @@ const Index = () => {
               : <KDSDashboard />)
             : <Dashboard />
       }
+      <span className="fixed bottom-1 right-2 text-[10px] text-muted-foreground/40 select-none pointer-events-none z-50">
+        v1.0.0
+      </span>
     </div>
   );
 };
