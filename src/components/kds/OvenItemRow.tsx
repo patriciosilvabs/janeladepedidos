@@ -134,6 +134,19 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
               ))}
             </div>
           )}
+          {item.edge_type && (
+            <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+              <p className="text-sm text-white font-bold whitespace-pre-line">{item.edge_type}</p>
+            </div>
+          )}
+          {item.complements && (
+            <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{item.complements}</p>
+          )}
+          {item.notes && (
+            <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+              <p className="text-sm text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
+            </div>
+          )}
         </div>
 
         {/* Action */}
