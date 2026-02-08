@@ -3,6 +3,7 @@ import { useSectors, Sector } from '@/hooks/useSectors';
 import { SectorQueuePanel } from './SectorQueuePanel';
 import { OvenTimerPanel, DispatchedOrder } from './OvenTimerPanel';
 import { OvenHistoryPanel } from './OvenHistoryPanel';
+import { KDSErrorBoundary } from './KDSErrorBoundary';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
@@ -102,6 +103,7 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
   );
 
   return (
+    <KDSErrorBoundary>
     <div className="flex flex-col h-[calc(100vh-5rem)] p-4 gap-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -149,5 +151,6 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
         )
       )}
     </div>
+    </KDSErrorBoundary>
   );
 }
