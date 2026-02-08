@@ -70,7 +70,7 @@ export function Header({ sectorName, children, isFullscreen = false }: HeaderPro
           <Truck className="h-6 w-6 text-primary-foreground" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-foreground">Buffer Logístico</h1>
+          <h1 className="text-xl font-bold text-foreground">Buffer Logístico <span className="text-xs font-normal text-muted-foreground">v1.0.0</span></h1>
           <p className="text-sm text-muted-foreground">
             Agrupamento inteligente de entregas
           </p>

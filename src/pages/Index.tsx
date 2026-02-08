@@ -122,9 +122,6 @@ const Index = () => {
               : <KDSDashboard />)
             : <Dashboard />
       }
-      <span className="fixed bottom-2 right-3 text-xs text-foreground/60 select-none pointer-events-none z-50">
-        v1.0.0
-      </span>
     </div>
   );
 };
