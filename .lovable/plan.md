@@ -1,64 +1,51 @@
 
-# Melhorias no Painel do Forno/Despacho e Cancelamentos
 
-## 1. Badge de tipo de pedido (Retirada/Delivery/Balcao) no Forno
+# Corrigir badges de tipo de pedido que nao aparecem
 
-**Problema:** O painel do Forno nao mostra se o pedido eh Retirada, Delivery ou Balcao.
+## Problema
 
-**Solucao:**
-- Adicionar `order_type` na query do `useOrderItems` (campo `orders`)
-- Atualizar o tipo `OrderItemWithOrder` para incluir `order_type`
-- Criar funcao utilitaria `getOrderTypeBadge` reutilizavel (extrair do `OrderCard.tsx`)
-- Exibir badge colorido no `OvenItemRow` (ao lado do numero do pedido) e no `OrderOvenBlock` (no header do bloco)
+Os badges de tipo de pedido (Retirada, Delivery, Balcao) nao aparecem porque os valores salvos no banco de dados nao correspondem aos valores esperados no codigo.
 
-Badges: Azul (Delivery), Verde (Mesa), Laranja (Retirada), Roxo (Balcao)
+**Valores no banco de dados:**
+- `delivery` (216 pedidos) -- funciona
+- `takeout` (61 pedidos) -- NAO mapeado
+- `closed_table` (8 pedidos) -- NAO mapeado
+- `takeaway` (6 pedidos) -- funciona
 
-## 2. Aumentar fonte na bancada de despacho
+**Valores no codigo atual:**
+- `delivery`, `dine_in`, `takeaway`, `counter`
 
-**Solucao:** No `OvenItemRow.tsx`:
-- Nome do produto: de `text-xl` para `text-2xl`
-- Sabores (badges): de `text-sm` para `text-base`
-- Borda/Obs: de `text-sm` para `text-base`
-- Timer: de `text-2xl` para `text-3xl`
-- Numero do pedido: de `text-xl` para `text-2xl`
+O valor `takeout` (que eh o mais usado para retirada) nao esta mapeado, por isso o badge nao aparece.
 
-No `OrderOvenBlock.tsx`:
-- Header do bloco: fontes proporcionalmente maiores
-- Itens prontos e aguardando: fontes maiores tambem
+## Solucao
 
-## 3. Cancelamento de item NAO iniciado -- remover silenciosamente
+Atualizar o mapeamento em `src/lib/orderTypeUtils.tsx` para incluir todos os valores reais do banco:
 
-**Problema:** Itens cancelados antes de serem iniciados (status `pending`) nao precisam de alerta.
+| Valor no banco | Label | Cor |
+|---|---|---|
+| `delivery` | Delivery | Azul |
+| `takeout` | Retirada | Laranja |
+| `takeaway` | Retirada | Laranja |
+| `dine_in` | Mesa | Verde |
+| `closed_table` | Mesa Fechada | Verde |
+| `counter` | Balcao | Roxo |
 
-**Solucao:** Modificar `CancellationAlert.tsx`:
-- Filtrar a query para buscar apenas itens cancelados que JA tinham sido iniciados (que possuem `claimed_at` preenchido, indicando que alguem ja estava trabalhando neles)
-- Itens que nunca foram iniciados (`claimed_at IS NULL`) serao automaticamente removidos da bancada pelo filtro de status existente, sem alerta
+## Detalhe Tecnico
 
-## 4. Modal fullscreen para cancelamento de item JA iniciado
+Arquivo unico a alterar: `src/lib/orderTypeUtils.tsx`
 
-**Problema:** Quando um item eh cancelado depois de ja ter sido iniciado na producao, o operador precisa de um aviso impactante.
+Adicionar as entradas `takeout` e `closed_table` ao objeto `ORDER_TYPE_CONFIG`:
 
-**Solucao:** Substituir o componente `CancellationAlert` atual (card inline) por um modal fullscreen:
-- Overlay vermelho cobrindo TODA a tela
-- Icone grande de alerta centralizado
-- Texto principal: "PEDIDO CANCELADO" com numero do pedido
-- Texto secundario: "NAO produza mais este item. Se ja estiver pronto, encaixe em outro pedido."
-- Lista dos itens cancelados
-- Botao grande central "ENTENDI" para confirmar (chama `acknowledge_cancellation`)
-- Som de alerta continuo ate o operador confirmar
+```typescript
+const ORDER_TYPE_CONFIG = {
+  delivery:     { label: 'Delivery',      className: 'bg-blue-600 text-white' },
+  takeout:      { label: 'Retirada',      className: 'bg-orange-500 text-white' },
+  takeaway:     { label: 'Retirada',      className: 'bg-orange-500 text-white' },
+  dine_in:      { label: 'Mesa',          className: 'bg-green-600 text-white' },
+  closed_table: { label: 'Mesa Fechada',  className: 'bg-green-600 text-white' },
+  counter:      { label: 'Balcão',        className: 'bg-purple-600 text-white' },
+};
+```
 
-## Detalhes Tecnicos
+Nenhuma outra alteracao necessaria -- os componentes `OvenItemRow`, `OrderOvenBlock` e demais ja usam o `OrderTypeBadge` corretamente; o problema era apenas o mapeamento incompleto.
 
-### Arquivos modificados:
-
-1. **`src/types/orderItems.ts`** -- Adicionar `order_type` ao tipo `OrderItemWithOrder.orders`
-
-2. **`src/hooks/useOrderItems.ts`** -- Adicionar `order_type` na query SELECT do Supabase (duas queries: items e siblings)
-
-3. **`src/lib/orderTypeUtils.ts`** (novo) -- Funcao utilitaria `getOrderTypeBadge` extraida do OrderCard
-
-4. **`src/components/kds/OvenItemRow.tsx`** -- Aumentar fontes + adicionar badge de tipo de pedido
-
-5. **`src/components/kds/OrderOvenBlock.tsx`** -- Aumentar fontes + adicionar badge de tipo de pedido no header
-
-6. **`src/components/kds/CancellationAlert.tsx`** -- Reescrever como modal fullscreen + filtrar apenas itens que ja foram iniciados (`claimed_at` preenchido)
