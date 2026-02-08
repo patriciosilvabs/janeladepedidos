@@ -20,6 +20,7 @@ interface OvenItemRowProps {
 export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, audioEnabled, ovenTimeSeconds, isMarkedReady, orderDisplayId }: OvenItemRowProps) {
   const [countdown, setCountdown] = useState<number>(ovenTimeSeconds);
   const [hasPlayedAlert, setHasPlayedAlert] = useState(false);
+  const [localReady, setLocalReady] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -60,7 +61,12 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
   const isFinished = countdown === 0;
   const isUrgent = countdown <= 10 && countdown > 0;
   const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
-  const alreadyReady = isMarkedReady || item.status === 'ready';
+  const alreadyReady = localReady || isMarkedReady || item.status === 'ready';
+
+  const handleReady = () => {
+    setLocalReady(true);
+    onMarkReady();
+  };
 
   const flavorsList = item.flavors
     ?.split('\n')
@@ -131,13 +137,13 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
 
         {/* Action */}
         {alreadyReady ? (
-          <Badge className="!bg-green-600 text-white shrink-0 text-lg px-4 py-1.5">
+          <Badge className="text-white shrink-0 text-lg px-4 py-1.5" style={{ backgroundColor: '#16a34a' }}>
             <Check className="h-5 w-5 mr-1" />
             PRONTO
           </Badge>
         ) : (
           <Button
-            onClick={onMarkReady}
+            onClick={handleReady}
             disabled={isProcessing || isAnyProcessing}
             className={cn(
               "text-white shrink-0 text-lg px-4 py-2",
