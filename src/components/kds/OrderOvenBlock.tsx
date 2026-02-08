@@ -150,7 +150,7 @@ export function OrderOvenBlock({
                   {item.product_name}
                 </p>
                 {item.edge_type && (
-                  <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse">
+                  <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse w-fit">
                     <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
                   </div>
                 )}
@@ -158,7 +158,7 @@ export function OrderOvenBlock({
                   <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
                 )}
                 {item.notes && (
-                    <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-pulse">
+                    <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-pulse w-fit">
                     <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
                   </div>
                 )}
@@ -200,7 +200,7 @@ export function OrderOvenBlock({
                         </div>
                       )}
                       {item.edge_type && (
-                        <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse">
+                        <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse w-fit">
                           <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
                         </div>
                       )}
@@ -208,7 +208,7 @@ export function OrderOvenBlock({
                         <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
                       )}
                       {item.notes && (
-                        <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-pulse">
+                        <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-pulse w-fit">
                           <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
                         </div>
                       )}
