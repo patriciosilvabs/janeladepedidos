@@ -13,11 +13,21 @@ import { OvenItemRow } from './OvenItemRow';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
 
-interface OvenTimerPanelProps {
-  sectorId?: string;
+export interface DispatchedOrder {
+  orderId: string;
+  orderDisplayId: string;
+  storeName: string | null;
+  customerName: string;
+  items: OrderItemWithOrder[];
+  dispatchedAt: Date;
 }
 
-export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
+interface OvenTimerPanelProps {
+  sectorId?: string;
+  onDispatch?: (order: DispatchedOrder) => void;
+}
+
+export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const { items, siblingItems, markItemReady } = useOrderItems({ status: ['in_oven', 'ready'], sectorId });
   const { settings } = useSettings();
   const { printRaw } = usePrintNode();
@@ -54,7 +64,6 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       siblingItems: OrderItemWithOrder[];
     }> = {};
 
-    // Add in_oven items
     for (const item of inOvenItems) {
       if (!groups[item.order_id]) {
         const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
@@ -70,7 +79,6 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       groups[item.order_id].ovenItems.push(item);
     }
 
-    // Add ready-from-oven items (they stay as ovenItems so they render in the block)
     for (const item of readyFromOvenItems) {
       if (!groups[item.order_id]) {
         const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
@@ -86,14 +94,12 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       groups[item.order_id].ovenItems.push(item);
     }
 
-    // Add sibling items to their respective groups
     for (const item of siblingItems) {
       if (groups[item.order_id]) {
         groups[item.order_id].siblingItems.push(item);
       }
     }
 
-    // Sort groups by earliest exit time
     return Object.values(groups)
       .filter(g => !dispatchedOrderIds.has(g.orderId))
       .sort((a, b) => {
@@ -124,11 +130,11 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
 
   const handleMasterReady = async (ovenItems: OrderItemWithOrder[]) => {
     const orderId = ovenItems[0]?.order_id;
+    const firstItem = ovenItems[0];
     
-    // Print dispatch ticket for the first item (contains order info)
+    // Print dispatch ticket
     if (printEnabled && dispatchPrintEnabled && printerId && ovenItems.length > 0) {
       try {
-        const firstItem = ovenItems[0];
         const ticketContent = formatDispatchTicket(firstItem);
         await printRaw(printerId, ticketContent, `Despacho #${firstItem.orders?.cardapioweb_order_id || firstItem.order_id.slice(0, 8)}`);
       } catch (printError) {
@@ -136,9 +142,22 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       }
     }
 
-    // Hide block immediately
+    // Move to history
     if (orderId) {
       setDispatchedOrderIds(prev => new Set(prev).add(orderId));
+      
+      // Find group info to pass to history
+      const group = orderGroups.find(g => g.orderId === orderId);
+      if (group && onDispatch) {
+        onDispatch({
+          orderId: group.orderId,
+          orderDisplayId: group.orderDisplayId,
+          storeName: group.storeName,
+          customerName: group.customerName,
+          items: [...group.ovenItems, ...group.siblingItems],
+          dispatchedAt: new Date(),
+        });
+      }
     }
   };
 
@@ -178,7 +197,6 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
           const totalItems = group.ovenItems.length + group.siblingItems.length;
           
           if (totalItems === 1 && group.ovenItems.length === 1) {
-            // Single-item order: render simple row without order header/DESPACHAR
             return (
               <OvenItemRow
                 key={group.ovenItems[0].id}
@@ -193,7 +211,6 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
             );
           }
           
-          // Multi-item order: render full block with DESPACHAR
           return (
             <OrderOvenBlock
               key={group.orderId}
