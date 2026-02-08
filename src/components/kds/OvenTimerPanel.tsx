@@ -35,6 +35,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [dispatchedOrderIds, setDispatchedOrderIds] = useState<Set<string>>(new Set());
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const knownOvenOrderIds = useRef<Set<string>>(new Set());
   
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
   const printEnabled = settings?.printnode_enabled ?? false;
@@ -52,6 +53,15 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   // Separate items by status
   const inOvenItems = items.filter(i => i.status === 'in_oven');
   const readyFromOvenItems = items.filter(i => i.status === 'ready' && i.oven_entry_at);
+
+  // Track orders seen with in_oven status during this session
+  for (const item of inOvenItems) {
+    knownOvenOrderIds.current.add(item.order_id);
+  }
+  // Clean up dispatched orders from known set
+  for (const id of dispatchedOrderIds) {
+    knownOvenOrderIds.current.delete(id);
+  }
 
   // Group oven + ready-from-oven items by order
   const orderGroups = useMemo(() => {
@@ -80,6 +90,9 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     }
 
     for (const item of readyFromOvenItems) {
+      // Only show ready items if the order was seen with in_oven this session
+      if (!knownOvenOrderIds.current.has(item.order_id)) continue;
+
       if (!groups[item.order_id]) {
         const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
         groups[item.order_id] = {
