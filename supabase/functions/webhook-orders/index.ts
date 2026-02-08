@@ -78,7 +78,84 @@ const corsHeaders = {
     allowed_categories: string[] | null;
   }
  
- // ================== HELPERS ==================
+// ================== COMBO EXPLOSION ==================
+
+function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords: string[]): any[] {
+  const result: any[] = [];
+
+  for (const item of items) {
+    const options = item.options || [];
+    if (options.length === 0) {
+      result.push(item);
+      continue;
+    }
+
+    const flavorGroups: Record<string, any[]> = {};
+    const edgeOptions: any[] = [];
+    const complementOptions: any[] = [];
+
+    for (const opt of options) {
+      const name = (opt.name || '').toLowerCase();
+      const isEdge = edgeKeywords.some(k =>
+        k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
+      );
+      const isFlavor = !isEdge && flavorKeywords.some(k =>
+        name.includes(k.toLowerCase()) ||
+        (opt.option_group_name || '').toLowerCase().includes(k.toLowerCase())
+      );
+
+      if (isEdge) {
+        edgeOptions.push(opt);
+      } else if (isFlavor) {
+        const groupId = String(opt.option_group_id || 'default');
+        if (!flavorGroups[groupId]) flavorGroups[groupId] = [];
+        flavorGroups[groupId].push(opt);
+      } else {
+        complementOptions.push(opt);
+      }
+    }
+
+    const flavorGroupKeys = Object.keys(flavorGroups);
+
+    if (flavorGroupKeys.length <= 1) {
+      result.push(item);
+      continue;
+    }
+
+    // Expand edge options by quantity
+    const expandedEdges: any[] = [];
+    for (const edge of edgeOptions) {
+      const qty = edge.quantity || 1;
+      for (let i = 0; i < qty; i++) {
+        expandedEdges.push({ ...edge, quantity: 1 });
+      }
+    }
+
+    flavorGroupKeys.forEach((groupId, index) => {
+      const groupFlavors = flavorGroups[groupId];
+      const pairedEdge = index < expandedEdges.length ? [expandedEdges[index]] : [];
+
+      const newOptions = [
+        ...groupFlavors,
+        ...pairedEdge,
+        ...(index === 0 ? complementOptions : []),
+      ];
+
+      result.push({
+        ...item,
+        quantity: 1,
+        options: newOptions,
+        observation: index === 0 ? item.observation : null,
+      });
+    });
+
+    console.log(`[explodeCombo] Exploded "${item.name}" into ${flavorGroupKeys.length} items`);
+  }
+
+  return result;
+}
+
+// ================== HELPERS ==================
  
  function mapOrderType(cardapiowebType?: string): string {
    switch (cardapiowebType) {
@@ -232,6 +309,25 @@ const corsHeaders = {
       if (itemsToCreate.length === 0) {
         console.log('No items remaining after category filter - skipping order item creation');
       } else {
+        // Explode combos before sending to DB
+        try {
+          const { data: settingsData } = await supabase
+            .from('app_settings')
+            .select('kds_edge_keywords, kds_flavor_keywords')
+            .eq('id', 'default')
+            .maybeSingle();
+          
+          const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
+          const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
+          const beforeExplode = itemsToCreate.length;
+          itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw);
+          if (itemsToCreate.length !== beforeExplode) {
+            console.log(`[webhook] Combo explosion: ${beforeExplode} -> ${itemsToCreate.length} items`);
+          }
+        } catch (explodeErr) {
+          console.error(`[webhook] Error in combo explosion (continuing with original items):`, explodeErr);
+        }
+
         const { data: itemCount, error: itemsError } = await supabase.rpc(
           'create_order_items_from_json',
           {
