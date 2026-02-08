@@ -18,7 +18,11 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
   
   const { sectors, isLoading: sectorsLoading } = useSectors();
   const { isAdmin } = useAuth();
-  const { inOvenItems } = useOrderItems({ status: 'in_oven' });
+  const { items: rawInOvenItems } = useOrderItems({ status: 'in_oven' });
+  const inOvenItems = useMemo(() => rawInOvenItems.filter(i => {
+    const orderStatus = i.orders?.status;
+    return orderStatus !== 'cancelled' && orderStatus !== 'closed' && orderStatus !== 'dispatched';
+  }), [rawInOvenItems]);
   const [dispatchedOrders, setDispatchedOrders] = useState<DispatchedOrder[]>([]);
   const [ovenSubTab, setOvenSubTab] = useState<'forno' | 'historico'>('forno');
 

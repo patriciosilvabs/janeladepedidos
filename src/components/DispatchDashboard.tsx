@@ -8,7 +8,11 @@ import { Flame, History } from 'lucide-react';
 
 export function DispatchDashboard() {
   const { items } = useOrderItems({ status: ['in_oven', 'ready'] });
-  const activeItems = items.filter(i => i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at));
+  const activeItems = items.filter(i => {
+    const orderStatus = i.orders?.status;
+    if (orderStatus === 'cancelled' || orderStatus === 'closed' || orderStatus === 'dispatched') return false;
+    return i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at);
+  });
   const [dispatchedOrders, setDispatchedOrders] = useState<DispatchedOrder[]>([]);
 
   const handleDispatch = useCallback((order: DispatchedOrder) => {
