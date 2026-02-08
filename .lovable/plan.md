@@ -1,160 +1,80 @@
 
 
-# Desmembrar combos de pizza usando `option_group_id`
+# Corrigir filtro de categorias: usar campo `kind` da API + fallback por nome
 
 ## Problema
 
-O CardapioWeb envia um combo de 3 pizzas como **1 unico item** com todas as opcoes misturadas. O campo `option_group_id` diferencia cada pizza:
+O pedido #6636 tem o item "Para quem Ama Atum!" que e uma pizza, mas o nome nao contem "Pizza". O filtro atual compara `allowed_categories` contra o `item.name`, o que nao funciona para produtos com nomes criativos.
 
-```text
-option_group_id 953027 -> Pizza 1: 1/2 Milho Verde + 1/2 Bauru
-option_group_id 953168 -> Pizza 2: 1/2 Milho Verde + 1/2 Bauru
-option_group_id 953169 -> Pizza 3: 1/2 Calabresa + 1/2 Marguerita
-option_group_id 953031 -> Bordas (compartilhadas entre as pizzas)
-```
-
-O sistema atual trata tudo como 1 item so, gerando apenas 1 card no KDS.
+A API do CardapioWeb retorna um campo `kind` nos itens (ex: "pizza", "drink", "side") que identifica a categoria real do produto. Precisamos usar esse campo como fonte primaria de classificacao.
 
 ## Solucao
 
-Criar uma funcao `explodeComboItems` que roda **antes** de enviar os itens para o banco. Essa funcao:
+Alterar a logica de filtro para usar uma combinacao de fontes, nesta ordem de prioridade:
 
-1. Identifica combos: itens com multiplos `option_group_id` contendo sabores (keywords de flavor)
-2. Agrupa opcoes de sabor por `option_group_id` - cada grupo vira um item separado
-3. Distribui bordas proporcionalmente entre os itens (pareando por posicao)
-4. Complementos e observacoes ficam apenas no primeiro item (padrao existente)
+1. `item.kind` (campo da API que identifica o tipo do produto)
+2. `item.name` (fallback - nome do produto)
+3. `item.option_group_name` ou qualquer outro campo descritivo disponivel
 
-### Exemplo do resultado
+### Nova logica de filtro
 
-Antes (1 item):
 ```text
-"Combo: 3 Pizzas G" com 8 opcoes misturadas
+allowed_categories = ["Pizza", "Combo", "Lanche"]
+
+Item: { name: "Para quem Ama Atum!", kind: "pizza" }
+  -> kind "pizza" includes "pizza" -> ACEITO
+
+Item: { name: "Regente 1 litro", kind: "drink" }
+  -> kind "drink" nao contem nenhuma keyword -> nome tambem nao -> BLOQUEADO
 ```
 
-Depois (3 itens):
-```text
-Item 1: "Combo: 3 Pizzas G" | sabores: 1/2 Milho Verde + 1/2 Bauru | borda: # Massa Tradicional
-Item 2: "Combo: 3 Pizzas G" | sabores: 1/2 Milho Verde + 1/2 Bauru | borda: # Massa Tradicional
-Item 3: "Combo: 3 Pizzas G" | sabores: 1/2 Calabresa + 1/2 Marguerita | borda: # Borda de Cheddar
-```
+Se o `kind` nao existir ou estiver vazio, o sistema faz fallback para o nome (comportamento atual).
 
-## Arquivos a alterar
+## Mudancas tecnicas
 
-### `supabase/functions/poll-orders/index.ts`
+### Arquivo 1: `supabase/functions/poll-orders/index.ts` (~linha 386)
 
-Adicionar funcao `explodeComboItems` e chama-la antes de `create_order_items_from_json`:
+Alterar o filtro de categorias:
 
 ```typescript
-function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords: string[]): any[] {
-  const result: any[] = [];
+itemsToCreate = itemsToCreate.filter((item: any) => {
+  const name = (item.name || '').toLowerCase();
+  const kind = (item.kind || '').toLowerCase();
+  if (!name && !kind) return true; // safety net
 
-  for (const item of items) {
-    const options = item.options || [];
-    if (options.length === 0) {
-      result.push(item);
-      continue;
-    }
-
-    // Classify each option as edge, flavor, or complement
-    // Group flavors by option_group_id
-    const flavorGroups: Record<string, any[]> = {};
-    const edgeOptions: any[] = [];
-    const complementOptions: any[] = [];
-
-    for (const opt of options) {
-      const name = (opt.name || '').toLowerCase();
-      const isEdge = edgeKeywords.some(k =>
-        k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
-      );
-      const isFlavor = !isEdge && flavorKeywords.some(k =>
-        name.includes(k.toLowerCase()) ||
-        (opt.option_group_name || '').toLowerCase().includes(k.toLowerCase())
-      );
-
-      if (isEdge) {
-        edgeOptions.push(opt);
-      } else if (isFlavor) {
-        const groupId = String(opt.option_group_id || 'default');
-        if (!flavorGroups[groupId]) flavorGroups[groupId] = [];
-        flavorGroups[groupId].push(opt);
-      } else {
-        complementOptions.push(opt);
-      }
-    }
-
-    const flavorGroupKeys = Object.keys(flavorGroups);
-
-    // If only 0 or 1 flavor group, no explosion needed
-    if (flavorGroupKeys.length <= 1) {
-      result.push(item);
-      continue;
-    }
-
-    // Explode: each flavor group becomes a separate item
-    flavorGroupKeys.forEach((groupId, index) => {
-      const groupFlavors = flavorGroups[groupId];
-      // Pair edge by index (or distribute by quantity)
-      const pairedEdge = index < edgeOptions.length ? [edgeOptions[index]] : [];
-
-      const newOptions = [
-        ...groupFlavors,
-        ...pairedEdge,
-        ...(index === 0 ? complementOptions : []),  // complements on first only
-      ];
-
-      result.push({
-        ...item,
-        quantity: 1,
-        options: newOptions,
-        observation: index === 0 ? item.observation : null,
-      });
-    });
-
-    console.log(`[explodeCombo] Exploded "${item.name}" into ${flavorGroupKeys.length} items`);
-  }
-
-  return result;
-}
+  return allowedCategories.some((c: string) => {
+    const keyword = c.toLowerCase();
+    return kind.includes(keyword) || name.includes(keyword);
+  });
+});
 ```
 
-Chamar antes do RPC:
+### Arquivo 2: `supabase/functions/webhook-orders/index.ts`
+
+Mesma alteracao no filtro do webhook.
+
+### Adicionar log do campo `kind`
+
+No log de debug existente (linha 376-378), incluir o campo `kind` para confirmar que esta presente:
 
 ```typescript
-// Explode combos before sending to DB
-const edgeKw = (settings.kds_edge_keywords || '#, Borda').split(',').map(s => s.trim());
-const flavorKw = (settings.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map(s => s.trim());
-itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw);
+console.log(`[poll-orders] First item sample: name="${item.name}", kind="${item.kind}"`);
 ```
 
-### `supabase/functions/webhook-orders/index.ts`
+### Recuperar pedido #6636
 
-Mesma funcao `explodeComboItems` e mesma chamada antes do RPC.
-
-### Buscar keywords do `app_settings`
-
-Ambas as funcoes ja tem acesso ao Supabase. Precisamos buscar `kds_edge_keywords` e `kds_flavor_keywords` do `app_settings` para usar na classificacao.
-
-### Distribuicao de bordas
-
-O sistema de bordas distribui com logica posicional:
-- Se ha N bordas e N pizzas: cada borda vai para sua pizza correspondente
-- Se ha menos bordas que pizzas: as pizzas excedentes ficam sem borda
-- A borda "# Massa Tradicional" com `quantity: 2` sera expandida em 2 entradas antes da distribuicao
-
-### Recuperar pedido #6632
-
-Deletar o pedido existente para reimportacao com a nova logica:
+Deletar o pedido para reimportacao com a nova logica:
 
 ```sql
-DELETE FROM order_items WHERE order_id = 'f8f4e2af-1c28-4844-adde-8979c14a88cc';
-DELETE FROM orders WHERE id = 'f8f4e2af-1c28-4844-adde-8979c14a88cc';
+DELETE FROM orders WHERE id = '6cad946e-69ac-4122-8ba9-58455c119c58';
 ```
 
-## Resultado esperado no KDS
+## Resultado esperado
 
-3 cards separados, cada um com:
-- Nome do produto (Combo: 3 Pizzas G)
-- 2 sabores meio a meio
-- Sua borda correspondente
-- Complementos apenas no primeiro card
+| Item | kind | nome | Resultado |
+|---|---|---|---|
+| Para quem Ama Atum! | pizza | nao match | ACEITO (via kind) |
+| Regente 1 litro | drink | nao match | BLOQUEADO |
+| Pizza Grande | pizza | match | ACEITO (via ambos) |
+| Combo 3 Pizzas G | combo | match | ACEITO (via ambos) |
 
