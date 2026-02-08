@@ -1,37 +1,37 @@
 
-
-# Corrigir duplicacao de itens no bloco do Forno
+# Diferenciar visualmente item PRONTO de item ainda no forno
 
 ## Problema
 
-O pedido #6596 tem 3 pizzas, mas mostra 5 itens (4/5 no contador). Isso acontece porque itens com status `ready` que passaram pelo forno aparecem em **duas queries simultaneamente**:
-
-1. **Query principal** (status `in_oven` + `ready`) -- captura os 2 itens ready com `oven_entry_at` e os adiciona como `ovenItems`
-2. **Query de siblings** (status diferente de `in_oven` e `cancelled`) -- tambem captura esses mesmos 2 itens ready e os adiciona como `siblingItems`
-
-Resultado: 3 itens reais aparecem como 5 (3 ovenItems + 2 siblingItems duplicados).
+Ambos os estados (item com timer ativo e item ja marcado como PRONTO) usam o botao verde "PRONTO", causando confusao visual. O operador nao consegue distinguir rapidamente o que ja foi concluido do que ainda precisa de acao.
 
 ## Solucao
 
-No `useMemo` do `OvenTimerPanel.tsx`, ao processar `siblingItems`, ignorar itens que ja estao no grupo como `ovenItems`. Basta verificar se o `item.id` ja existe no array `ovenItems` do grupo antes de adicionar.
+Mudar a cor do botao "PRONTO" do item que ainda esta no forno (acao pendente) para **azul**, mantendo o badge "PRONTO" do item ja concluido em **verde**. Isso cria uma distincao clara:
+
+- **Azul** = botao de acao ("clique aqui para marcar como pronto")
+- **Verde** = status confirmado ("este item ja esta pronto")
 
 ## Detalhes Tecnicos
 
-### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
+### Arquivo: `src/components/kds/OvenItemRow.tsx`
 
-Na secao que processa siblings dentro do `useMemo`, adicionar uma verificacao:
+Alterar as classes do `Button` de acao (linha ~107-118):
 
-```typescript
-for (const item of siblingItems) {
-  if (groups[item.order_id]) {
-    // Evitar duplicatas: pular se o item ja esta nos ovenItems
-    const alreadyInOven = groups[item.order_id].ovenItems.some(o => o.id === item.id);
-    if (!alreadyInOven) {
-      groups[item.order_id].siblingItems.push(item);
-    }
-  }
-}
-```
+- De: `bg-green-600 hover:bg-green-700` (estado normal)
+- Para: `bg-blue-600 hover:bg-blue-700`
 
-Isso garante que cada item apareca apenas uma vez no bloco, independente de quantas queries o retornem.
+O estado urgente (`isUrgent`) continua vermelho, e o badge de status "PRONTO" (ja marcado) permanece verde (`bg-green-600`).
 
+### Arquivo: `src/components/kds/OrderOvenBlock.tsx`
+
+Se o botao "DESPACHAR" tambem usar verde, verificar e ajustar para manter consistencia. O botao DESPACHAR deve permanecer com sua cor atual (provavelmente ja esta diferenciado).
+
+### Resultado visual esperado
+
+| Estado | Cor |
+|--------|-----|
+| Botao PRONTO (acao pendente) | Azul |
+| Botao PRONTO (urgente/timer < 10s) | Vermelho |
+| Badge PRONTO (item concluido) | Verde |
+| Borda do item concluido | Verde |
