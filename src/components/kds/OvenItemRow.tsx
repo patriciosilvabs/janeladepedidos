@@ -137,7 +137,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
 
         {/* Action */}
         {alreadyReady ? (
-          <Badge className="text-white shrink-0 text-lg px-4 py-1.5" style={{ backgroundColor: '#16a34a' }}>
+          <Badge className="text-white shrink-0 text-lg px-4 py-4 min-h-[64px] flex items-center" style={{ backgroundColor: '#16a34a' }}>
             <Check className="h-5 w-5 mr-1" />
             PRONTO
           </Badge>
@@ -146,7 +146,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             onClick={handleReady}
             disabled={isProcessing || isAnyProcessing}
             className={cn(
-              "text-white shrink-0 text-lg px-4 py-2",
+              "text-white shrink-0 text-lg px-4 py-6 min-h-[64px]",
               isProcessing 
                 ? "!bg-gray-500"
                 : isUrgent 
