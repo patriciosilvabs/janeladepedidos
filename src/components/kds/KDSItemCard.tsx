@@ -242,7 +242,7 @@ export function KDSItemCard({
 
       {/* Product Info */}
       <div className="mb-3">
-        <span className="text-sm text-muted-foreground">
+        <span className="text-xs text-muted-foreground">
           {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
           {item.product_name}
         </span>
