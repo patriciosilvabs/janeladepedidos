@@ -161,6 +161,19 @@ export function OrderOvenBlock({
                   {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
                   {item.product_name}
                 </p>
+                {item.edge_type && (
+                  <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                    <p className="text-sm text-white font-bold whitespace-pre-line">{item.edge_type}</p>
+                  </div>
+                )}
+                {item.complements && (
+                  <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{item.complements}</p>
+                )}
+                {item.notes && (
+                  <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                    <p className="text-sm text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
+                  </div>
+                )}
               </div>
               <Badge className="bg-green-600 text-white shrink-0 text-base px-3 py-1">
                 <Check className="h-4 w-4 mr-1" />
@@ -202,6 +215,19 @@ export function OrderOvenBlock({
                               {flavor}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {item.edge_type && (
+                        <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                          <p className="text-sm text-white font-bold whitespace-pre-line">{item.edge_type}</p>
+                        </div>
+                      )}
+                      {item.complements && (
+                        <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{item.complements}</p>
+                      )}
+                      {item.notes && (
+                        <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+                          <p className="text-sm text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
                         </div>
                       )}
                     </div>
