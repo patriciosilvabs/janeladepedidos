@@ -1,51 +1,28 @@
 
-
-# Corrigir badges de tipo de pedido que nao aparecem
+# Simplificar visualizacao de pedidos com 1 item no forno
 
 ## Problema
 
-Os badges de tipo de pedido (Retirada, Delivery, Balcao) nao aparecem porque os valores salvos no banco de dados nao correspondem aos valores esperados no codigo.
-
-**Valores no banco de dados:**
-- `delivery` (216 pedidos) -- funciona
-- `takeout` (61 pedidos) -- NAO mapeado
-- `closed_table` (8 pedidos) -- NAO mapeado
-- `takeaway` (6 pedidos) -- funciona
-
-**Valores no codigo atual:**
-- `delivery`, `dine_in`, `takeaway`, `counter`
-
-O valor `takeout` (que eh o mais usado para retirada) nao esta mapeado, por isso o badge nao aparece.
+Pedidos que tem apenas 1 item no forno estao aparecendo dentro do bloco `OrderOvenBlock` (com header, bordas extras, botao DESPACHAR), ocupando espaco desnecessario no tablet. Isso acontece porque a condicao atual verifica o total de itens do pedido (incluindo itens de outros setores/"siblings"), e nao apenas os itens no forno.
 
 ## Solucao
 
-Atualizar o mapeamento em `src/lib/orderTypeUtils.tsx` para incluir todos os valores reais do banco:
+Alterar a condicao no `OvenTimerPanel.tsx` para usar `OvenItemRow` simplificado sempre que houver apenas **1 item no forno e nenhum sibling pendente** (siblings ja prontos nao precisam de atencao visual).
 
-| Valor no banco | Label | Cor |
-|---|---|---|
-| `delivery` | Delivery | Azul |
-| `takeout` | Retirada | Laranja |
-| `takeaway` | Retirada | Laranja |
-| `dine_in` | Mesa | Verde |
-| `closed_table` | Mesa Fechada | Verde |
-| `counter` | Balcao | Roxo |
+A condicao atual:
+```
+if (totalItems === 1 && group.ovenItems.length === 1)
+```
+
+Sera alterada para:
+```
+if (group.ovenItems.length === 1 && group.siblingItems.filter(i => i.status !== 'ready').length === 0)
+```
+
+Isso garante que pedidos com 1 item no forno aparecem como card simples (sem o bloco extra), economizando espaco. O bloco `OrderOvenBlock` so sera usado quando houver multiplos itens no forno OU itens pendentes em outros setores que precisam ser acompanhados.
 
 ## Detalhe Tecnico
 
-Arquivo unico a alterar: `src/lib/orderTypeUtils.tsx`
+**Arquivo:** `src/components/kds/OvenTimerPanel.tsx` (linhas 224-240)
 
-Adicionar as entradas `takeout` e `closed_table` ao objeto `ORDER_TYPE_CONFIG`:
-
-```typescript
-const ORDER_TYPE_CONFIG = {
-  delivery:     { label: 'Delivery',      className: 'bg-blue-600 text-white' },
-  takeout:      { label: 'Retirada',      className: 'bg-orange-500 text-white' },
-  takeaway:     { label: 'Retirada',      className: 'bg-orange-500 text-white' },
-  dine_in:      { label: 'Mesa',          className: 'bg-green-600 text-white' },
-  closed_table: { label: 'Mesa Fechada',  className: 'bg-green-600 text-white' },
-  counter:      { label: 'Balcão',        className: 'bg-purple-600 text-white' },
-};
-```
-
-Nenhuma outra alteracao necessaria -- os componentes `OvenItemRow`, `OrderOvenBlock` e demais ja usam o `OrderTypeBadge` corretamente; o problema era apenas o mapeamento incompleto.
-
+Ajustar a condicao de renderizacao para considerar apenas itens no forno e siblings pendentes, nao o total absoluto.
