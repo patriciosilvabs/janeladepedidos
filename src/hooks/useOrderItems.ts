@@ -63,6 +63,9 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
       return data as unknown as OrderItemWithOrder[];
     },
     staleTime: 1000,
+    refetchInterval: sectorId ? 3000 : 5000,
+    refetchOnWindowFocus: true,
+    refetchIntervalInBackground: true,
   });
 
   // Realtime subscription with debounce
@@ -76,6 +79,18 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
       queryClient.invalidateQueries({ queryKey: ['order-items'] });
       queryClient.invalidateQueries({ queryKey: ['orders'] });
     }, 50);
+  }, [queryClient]);
+
+  // Visibility change handler - force refetch when tablet wakes up
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        queryClient.invalidateQueries({ queryKey: ['order-items'] });
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [queryClient]);
 
   useEffect(() => {
