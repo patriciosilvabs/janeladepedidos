@@ -1,50 +1,52 @@
 
 
-# Manter bloco do pedido no Forno ate o operador clicar DESPACHAR
+# Filtrar pedidos antigos do painel de Forno
 
 ## Problema
 
-Dois trechos de codigo estao fazendo o bloco sumir antes da hora:
-
-1. Um filtro que remove blocos sem itens `in_oven` -- quando o primeiro item de um combo fica pronto, se era o unico no forno, o bloco desaparece.
-2. Um auto-despacho que envia o pedido para o Historico automaticamente quando o ultimo item fica pronto, sem esperar o operador clicar DESPACHAR.
+A query busca TODOS os itens com status `ready` que possuem `oven_entry_at`. Isso inclui pedidos antigos que ja foram finalizados ha horas, que nao deveriam aparecer no painel ativo do Forno.
 
 ## Solucao
 
-- Remover o filtro que exige pelo menos um item `in_oven` no grupo. O bloco deve permanecer visivel enquanto houver itens do forno (prontos ou nao) e o pedido nao tiver sido despachado manualmente.
-- Remover a logica de auto-despacho. O bloco so deve sair da aba Forno quando o operador clicar DESPACHAR explicitamente.
-- Para pedidos com apenas 1 item total (renderizados como `OvenItemRow` simples), ao marcar como pronto, despachar automaticamente pois nao ha botao DESPACHAR nesse caso.
+Usar um `useRef` para rastrear quais pedidos foram "vistos" com pelo menos um item `in_oven` durante a sessao. Somente esses pedidos podem aparecer no painel. Itens `ready` de pedidos que nunca tiveram um item `in_oven` nesta sessao serao ignorados.
 
 ## Detalhes Tecnicos
 
 ### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
 
-**1. Remover filtro da linha 106:**
-```
-// ANTES
-.filter(g => g.ovenItems.some(i => i.status === 'in_oven'))
+1. Adicionar um `useRef<Set<string>>` chamado `knownOvenOrderIds` que armazena IDs de pedidos que ja tiveram pelo menos um item `in_oven` durante a sessao atual.
 
-// DEPOIS
-// Removido — o bloco permanece enquanto nao for despachado
-```
+2. No bloco `useMemo`, antes de agrupar:
+   - Percorrer `inOvenItems` e adicionar seus `order_id` ao `knownOvenOrderIds`.
+   - Remover IDs de pedidos ja despachados do set.
 
-**2. Ajustar auto-despacho (linhas 123-132):**
-- Manter auto-despacho APENAS para pedidos com 1 item total (sem bloco com botao DESPACHAR).
-- Para pedidos com mais de 1 item (combos), NAO auto-despachar. O bloco fica visivel com itens prontos em verde ate o operador clicar DESPACHAR.
+3. Ao processar `readyFromOvenItems`, so criar/adicionar ao grupo se o `order_id` estiver no `knownOvenOrderIds`.
 
-### Fluxo esperado apos a mudanca
+4. Isso garante que:
+   - Pedidos antigos com status `ready` nao aparecem (nunca foram vistos com `in_oven` nesta sessao).
+   - Pedidos combo cujo ultimo item foi marcado como pronto continuam visiveis (o `order_id` ja esta no set).
+   - Ao despachar, o `order_id` e removido do set e do `dispatchedOrderIds`.
+
+### Fluxo
 
 ```text
-Pedido combo (3 itens):
-1. Item 1 vai pro forno -> bloco aparece
-2. Operador marca item 1 PRONTO -> item fica verde, bloco permanece
-3. Item 2 vai pro forno -> timer aparece, item 1 continua verde
-4. Operador marca item 2 PRONTO -> item fica verde, bloco permanece
-5. Item 3 vai pro forno -> timer aparece
-6. Operador marca item 3 PRONTO -> item fica verde, bloco permanece
-7. Operador clica DESPACHAR -> bloco sai do Forno, vai pro Historico
+Sessao inicia -> knownOvenOrderIds = {}
 
-Pedido simples (1 item):
-1. Item vai pro forno -> OvenItemRow aparece
-2. Operador marca PRONTO -> auto-despacho para Historico
+Item do pedido #6255 chega com in_oven
+-> knownOvenOrderIds = {6255}
+-> Bloco aparece
+
+Operador marca item pronto (ready)
+-> knownOvenOrderIds ainda tem 6255
+-> Bloco permanece
+
+Operador clica DESPACHAR
+-> dispatchedOrderIds.add(6255)
+-> knownOvenOrderIds.delete(6255)
+-> Bloco some
+
+Pedido antigo #6253 com ready + oven_entry_at chega da query
+-> 6253 nao esta em knownOvenOrderIds
+-> Ignorado, nao aparece
 ```
+
