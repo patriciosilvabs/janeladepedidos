@@ -1,26 +1,30 @@
 
-# Remover timer numerico e manter apenas a barra de progresso
+# Ajustar tarjas de Borda e Observacoes para tamanho do conteudo
 
-## O que muda
+## Problema
 
-No componente `OvenItemRow`, o timer numerico (ex: "0:00", "1:30") que aparece no lado esquerdo do card sera removido. A barra de progresso que ja existe (o fundo que vai preenchendo) continuara funcionando normalmente como indicador visual do tempo restante.
+As tarjas de borda (laranja) e observacoes (vermelha) atualmente ocupam toda a largura do card. O usuario quer que elas tenham apenas o tamanho necessario para o texto.
 
-## Detalhes
+## Solucao
 
-**Arquivo:** `src/components/kds/OvenItemRow.tsx`
+Trocar o `div` wrapper de bloco (`block`) para `inline-flex` (ou `w-fit`) nas tarjas de `edge_type` e `notes`, em todos os arquivos onde aparecem:
 
-1. **Remover o bloco do timer numerico** (linhas 97-111) - o `div` com `formatTime(countdown)` e o icone de alerta triangular serao removidos
-2. **Remover o bloco "OK" de itens prontos** (linhas 98-102) - o indicador verde com "OK" no lado esquerdo tambem sera removido (o badge "PRONTO" verde no lado direito ja cumpre essa funcao)
-3. **Remover a funcao `formatTime`** (linhas 59-63) que nao sera mais utilizada
-4. **Remover import do `AlertTriangle`** que nao sera mais necessario
-5. **Manter toda a logica do countdown** internamente, pois ela alimenta a barra de progresso, as cores de urgencia e o alerta sonoro
-6. **Manter a barra de fundo** (linhas 86-94) que preenche visualmente conforme o tempo passa
+- `src/components/kds/OvenItemRow.tsx` (linhas 118 e 126)
+- `src/components/kds/OrderOvenBlock.tsx` (linhas 153 e 203 para edge_type; notes onde houver)
+- `src/components/kds/KDSItemCard.tsx` (linha 249)
 
-O mesmo se aplica ao `OrderOvenBlock.tsx` onde itens "ready" exibem "OK" no lado esquerdo (linhas 147-149) - esse indicador tambem sera removido pois o badge "PRONTO" ja indica o status.
+## Detalhe tecnico
 
-## Resultado visual
+Em cada ocorrencia, adicionar a classe `w-fit` ao `div` da tarja para que ele ocupe apenas o tamanho do conteudo.
 
-Antes: `[0:00] [#6609] [Retirada] Pizza Grande... [PRONTO]`
-Depois: `[#6609] [Retirada] Pizza Grande... [PRONTO]`
+Antes:
+```tsx
+<div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse">
+```
 
-Mais espaco horizontal para as informacoes do produto, e a barra de fundo continua indicando o progresso do tempo.
+Depois:
+```tsx
+<div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-pulse w-fit">
+```
+
+A mesma mudanca sera aplicada nas tarjas de observacoes (`bg-red-600`) e nas tarjas de borda em todos os 3 arquivos.
