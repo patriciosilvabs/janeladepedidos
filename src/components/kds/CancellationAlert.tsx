@@ -144,7 +144,7 @@ export function CancellationAlert({ sectorId }: CancellationAlertProps) {
 
             {/* Title */}
             <div className="space-y-2">
-              <h1 className="text-5xl font-black text-white tracking-wider uppercase animate-[pulse_1s_ease-in-out_infinite]">
+              <h1 className="text-5xl font-black text-white tracking-wider uppercase">
                 PEDIDO CANCELADO
               </h1>
               <p className="text-4xl font-bold text-white font-mono">

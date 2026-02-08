@@ -112,7 +112,7 @@ export function KDSItemCard({
     if (minutes <= criticalMinutes) {
       return 'border-amber-500 bg-amber-500/10';
     }
-    return 'border-red-500 bg-red-500/10 animate-pulse';
+    return 'border-red-500 bg-red-500/10';
   };
 
   // Calcula porcentagem de progresso para a barra (modo FIFO)
@@ -147,7 +147,7 @@ export function KDSItemCard({
             "w-full transition-all",
             canStartItem 
               ? isFifoEnabled && isFirstPending
-                ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400 ring-offset-2 ring-offset-background animate-pulse"
+                ? "bg-amber-600 hover:bg-amber-700 ring-2 ring-amber-400 ring-offset-2 ring-offset-background"
                 : "bg-amber-600 hover:bg-amber-700"
               : "bg-muted text-muted-foreground cursor-not-allowed"
           )}
@@ -246,7 +246,7 @@ export function KDSItemCard({
 
       {/* Borda - Tarja LARANJA piscante */}
       {item.edge_type && (
-        <div className="mb-2 p-2 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+        <div className="mb-2 p-2 bg-orange-600 rounded-md">
           <p className="text-sm text-white font-bold whitespace-pre-line">
             {item.edge_type}
           </p>
@@ -279,7 +279,7 @@ export function KDSItemCard({
 
       {/* Observação do cliente - Tarja vermelha piscante */}
       {item.notes && (
-        <div className="mb-2 p-2 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
+        <div className="mb-2 p-2 bg-red-600 rounded-md">
           <p className="text-sm text-white font-bold uppercase">
             ⚠️ OBS: {item.notes}
           </p>
