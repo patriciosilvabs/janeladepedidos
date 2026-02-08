@@ -242,14 +242,12 @@ async function pollStoreOrders(
       });
     }
 
+    // WHITELIST: Apenas estes status indicam pedido confirmado/pago
+    const confirmedStatuses = ['confirmed', 'preparing', 'ready', 'in_production', 'accepted'];
+    
     // Status ignorados (cancelamentos)
     const cancelledStatuses = ['canceled', 'cancelled', 'rejected'];
     
-    // Status de pré-pagamento - pedidos ainda não confirmados
-    const prePaymentStatuses = ['pending', 'waiting_confirmation', 'awaiting_payment', 'placed'];
-    
-    // Status finalizados (para não-mesa)
-    const finalizedStatuses = ['closed', 'delivered', 'dispatched'];
     // Allowed order types for this store
     const allowedTypes = store.allowed_order_types || ['delivery', 'takeaway', 'dine_in', 'counter'];
     
@@ -274,20 +272,19 @@ async function pollStoreOrders(
         return false;
       }
       
-      // Ignorar pedidos aguardando pagamento (exceto mesa que tem fluxo diferente)
-      if (!tableOrderTypes.includes(orderType) && prePaymentStatuses.includes(status)) {
-        console.log(`[poll-orders] Ignoring order ${order.id} with pre-payment status: ${status}`);
+      // Pedidos de mesa: permitir status 'closed' (conta fechada) além dos confirmados
+      if (tableOrderTypes.includes(orderType)) {
+        if (confirmedStatuses.includes(status) || status === 'closed') {
+          console.log(`[poll-orders] Including table order ${order.id} with status: ${status}`);
+          return true;
+        }
+        console.log(`[poll-orders] Ignoring table order ${order.id} - status "${status}" not confirmed`);
         return false;
       }
       
-      // Permitir pedidos de mesa com qualquer status (exceto cancelados que já filtramos)
-      if (tableOrderTypes.includes(orderType)) {
-        console.log(`[poll-orders] Including table order ${order.id} with status: ${status}`);
-        return true;
-      }
-      
-      // Para outros tipos, ignorar status finalizados
-      if (finalizedStatuses.includes(status)) {
+      // Para delivery/retirada/balcão: SOMENTE status confirmados (WHITELIST)
+      if (!confirmedStatuses.includes(status)) {
+        console.log(`[poll-orders] Ignoring order ${order.id} - status "${status}" not in confirmed whitelist`);
         return false;
       }
       
