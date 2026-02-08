@@ -151,7 +151,34 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
     console.log(`[explodeCombo] Exploded "${item.name}" into ${flavorGroupKeys.length} items`);
   }
 
-  return result;
+  // Post-explosion: merge complement-only items back into first flavor item
+  const finalResult: any[] = [];
+  const pendingComplements: any[] = [];
+
+  for (const ri of result) {
+    const opts = ri.options || [];
+    const hasFlavor = opts.some((o: any) => {
+      const n = (o.name || '').toLowerCase();
+      return flavorKeywords.some(k => n.includes(k.toLowerCase()));
+    });
+    const hasEdge = opts.some((o: any) => {
+      const n = (o.name || '').toLowerCase();
+      return edgeKeywords.some(k => k === '#' ? n.startsWith('#') : n.includes(k.toLowerCase()));
+    });
+
+    if (!hasFlavor && !hasEdge && finalResult.length > 0) {
+      pendingComplements.push(...opts);
+    } else {
+      finalResult.push(ri);
+    }
+  }
+
+  if (pendingComplements.length > 0 && finalResult.length > 0) {
+    finalResult[0].options = [...(finalResult[0].options || []), ...pendingComplements];
+    console.log(`[explodeCombo] Merged ${pendingComplements.length} complement options back into first item`);
+  }
+
+  return finalResult;
 }
 
 // ================== HELPERS ==================
