@@ -1,53 +1,49 @@
 
-# Corrigir pedidos prontos aparecendo no Forno
+
+# Manter bloco de pedido multi-item no Forno ate DESPACHAR
 
 ## Problema
 
-O `knownOvenOrderIds` (ref) guarda os IDs dos pedidos para sempre durante a sessao. Mesmo depois que TODOS os itens de um pedido ficam prontos, o pedido continua aparecendo no Forno porque o ID ainda esta no ref. Isso causa a poluicao visual mostrada no screenshot.
+Quando o operador marca o unico item `in_oven` de um combo como PRONTO, o bloco desaparece imediatamente. Isso acontece por dois motivos:
+
+1. Grupos so sao criados a partir de itens `in_oven`. Quando o item vira `ready`, nenhum grupo e criado para esse pedido.
+2. O filtro `.filter(g => g.ovenItems.some(i => i.status === 'in_oven'))` remove grupos sem itens ativos no forno.
+3. O auto-despacho dispara para qualquer pedido quando o ultimo item fica pronto, incluindo combos.
 
 ## Solucao
 
-Duas mudancas simples:
+Usar um `useRef` para rastrear pedidos que ja tiveram itens no forno durante a sessao. Isso permite que itens `ready` criem grupos mesmo quando nao ha mais itens `in_oven`, mantendo o bloco visivel ate o operador clicar DESPACHAR.
 
-### 1. Filtrar grupos que nao tem mais itens no forno
+## Detalhes Tecnicos
 
-Adicionar de volta o filtro no `orderGroups` para exigir pelo menos um item com status `in_oven`:
+### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
 
-```
-.filter(g => !dispatchedOrderIds.has(g.orderId) && g.ovenItems.some(i => i.status === 'in_oven'))
-```
+**1. Adicionar ref `knownOvenOrderIds`** para rastrear pedidos vistos com `in_oven` na sessao.
 
-Isso garante que:
-- Pedidos cujos itens ja estao todos prontos NAO aparecem no Forno
-- Combos com alguns itens prontos e outros no forno CONTINUAM visiveis (o bloco mostra os prontos em verde e os ativos com timer)
+**2. No `useMemo`, popular o ref** a partir de `inOvenItems` e limpar pedidos ja despachados.
 
-### 2. Auto-despachar TODOS os pedidos quando o ultimo item fica pronto
+**3. Permitir que `readyFromOvenItems` criem grupos** se o pedido esta no `knownOvenOrderIds` (nao apenas se ja existe um grupo de `in_oven`).
 
-Remover a condicao `totalItems === 1` do auto-despacho. Quando o ultimo item `in_oven` de qualquer pedido (combo ou simples) for marcado como pronto, despachar automaticamente para o Historico:
+**4. Remover o filtro `g.ovenItems.some(i => i.status === 'in_oven')`** - o bloco permanece enquanto nao for despachado.
 
-```
-// ANTES: if (totalItems === 1 && remainingInOven.length === 0)
-// DEPOIS: if (remainingInOven.length === 0)
-```
+**5. Auto-despachar apenas pedidos com 1 item total** (sem botao DESPACHAR). Combos ficam visiveis ate o clique em DESPACHAR.
 
-### 3. Remover `knownOvenOrderIds`
+**6. Limpar o `knownOvenOrderIds`** quando o pedido e despachado.
 
-O ref `knownOvenOrderIds` nao e mais necessario, pois o filtro por `in_oven` ja resolve o problema de pedidos antigos. Remover o ref e toda a logica associada para simplificar o codigo.
-
-## Fluxo esperado
+### Fluxo esperado
 
 ```text
-Combo (3 itens no forno):
-1. Itens vao pro forno -> bloco aparece com 3 timers
-2. Item 1 marcado PRONTO -> bloco permanece (2 itens ainda in_oven)
-3. Item 2 marcado PRONTO -> bloco permanece (1 item ainda in_oven)
-4. Item 3 marcado PRONTO -> auto-despacho para Historico (0 in_oven)
+Combo #6595 (3 itens: Frango, Mista, Calabresa):
+1. Frango vai pro forno -> knownOvenOrderIds = {6595}, bloco aparece
+2. Operador marca Frango PRONTO -> Frango vira ready, bloco PERMANECE
+   (knownOvenOrderIds ainda tem 6595, readyFromOvenItems cria o grupo)
+3. Mista vai pro forno -> bloco mostra Frango verde + Mista com timer
+4. Operador marca Mista PRONTO -> bloco permanece
+5. Calabresa vai pro forno -> bloco mostra 2 verdes + 1 timer
+6. Operador marca Calabresa PRONTO -> bloco permanece (combo, nao auto-despacha)
+7. Operador clica DESPACHAR -> bloco some, vai pro Historico
 
 Pedido simples (1 item):
 1. Item vai pro forno -> aparece
 2. Marcado PRONTO -> auto-despacho para Historico
 ```
-
-## Arquivo alterado
-
-- `src/components/kds/OvenTimerPanel.tsx`
