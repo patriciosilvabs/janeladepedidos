@@ -1,28 +1,39 @@
 
-# Simplificar visualizacao de pedidos com 1 item no forno
+# Remover o bloco "Forno" que envolve os cards
 
 ## Problema
 
-Pedidos que tem apenas 1 item no forno estao aparecendo dentro do bloco `OrderOvenBlock` (com header, bordas extras, botao DESPACHAR), ocupando espaco desnecessario no tablet. Isso acontece porque a condicao atual verifica o total de itens do pedido (incluindo itens de outros setores/"siblings"), e nao apenas os itens no forno.
+O painel do forno esta envolto em um `Card` com header ("Forno", icone de fogo, badge de contagem, botao de audio) e borda laranja. Isso consome espaco visual desnecessario no tablet.
 
 ## Solucao
 
-Alterar a condicao no `OvenTimerPanel.tsx` para usar `OvenItemRow` simplificado sempre que houver apenas **1 item no forno e nenhum sibling pendente** (siblings ja prontos nao precisam de atencao visual).
-
-A condicao atual:
-```
-if (totalItems === 1 && group.ovenItems.length === 1)
-```
-
-Sera alterada para:
-```
-if (group.ovenItems.length === 1 && group.siblingItems.filter(i => i.status !== 'ready').length === 0)
-```
-
-Isso garante que pedidos com 1 item no forno aparecem como card simples (sem o bloco extra), economizando espaco. O bloco `OrderOvenBlock` so sera usado quando houver multiplos itens no forno OU itens pendentes em outros setores que precisam ser acompanhados.
+Remover o wrapper `Card`/`CardHeader`/`CardContent` do `OvenTimerPanel`, renderizando os cards dos itens diretamente em um `div` simples com spacing. O botao de audio sera mantido discretamente no canto, pois controla funcionalidade real (alerta sonoro).
 
 ## Detalhe Tecnico
 
-**Arquivo:** `src/components/kds/OvenTimerPanel.tsx` (linhas 224-240)
+**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
 
-Ajustar a condicao de renderizacao para considerar apenas itens no forno e siblings pendentes, nao o total absoluto.
+Substituir a estrutura atual:
+
+```
+<Card className="border-orange-500/30 ...">
+  <CardHeader>
+    <Flame /> Forno <Badge>1</Badge>
+    <Button audio />
+  </CardHeader>
+  <CardContent className="space-y-4">
+    {items...}
+  </CardContent>
+</Card>
+```
+
+Por uma estrutura simples:
+
+```
+<div className="space-y-4">
+  {sectorId && <CancellationAlert />}
+  {items...}
+</div>
+```
+
+O botao de audio e o badge de contagem que estavam no header serao removidos da visualizacao (a funcionalidade de audio continua ativa internamente com o estado `audioEnabled` que ja tem default `true`). Os imports de `Card`, `CardHeader`, `CardTitle`, `CardContent`, `Flame`, `Volume2`, `VolumeX`, `Badge` e `Button` que ficarem sem uso serao removidos.
