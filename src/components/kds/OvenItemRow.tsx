@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { Check, AlertTriangle } from 'lucide-react';
 import { OrderItemWithOrder } from '@/types/orderItems';
+import { OrderTypeBadge } from '@/lib/orderTypeUtils';
 
 interface OvenItemRowProps {
   item: OrderItemWithOrder;
@@ -66,7 +67,6 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
   const progressPercent = Math.max(0, Math.min(100, (countdown / ovenTimeSeconds) * 100));
   const alreadyReady = isMarkedReady || item.status === 'ready';
 
-  // Parse flavors for display only
   const flavorsList = item.flavors
     ?.split('\n')
     .map(f => f.replace(/^[•*\-]\s*/, '').trim())
@@ -83,7 +83,6 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             ? "border-red-500 bg-red-500/10 animate-pulse" 
             : "border-orange-500/30 bg-orange-500/5"
     )}>
-      {/* Progress bar background */}
       {!alreadyReady && (
         <div 
           className={cn(
@@ -97,27 +96,28 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
       <div className="relative flex items-center gap-3">
         {/* Timer */}
         {alreadyReady ? (
-          <div className="flex items-center gap-2 font-mono text-2xl font-bold min-w-[80px] text-green-500">
-            <Check className="h-5 w-5" />
+          <div className="flex items-center gap-2 font-mono text-3xl font-bold min-w-[90px] text-green-500">
+            <Check className="h-6 w-6" />
             OK
           </div>
         ) : (
           <div className={cn(
-            "flex items-center gap-2 font-mono text-2xl font-bold min-w-[80px]",
+            "flex items-center gap-2 font-mono text-3xl font-bold min-w-[90px]",
             isFinished ? "text-red-600" : isUrgent ? "text-red-500" : "text-orange-500"
           )}>
-            {(isFinished || isUrgent) && <AlertTriangle className="h-5 w-5 animate-bounce" />}
+            {(isFinished || isUrgent) && <AlertTriangle className="h-6 w-6 animate-bounce" />}
             {formatTime(countdown)}
           </div>
         )}
 
         {/* Item info */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {orderDisplayId && (
-              <span className="text-xl font-bold shrink-0 bg-foreground text-background px-2 py-0.5 rounded">#{orderDisplayId}</span>
+              <span className="text-2xl font-bold shrink-0 bg-foreground text-background px-2 py-0.5 rounded">#{orderDisplayId}</span>
             )}
-            <p className="text-xl font-bold text-foreground truncate">
+            <OrderTypeBadge orderType={item.orders?.order_type} className="text-base px-3 py-1" />
+            <p className="text-2xl font-bold text-foreground truncate">
               {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
               {item.product_name}
             </p>
@@ -127,7 +127,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
               {flavorsList.map((flavor, idx) => (
                 <span
                   key={idx}
-                  className="inline-flex items-center px-2 py-0.5 rounded-md text-sm font-medium border bg-muted/50 border-border text-foreground"
+                  className="inline-flex items-center px-2 py-0.5 rounded-md text-base font-medium border bg-muted/50 border-border text-foreground"
                 >
                   {flavor}
                 </span>
@@ -136,23 +136,23 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
           )}
           {item.edge_type && (
             <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-              <p className="text-sm text-white font-bold whitespace-pre-line">{item.edge_type}</p>
+              <p className="text-base text-white font-bold whitespace-pre-line">{item.edge_type}</p>
             </div>
           )}
           {item.complements && (
-            <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">{item.complements}</p>
+            <p className="mt-1 text-base text-muted-foreground whitespace-pre-line">{item.complements}</p>
           )}
           {item.notes && (
             <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-              <p className="text-sm text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
+              <p className="text-base text-white font-bold uppercase">⚠️ OBS: {item.notes}</p>
             </div>
           )}
         </div>
 
         {/* Action */}
         {alreadyReady ? (
-          <Badge className="bg-green-600 text-white shrink-0 text-base px-3 py-1">
-            <Check className="h-4 w-4 mr-1" />
+          <Badge className="bg-green-600 text-white shrink-0 text-lg px-4 py-1.5">
+            <Check className="h-5 w-5 mr-1" />
             PRONTO
           </Badge>
         ) : (
@@ -160,7 +160,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
             onClick={onMarkReady}
             disabled={isProcessing || isAnyProcessing}
             className={cn(
-              "text-white shrink-0",
+              "text-white shrink-0 text-lg px-4 py-2",
               isProcessing 
                 ? "bg-gray-500"
                 : isUrgent 
@@ -168,7 +168,7 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
                 : "bg-blue-600 hover:bg-blue-700"
             )}
           >
-            <Check className="h-4 w-4 mr-1" />
+            <Check className="h-5 w-5 mr-1" />
             {isProcessing ? 'SALVANDO...' : 'PRONTO'}
           </Button>
         )}

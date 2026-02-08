@@ -39,6 +39,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
             address,
             dispatched_at,
             status,
+            order_type,
             stores(id, name)
           ),
       sectors!order_items_assigned_sector_id_fkey(id, name)
@@ -345,6 +346,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
             address,
             dispatched_at,
             status,
+            order_type,
             stores(id, name)
           ),
           sectors!order_items_assigned_sector_id_fkey(id, name)
