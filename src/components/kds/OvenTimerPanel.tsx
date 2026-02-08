@@ -35,6 +35,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [dispatchedOrderIds, setDispatchedOrderIds] = useState<Set<string>>(new Set());
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const knownOvenOrderIds = useRef<Set<string>>(new Set());
   
   
   const ovenTimeSeconds = settings?.oven_time_seconds ?? 120;
@@ -81,9 +82,31 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       groups[item.order_id].ovenItems.push(item);
     }
 
+    // Track orders seen with in_oven items this session
+    for (const item of inOvenItems) {
+      knownOvenOrderIds.current.add(item.order_id);
+    }
+    // Clean dispatched from known
+    for (const id of dispatchedOrderIds) {
+      knownOvenOrderIds.current.delete(id);
+    }
+
     for (const item of readyFromOvenItems) {
-      if (!groups[item.order_id]) continue; // Only show ready items if the order already has in_oven items
-      groups[item.order_id].ovenItems.push(item);
+      // Allow ready items to create groups if order is known from session
+      if (!groups[item.order_id] && knownOvenOrderIds.current.has(item.order_id)) {
+        const displayId = item.orders?.cardapioweb_order_id || item.orders?.external_id || item.order_id.slice(0, 8);
+        groups[item.order_id] = {
+          orderId: item.order_id,
+          orderDisplayId: displayId,
+          storeName: item.orders?.stores?.name || null,
+          customerName: item.orders?.customer_name || 'Cliente',
+          ovenItems: [],
+          siblingItems: [],
+        };
+      }
+      if (groups[item.order_id]) {
+        groups[item.order_id].ovenItems.push(item);
+      }
     }
 
     for (const item of siblingItems) {
@@ -93,7 +116,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     }
 
     return Object.values(groups)
-      .filter(g => !dispatchedOrderIds.has(g.orderId) && g.ovenItems.some(i => i.status === 'in_oven'))
+      .filter(g => !dispatchedOrderIds.has(g.orderId))
       .sort((a, b) => {
         const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
         const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
@@ -110,11 +133,12 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     try {
       await markItemReady.mutateAsync(itemId);
       
-      // Auto-dispatch when last in_oven item is marked ready
+      // Auto-dispatch only for single-item orders
       const group = orderGroups.find(g => g.ovenItems.some(i => i.id === itemId));
       if (group) {
+        const totalItems = group.ovenItems.length + group.siblingItems.length;
         const remainingInOven = group.ovenItems.filter(i => i.id !== itemId && i.status === 'in_oven');
-        if (remainingInOven.length === 0) {
+        if (totalItems === 1 && remainingInOven.length === 0) {
           handleMasterReady(group.ovenItems);
         }
       }
@@ -143,8 +167,9 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       }
     }
 
-    // Move to history
+    // Move to history and clean session tracking
     if (orderId) {
+      knownOvenOrderIds.current.delete(orderId);
       setDispatchedOrderIds(prev => new Set(prev).add(orderId));
       
       // Find group info to pass to history
