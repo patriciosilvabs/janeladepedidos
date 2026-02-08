@@ -136,7 +136,7 @@ export function OrderCard({
           <Button
             onClick={onMarkReady}
             disabled={isMarkingReady}
-            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-full text-sm shadow-lg shadow-green-500/20 h-auto whitespace-normal min-h-[28px]"
+            className="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-6 px-4 rounded-full text-sm shadow-lg shadow-green-500/20 h-auto whitespace-normal min-h-[64px]"
           >
               {isMarkingReady ? (
                 <>
