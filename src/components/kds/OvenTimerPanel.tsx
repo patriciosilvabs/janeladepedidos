@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
 import { usePrintNode } from '@/hooks/usePrintNode';
@@ -32,6 +33,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   const { items, siblingItems, markItemReady } = useOrderItems({ status: ['in_oven', 'ready'], sectorId });
   const { settings } = useSettings();
   const { printRaw } = usePrintNode();
+  const queryClient = useQueryClient();
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const processingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -166,6 +168,8 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     if (orderId) {
       try {
         await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
+        queryClient.invalidateQueries({ queryKey: ['order-items'] });
+        queryClient.invalidateQueries({ queryKey: ['orders'] });
       } catch (dbError) {
         console.error('Erro ao persistir despacho:', dbError);
       }
