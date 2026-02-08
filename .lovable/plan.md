@@ -1,71 +1,50 @@
 
 
-# Manter bloco do pedido visivel no Forno ate o despacho
+# Manter bloco do pedido no Forno ate o operador clicar DESPACHAR
 
 ## Problema
 
-Quando o operador clica "PRONTO" em um item do forno, o status muda de `in_oven` para `ready`. Como o painel filtra apenas itens com status `in_oven`, o item some da tela. Se era o ultimo item no forno daquele pedido, o bloco inteiro desaparece -- antes mesmo do operador poder clicar "DESPACHAR".
+Dois trechos de codigo estao fazendo o bloco sumir antes da hora:
+
+1. Um filtro que remove blocos sem itens `in_oven` -- quando o primeiro item de um combo fica pronto, se era o unico no forno, o bloco desaparece.
+2. Um auto-despacho que envia o pedido para o Historico automaticamente quando o ultimo item fica pronto, sem esperar o operador clicar DESPACHAR.
 
 ## Solucao
 
-Alterar a query do painel de forno para buscar itens com status `in_oven` **OU** `ready` (que ainda nao foram despachados), e so remover o bloco quando o botao "DESPACHAR" for acionado.
+- Remover o filtro que exige pelo menos um item `in_oven` no grupo. O bloco deve permanecer visivel enquanto houver itens do forno (prontos ou nao) e o pedido nao tiver sido despachado manualmente.
+- Remover a logica de auto-despacho. O bloco so deve sair da aba Forno quando o operador clicar DESPACHAR explicitamente.
+- Para pedidos com apenas 1 item total (renderizados como `OvenItemRow` simples), ao marcar como pronto, despachar automaticamente pois nao ha botao DESPACHAR nesse caso.
 
 ## Detalhes Tecnicos
 
-### 1. Arquivo: `src/hooks/useOrderItems.ts`
+### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
 
-**Mudancas na query principal (linhas 50-56):**
-- Quando `status` inclui `'in_oven'`, a query ja retorna esses itens normalmente.
-- Nenhuma mudanca necessaria na query principal -- a mudanca sera no componente que consome os dados.
+**1. Remover filtro da linha 106:**
+```
+// ANTES
+.filter(g => g.ovenItems.some(i => i.status === 'in_oven'))
 
-**Mudancas na query de siblings (linhas 329-356):**
-- A query de siblings ja busca itens nao-oven do mesmo pedido, mas exclui `ready` com `neq('status', 'ready')` -- na verdade nao exclui `ready`, apenas exclui `in_oven` e `cancelled`. Entao siblings `ready` ja sao retornados. Isso esta correto.
+// DEPOIS
+// Removido — o bloco permanece enquanto nao for despachado
+```
 
-**Nova abordagem -- buscar itens `in_oven` E `ready` juntos:**
-- Alterar o `OvenTimerPanel` para usar `useOrderItems({ status: ['in_oven', 'ready'] })` em vez de apenas `{ status: 'in_oven' }`.
-- Isso fara com que itens marcados como prontos continuem aparecendo na lista.
+**2. Ajustar auto-despacho (linhas 123-132):**
+- Manter auto-despacho APENAS para pedidos com 1 item total (sem bloco com botao DESPACHAR).
+- Para pedidos com mais de 1 item (combos), NAO auto-despachar. O bloco fica visivel com itens prontos em verde ate o operador clicar DESPACHAR.
 
-### 2. Arquivo: `src/components/kds/OvenTimerPanel.tsx`
-
-- Mudar a chamada de `useOrderItems({ status: 'in_oven', sectorId })` para `useOrderItems({ status: ['in_oven', 'ready'], sectorId })`.
-- No agrupamento, separar itens `in_oven` dos itens `ready` dentro de cada grupo de pedido.
-- Itens `ready` que vieram do forno (possuem `oven_entry_at`) serao exibidos com visual "OK/PRONTO" (verde).
-- Itens `ready` sem `oven_entry_at` sao itens de bancada ja prontos -- tratar como siblings prontos.
-- Ajustar o contador do badge do header para mostrar apenas itens `in_oven` (nao contar os `ready`).
-- **Remover o bloco somente apos DESPACHAR**: Quando o botao DESPACHAR for clicado, o sistema precisa de uma acao concreta para que esses itens saiam da visualizacao.
-
-### 3. Acao do botao DESPACHAR
-
-Atualmente o `handleMasterReady` no `OvenTimerPanel` apenas imprime um ticket. Nao ha transicao de estado. Para que o bloco desapareca apos o despacho, precisamos de uma das opcoes:
-
-**Opcao escolhida: estado local de "despachado"**
-- Manter um `Set<string>` local com IDs de pedidos ja despachados.
-- Ao clicar DESPACHAR, adicionar o `order_id` ao set.
-- Filtrar os `orderGroups` para excluir pedidos despachados.
-- Isso funciona porque os itens `ready` eventualmente saem do painel quando o pedido muda de status no backend (trigger `check_order_completion` ja move para `waiting_buffer`).
-
-### 4. Arquivo: `src/components/DispatchDashboard.tsx`
-
-- Atualizar a query para usar `status: ['in_oven', 'ready']` tambem, para que a condicao de "vazio" considere ambos os status.
-
-### 5. Arquivo: `src/components/kds/KDSItemsDashboard.tsx`
-
-- Manter o badge da aba Forno contando apenas itens `in_oven` (sem mudanca necessaria, ja usa query separada).
-
-### Fluxo apos as mudancas
+### Fluxo esperado apos a mudanca
 
 ```text
-1. Bancada envia item 1 ao forno
-   -> Bloco aparece com 1 timer + 2 "Aguardando..."
+Pedido combo (3 itens):
+1. Item 1 vai pro forno -> bloco aparece
+2. Operador marca item 1 PRONTO -> item fica verde, bloco permanece
+3. Item 2 vai pro forno -> timer aparece, item 1 continua verde
+4. Operador marca item 2 PRONTO -> item fica verde, bloco permanece
+5. Item 3 vai pro forno -> timer aparece
+6. Operador marca item 3 PRONTO -> item fica verde, bloco permanece
+7. Operador clica DESPACHAR -> bloco sai do Forno, vai pro Historico
 
-2. Operador clica PRONTO no item 1
-   -> Item 1 mostra "OK" verde, bloco permanece
-   -> Contador: 0/3 (nenhum despachado)
-
-3. Bancada envia item 2 ao forno
-   -> Item 2 aparece com timer, item 1 continua "OK"
-
-4. Todos itens prontos, operador clica DESPACHAR
-   -> Ticket impresso, bloco some da tela
-   -> Backend move pedido para waiting_buffer
+Pedido simples (1 item):
+1. Item vai pro forno -> OvenItemRow aparece
+2. Operador marca PRONTO -> auto-despacho para Historico
 ```
