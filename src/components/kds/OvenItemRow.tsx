@@ -97,11 +97,11 @@ export function OvenItemRow({ item, onMarkReady, isProcessing, isAnyProcessing, 
               <span className="text-2xl font-bold shrink-0 bg-foreground text-background px-2 py-0.5 rounded">#{orderDisplayId}</span>
             )}
             <OrderTypeBadge orderType={item.orders?.order_type} className="text-base px-3 py-1" />
-            <p className="text-2xl font-bold text-foreground truncate">
-              {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
-              {item.product_name}
-            </p>
           </div>
+          <p className="text-2xl font-bold text-foreground truncate mt-1">
+            {item.quantity > 1 && <span className="text-primary">{item.quantity}x </span>}
+            {item.product_name}
+          </p>
           {flavorsList.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-1">
               {flavorsList.map((flavor, idx) => (
