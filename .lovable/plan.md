@@ -1,37 +1,98 @@
 
-# Diferenciar visualmente item PRONTO de item ainda no forno
 
-## Problema
+# Persistir pedidos multi-item no Forno usando dados do banco
 
-Ambos os estados (item com timer ativo e item ja marcado como PRONTO) usam o botao verde "PRONTO", causando confusao visual. O operador nao consegue distinguir rapidamente o que ja foi concluido do que ainda precisa de acao.
+## Problema raiz
+
+O painel do Forno usa uma variavel local na memoria (`knownOvenOrderIds` ref) para decidir quais pedidos mostrar. Quando o usuario troca de aba, muda de bancada, ou a internet oscila, o componente e desmontado e essa memoria e perdida. Ao voltar, pedidos onde todos os itens ja estao "prontos" desaparecem porque o sistema nao reconhece mais aquele pedido como pertencente ao forno.
+
+A mesma coisa acontece com `dispatchedOrderIds` (controle de pedidos despachados) -- tambem e memoria local que se perde ao desmontar.
 
 ## Solucao
 
-Mudar a cor do botao "PRONTO" do item que ainda esta no forno (acao pendente) para **azul**, mantendo o badge "PRONTO" do item ja concluido em **verde**. Isso cria uma distincao clara:
+Eliminar toda dependencia de memoria local da sessao e usar exclusivamente dados do banco de dados para decidir o que mostrar e o que esconder.
 
-- **Azul** = botao de acao ("clique aqui para marcar como pronto")
-- **Verde** = status confirmado ("este item ja esta pronto")
+### Regra simplificada
+
+- **Mostrar** no Forno: qualquer pedido que tenha itens com `oven_entry_at` preenchido E cujo pedido NAO tenha `dispatched_at` preenchido
+- **Esconder** do Forno: pedidos cujo `dispatched_at` ja foi preenchido (ou seja, ja foram despachados)
+
+### Resultado
+
+Mesmo apos troca de aba, internet cair e voltar, ou troca de bancada, os pedidos multi-item continuam visiveis ate o clique em DESPACHAR.
 
 ## Detalhes Tecnicos
 
-### Arquivo: `src/components/kds/OvenItemRow.tsx`
+### 1. Adicionar `dispatched_at` e `status` na query de items
 
-Alterar as classes do `Button` de acao (linha ~107-118):
+**Arquivo:** `src/hooks/useOrderItems.ts`
 
-- De: `bg-green-600 hover:bg-green-700` (estado normal)
-- Para: `bg-blue-600 hover:bg-blue-700`
+Alterar o `select` da query principal e da query de siblings para incluir `dispatched_at` e `status` do pedido:
 
-O estado urgente (`isUrgent`) continua vermelho, e o badge de status "PRONTO" (ja marcado) permanece verde (`bg-green-600`).
+```sql
+orders!inner(
+  id, customer_name, cardapioweb_order_id, external_id,
+  neighborhood, address, dispatched_at, status,
+  stores(id, name)
+)
+```
 
-### Arquivo: `src/components/kds/OrderOvenBlock.tsx`
+Tambem atualizar o tipo `OrderItemWithOrder` em `src/types/orderItems.ts` para incluir esses campos.
 
-Se o botao "DESPACHAR" tambem usar verde, verificar e ajustar para manter consistencia. O botao DESPACHAR deve permanecer com sua cor atual (provavelmente ja esta diferenciado).
+### 2. Remover `knownOvenOrderIds` e `dispatchedOrderIds`
 
-### Resultado visual esperado
+**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
 
-| Estado | Cor |
-|--------|-----|
-| Botao PRONTO (acao pendente) | Azul |
-| Botao PRONTO (urgente/timer < 10s) | Vermelho |
-| Badge PRONTO (item concluido) | Verde |
-| Borda do item concluido | Verde |
+- Remover o `useRef` de `knownOvenOrderIds`
+- Remover o `useState` de `dispatchedOrderIds`
+- Na logica do `useMemo`, permitir que itens `ready` com `oven_entry_at` SEMPRE criem grupos, sem verificacao de sessao
+- Filtrar grupos cujo pedido ja tem `dispatched_at` preenchido (usando dados do join com orders)
+
+### 3. Persistir despacho no banco
+
+**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
+
+Na funcao `handleMasterReady`, ao despachar, chamar a funcao RPC `set_order_dispatched` que ja existe no banco (seta `status = 'dispatched'` e `dispatched_at = NOW()`):
+
+```typescript
+await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
+```
+
+Isso garante que mesmo apos remount, o pedido despachado nao reaparece.
+
+### 4. Atualizar tipo OrderItemWithOrder
+
+**Arquivo:** `src/types/orderItems.ts`
+
+Adicionar ao tipo `orders`:
+```typescript
+orders?: {
+  id: string;
+  customer_name: string;
+  cardapioweb_order_id: string | null;
+  external_id: string | null;
+  neighborhood: string | null;
+  address: string;
+  dispatched_at: string | null;  // NOVO
+  status: string;                // NOVO
+  stores?: { id: string; name: string } | null;
+} | null;
+```
+
+### Fluxo apos a mudanca
+
+```text
+Item vai pro forno --> status 'in_oven', oven_entry_at preenchido
+  |
+Item marcado PRONTO --> status 'ready', oven_entry_at permanece
+  |
+Todos prontos --> botao DESPACHAR fica disponivel
+  |
+Click DESPACHAR --> chama set_order_dispatched (DB)
+  |                 dispatched_at preenchido no banco
+  |
+Pedido some do Forno (baseado em dispatched_at != null)
+```
+
+Nenhuma dependencia de memoria local. Tudo baseado no banco.
+
