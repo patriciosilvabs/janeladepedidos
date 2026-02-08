@@ -1,80 +1,108 @@
 
 
-# Corrigir filtro de categorias: usar campo `kind` da API + fallback por nome
+# Corrigir classificacao de bebidas e bordas nos combos
 
-## Problema
+## Diagnostico
 
-O pedido #6636 tem o item "Para quem Ama Atum!" que e uma pizza, mas o nome nao contem "Pizza". O filtro atual compara `allowed_categories` contra o `item.name`, o que nao funciona para produtos com nomes criativos.
+O pedido #6637 ("Combo: Pizza G + Refri") foi explodido em 3 itens em vez de 1 por duas razoes:
 
-A API do CardapioWeb retorna um campo `kind` nos itens (ex: "pizza", "drink", "side") que identifica a categoria real do produto. Precisamos usar esse campo como fonte primaria de classificacao.
+### Causa 1: `#` ausente dos edge keywords
+
+O campo `kds_edge_keywords` no banco contem:
+```
+Borda, Borda de Chocolate, ..., domzito, domzitos
+```
+Nao inclui `#`. Por isso, a opcao "# Massa Tradicional" nao e reconhecida como borda.
+
+### Causa 2: keyword "pizza" muito generica no option_group_name
+
+A keyword de sabor "pizza" casa com o `option_group_name` de TODAS as opcoes do combo, pois todas tem o prefixo "Combo: Pizza G + Refri - ...":
+
+```text
+option_group_name: "Combo: Pizza G + Refri - Refrigerante"
+                          ^^^^^
+                     contem "pizza" -> classificado como SABOR!
+```
+
+Resultado: 3 "flavor groups" em vez de 1, causando a explosao incorreta em 3 itens.
 
 ## Solucao
 
-Alterar a logica de filtro para usar uma combinacao de fontes, nesta ordem de prioridade:
-
-1. `item.kind` (campo da API que identifica o tipo do produto)
-2. `item.name` (fallback - nome do produto)
-3. `item.option_group_name` ou qualquer outro campo descritivo disponivel
-
-### Nova logica de filtro
-
-```text
-allowed_categories = ["Pizza", "Combo", "Lanche"]
-
-Item: { name: "Para quem Ama Atum!", kind: "pizza" }
-  -> kind "pizza" includes "pizza" -> ACEITO
-
-Item: { name: "Regente 1 litro", kind: "drink" }
-  -> kind "drink" nao contem nenhuma keyword -> nome tambem nao -> BLOQUEADO
-```
-
-Se o `kind` nao existir ou estiver vazio, o sistema faz fallback para o nome (comportamento atual).
-
-## Mudancas tecnicas
-
-### Arquivo 1: `supabase/functions/poll-orders/index.ts` (~linha 386)
-
-Alterar o filtro de categorias:
-
-```typescript
-itemsToCreate = itemsToCreate.filter((item: any) => {
-  const name = (item.name || '').toLowerCase();
-  const kind = (item.kind || '').toLowerCase();
-  if (!name && !kind) return true; // safety net
-
-  return allowedCategories.some((c: string) => {
-    const keyword = c.toLowerCase();
-    return kind.includes(keyword) || name.includes(keyword);
-  });
-});
-```
-
-### Arquivo 2: `supabase/functions/webhook-orders/index.ts`
-
-Mesma alteracao no filtro do webhook.
-
-### Adicionar log do campo `kind`
-
-No log de debug existente (linha 376-378), incluir o campo `kind` para confirmar que esta presente:
-
-```typescript
-console.log(`[poll-orders] First item sample: name="${item.name}", kind="${item.kind}"`);
-```
-
-### Recuperar pedido #6636
-
-Deletar o pedido para reimportacao com a nova logica:
+### 1. Adicionar `#` ao kds_edge_keywords (SQL)
 
 ```sql
-DELETE FROM orders WHERE id = '6cad946e-69ac-4122-8ba9-58455c119c58';
+UPDATE app_settings
+SET kds_edge_keywords = '#, ' || kds_edge_keywords
+WHERE id = 'default';
 ```
+
+### 2. Remover option_group_name da classificacao de sabores no explodeComboItems
+
+No `explodeComboItems` (em `poll-orders/index.ts` e `webhook-orders/index.ts`), a verificacao de sabor nao deve usar `option_group_name` pois os nomes dos grupos frequentemente contem "pizza" no prefixo do combo:
+
+Antes:
+```typescript
+const isFlavor = !isEdge && flavorKeywords.some(k =>
+  name.includes(k.toLowerCase()) ||
+  (opt.option_group_name || '').toLowerCase().includes(k.toLowerCase())
+);
+```
+
+Depois:
+```typescript
+const isFlavor = !isEdge && flavorKeywords.some(k =>
+  name.includes(k.toLowerCase())
+);
+```
+
+A classificacao por `option_group_name` fica apenas no RPC do banco (que processa o item individual depois da explosao, onde ja funciona corretamente).
+
+### 3. Filtro pos-explosao para itens sem sabor
+
+Apos a explosao, remover itens que ficaram apenas com complementos (sem sabores e sem bordas), mesclando seus complementos no primeiro item do grupo:
+
+```typescript
+// After explosion, merge complement-only items back into first item
+const finalResult: any[] = [];
+let pendingComplements: any[] = [];
+
+for (const item of result) {
+  const opts = item.options || [];
+  const hasFlavor = opts.some(o => /* flavor check */);
+  const hasEdge = opts.some(o => /* edge check */);
+
+  if (!hasFlavor && !hasEdge && finalResult.length > 0) {
+    // Merge these options as complements into the last flavor item
+    pendingComplements.push(...opts);
+  } else {
+    finalResult.push(item);
+  }
+}
+
+// Attach pending complements to first item
+if (pendingComplements.length > 0 && finalResult.length > 0) {
+  finalResult[0].options = [...finalResult[0].options, ...pendingComplements];
+}
+```
+
+### 4. Deletar pedido #6637 para reimportacao
+
+```sql
+DELETE FROM order_items WHERE order_id = '5f0e460c-a734-4511-a1b2-2874edcb3db1';
+DELETE FROM orders WHERE id = '5f0e460c-a734-4511-a1b2-2874edcb3db1';
+```
+
+## Arquivos alterados
+
+- `supabase/functions/poll-orders/index.ts` - funcao explodeComboItems
+- `supabase/functions/webhook-orders/index.ts` - mesma funcao
+- SQL migration para adicionar `#` aos edge keywords
 
 ## Resultado esperado
 
-| Item | kind | nome | Resultado |
-|---|---|---|---|
-| Para quem Ama Atum! | pizza | nao match | ACEITO (via kind) |
-| Regente 1 litro | drink | nao match | BLOQUEADO |
-| Pizza Grande | pizza | match | ACEITO (via ambos) |
-| Combo 3 Pizzas G | combo | match | ACEITO (via ambos) |
+Pedido #6637 reimportado como 1 unico card no KDS:
+- Produto: Combo: Pizza G + Refri R$ 49,90
+- Sabores: 1/2 BAURU (G) + 1/2 AMERICANA (G)
+- Borda: # Massa Tradicional
+- Complemento: Refrigerante 1 litro (exibido mas NAO gera card separado)
 
