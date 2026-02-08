@@ -28,6 +28,8 @@ export interface OrderItemWithOrder extends OrderItem {
     external_id: string | null;
     neighborhood: string | null;
     address: string;
+    dispatched_at: string | null;
+    status: string;
     stores?: {
       id: string;
       name: string;

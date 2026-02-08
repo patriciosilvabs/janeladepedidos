@@ -37,6 +37,8 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
             external_id,
             neighborhood,
             address,
+            dispatched_at,
+            status,
             stores(id, name)
           ),
       sectors!order_items_assigned_sector_id_fkey(id, name)
@@ -341,6 +343,8 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
             external_id,
             neighborhood,
             address,
+            dispatched_at,
+            status,
             stores(id, name)
           ),
           sectors!order_items_assigned_sector_id_fkey(id, name)
