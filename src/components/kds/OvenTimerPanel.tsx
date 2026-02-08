@@ -107,7 +107,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
         const order = g.ovenItems[0]?.orders;
         if (!order) return true;
         if (order.dispatched_at) return false;
-        if (order.status === 'closed' || order.status === 'cancelled' || order.status === 'dispatched') return false;
+        if (['closed', 'cancelled', 'dispatched', 'waiting_buffer'].includes(order.status)) return false;
         return true;
       })
       .sort((a, b) => {
@@ -126,12 +126,12 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     try {
       await markItemReady.mutateAsync(itemId);
       
-      // Auto-dispatch only for single-item orders
+      // Auto-dispatch when ALL oven items are ready and no pending siblings
       const group = orderGroups.find(g => g.ovenItems.some(i => i.id === itemId));
       if (group) {
-        const totalItems = group.ovenItems.length + group.siblingItems.length;
-        const remainingInOven = group.ovenItems.filter(i => i.id !== itemId && i.status === 'in_oven');
-        if (totalItems === 1 && remainingInOven.length === 0) {
+        const allOvenReady = group.ovenItems.every(i => i.id === itemId || i.status === 'ready');
+        const pendingSiblings = group.siblingItems.filter(i => i.status !== 'ready');
+        if (allOvenReady && pendingSiblings.length === 0) {
           handleMasterReady(group.ovenItems);
         }
       }
@@ -184,6 +184,26 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       }
     }
   };
+
+  // Safety net: auto-dispatch orphan orders where all items are ready
+  const safetyNetTimerRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    if (safetyNetTimerRef.current) {
+      clearTimeout(safetyNetTimerRef.current);
+      safetyNetTimerRef.current = null;
+    }
+    for (const group of orderGroups) {
+      const allReady = group.ovenItems.every(i => i.status === 'ready');
+      const pendingSiblings = group.siblingItems.filter(i => i.status !== 'ready');
+      if (allReady && pendingSiblings.length === 0 && group.ovenItems.length > 0) {
+        safetyNetTimerRef.current = setTimeout(() => handleMasterReady(group.ovenItems), 3000);
+        break;
+      }
+    }
+    return () => {
+      if (safetyNetTimerRef.current) clearTimeout(safetyNetTimerRef.current);
+    };
+  }, [orderGroups]);
 
   const totalActiveOvenItems = inOvenItems.length;
 
