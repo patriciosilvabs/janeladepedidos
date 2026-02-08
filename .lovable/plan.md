@@ -1,46 +1,54 @@
 
-# Corrigir badge do Forno mostrando contagem incorreta
+# Padronizar layout dos cards KDS
 
-## Problema
+## Objetivo
 
-O badge "2" na aba Forno aparece mesmo quando nao ha itens visiveis no painel. Isso acontece porque a contagem do badge usa todos os itens com status `in_oven`, sem filtrar pedidos cancelados. Porem o `OvenTimerPanel` internamente filtra pedidos cancelados/despachados, resultando em painel vazio mas badge com numero.
+Estabelecer uma ordem visual unica e consistente em todos os cards do sistema, seguindo o modelo da imagem de referencia:
 
-## Causa raiz
+1. **Numero do pedido + Tipo** (ex: #6620 + Retirada)
+2. **Nome do produto** (ex: Pizza Grande - Meio a Meio)
+3. **Sabores** (ex: 1/2 PEPPERONI E CHEDDAR)
+4. **Borda** (tarja laranja, ex: # Borda de Cream Cheese)
+5. **Complementos** (massas, adicionais)
+6. **Observacao** (tarja vermelha)
 
-Em dois locais, a contagem de itens ignora o status do pedido pai:
+## Mudancas por arquivo
 
-1. **KDSItemsDashboard.tsx** (linha 21, 48-50): `inOvenItems.length` conta todos os itens `in_oven`, inclusive de pedidos cancelados
-2. **DispatchDashboard.tsx** (linha 10): `activeItems` filtra por status do item mas nao verifica `orders.status`
+### 1. KDSItemCard.tsx (card da bancada de producao)
 
-## Solucao
+**Problemas atuais:**
+- Borda aparece ANTES dos sabores (invertido)
+- Nao exibe o badge de tipo do pedido (Delivery/Retirada/Balcao)
 
-Adicionar filtro para excluir itens cujo pedido pai esteja cancelado, despachado ou fechado, nas duas contagens de badge.
+**Correcoes:**
+- Importar `OrderTypeBadge` de `@/lib/orderTypeUtils`
+- No header, ao lado do `#orderId`, adicionar `<OrderTypeBadge orderType={item.orders?.order_type} />`
+- Mover o bloco de `edge_type` (tarja laranja) para DEPOIS dos sabores (`flavors`)
 
-### Arquivo 1: `src/components/kds/KDSItemsDashboard.tsx`
-
-Alterar a linha 21 para usar o hook com status `in_oven` e depois filtrar:
-
+A ordem final dos blocos no card sera:
+```text
+[#ID] [Retirada]         [timer]
+Nome do produto
+Sabores (texto grande)
+[Borda - tarja laranja]       <-- movida para depois
+[Barra FIFO se aplicavel]
+Complementos
+[Observacao - tarja vermelha]
+Loja / Setor
+Cliente
+[Botao de acao]
 ```
-const { items: rawInOvenItems } = useOrderItems({ status: 'in_oven' });
-const inOvenItems = rawInOvenItems.filter(i => {
-  const orderStatus = i.orders?.status;
-  return orderStatus !== 'cancelled' && orderStatus !== 'closed' && orderStatus !== 'dispatched';
-});
-```
 
-### Arquivo 2: `src/components/DispatchDashboard.tsx`
+### 2. OvenItemRow.tsx (itens individuais no forno)
 
-Alterar a linha 10 para incluir filtro de pedido cancelado:
+**Estado atual:** Ja segue a ordem correta (ID + tipo, produto, sabores, borda, complementos, obs). Nenhuma mudanca necessaria na ordem.
 
-```
-const activeItems = items.filter(i => {
-  const orderStatus = i.orders?.status;
-  if (orderStatus === 'cancelled' || orderStatus === 'closed' || orderStatus === 'dispatched') return false;
-  return i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at);
-});
-```
+### 3. OrderOvenBlock.tsx (blocos de pedido no forno)
 
-## Resultado
+**Estado atual:** Os blocos de itens ja prontos (`dbReadyItems`) e os itens em espera (`waitingItems`) seguem a mesma ordem. Nenhuma mudanca necessaria na ordem.
 
-- Badge "Forno" so mostra numero quando ha itens reais (de pedidos ativos) no forno
-- Quando todos os itens no forno pertencem a pedidos cancelados, o badge desaparece e a tela vazia fica consistente
+## Resumo
+
+A unica alteracao real e no `KDSItemCard.tsx`:
+- Adicionar o badge de tipo do pedido no header
+- Inverter a posicao dos blocos de borda e sabores para que sabores venham primeiro
