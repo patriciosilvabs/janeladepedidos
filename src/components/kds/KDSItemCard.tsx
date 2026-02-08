@@ -246,7 +246,7 @@ export function KDSItemCard({
 
       {/* Borda - Tarja LARANJA piscante */}
       {item.edge_type && (
-        <div className="mb-2 p-2 bg-orange-600 rounded-md">
+        <div className="mb-2 p-2 bg-orange-600 rounded-md animate-pulse">
           <p className="text-sm text-white font-bold whitespace-pre-line">
             {item.edge_type}
           </p>
@@ -279,7 +279,7 @@ export function KDSItemCard({
 
       {/* Observação do cliente - Tarja vermelha piscante */}
       {item.notes && (
-        <div className="mb-2 p-2 bg-red-600 rounded-md">
+        <div className="mb-2 p-2 bg-red-600 rounded-md animate-pulse">
           <p className="text-sm text-white font-bold uppercase">
             ⚠️ OBS: {item.notes}
           </p>
