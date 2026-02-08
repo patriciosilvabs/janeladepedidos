@@ -1,71 +1,64 @@
 
-# Exibir informacoes completas nos itens do Forno/Despacho
+# Melhorias no Painel do Forno/Despacho e Cancelamentos
 
-## Problema
+## 1. Badge de tipo de pedido (Retirada/Delivery/Balcao) no Forno
 
-O painel do Forno (`OvenItemRow` e `OrderOvenBlock`) mostra apenas o nome do produto e sabores. Faltam informacoes essenciais que aparecem nas bancadas (`KDSItemCard`):
+**Problema:** O painel do Forno nao mostra se o pedido eh Retirada, Delivery ou Balcao.
 
-- **Borda** (`edge_type`) -- tarja laranja piscante
-- **Complementos** (`complements`) -- lista de massas, adicionais
-- **Observacoes** (`notes`) -- tarja vermelha piscante com aviso
+**Solucao:**
+- Adicionar `order_type` na query do `useOrderItems` (campo `orders`)
+- Atualizar o tipo `OrderItemWithOrder` para incluir `order_type`
+- Criar funcao utilitaria `getOrderTypeBadge` reutilizavel (extrair do `OrderCard.tsx`)
+- Exibir badge colorido no `OvenItemRow` (ao lado do numero do pedido) e no `OrderOvenBlock` (no header do bloco)
 
-## Solucao
+Badges: Azul (Delivery), Verde (Mesa), Laranja (Retirada), Roxo (Balcao)
 
-Adicionar as mesmas informacoes visuais do `KDSItemCard` nos componentes do Forno, mantendo o mesmo padrao visual (tarjas laranja e vermelha piscantes).
+## 2. Aumentar fonte na bancada de despacho
+
+**Solucao:** No `OvenItemRow.tsx`:
+- Nome do produto: de `text-xl` para `text-2xl`
+- Sabores (badges): de `text-sm` para `text-base`
+- Borda/Obs: de `text-sm` para `text-base`
+- Timer: de `text-2xl` para `text-3xl`
+- Numero do pedido: de `text-xl` para `text-2xl`
+
+No `OrderOvenBlock.tsx`:
+- Header do bloco: fontes proporcionalmente maiores
+- Itens prontos e aguardando: fontes maiores tambem
+
+## 3. Cancelamento de item NAO iniciado -- remover silenciosamente
+
+**Problema:** Itens cancelados antes de serem iniciados (status `pending`) nao precisam de alerta.
+
+**Solucao:** Modificar `CancellationAlert.tsx`:
+- Filtrar a query para buscar apenas itens cancelados que JA tinham sido iniciados (que possuem `claimed_at` preenchido, indicando que alguem ja estava trabalhando neles)
+- Itens que nunca foram iniciados (`claimed_at IS NULL`) serao automaticamente removidos da bancada pelo filtro de status existente, sem alerta
+
+## 4. Modal fullscreen para cancelamento de item JA iniciado
+
+**Problema:** Quando um item eh cancelado depois de ja ter sido iniciado na producao, o operador precisa de um aviso impactante.
+
+**Solucao:** Substituir o componente `CancellationAlert` atual (card inline) por um modal fullscreen:
+- Overlay vermelho cobrindo TODA a tela
+- Icone grande de alerta centralizado
+- Texto principal: "PEDIDO CANCELADO" com numero do pedido
+- Texto secundario: "NAO produza mais este item. Se ja estiver pronto, encaixe em outro pedido."
+- Lista dos itens cancelados
+- Botao grande central "ENTENDI" para confirmar (chama `acknowledge_cancellation`)
+- Som de alerta continuo ate o operador confirmar
 
 ## Detalhes Tecnicos
 
-### Arquivo: `src/components/kds/OvenItemRow.tsx`
+### Arquivos modificados:
 
-Dentro da div de "Item info" (apos o nome do produto e antes do fechamento da div flex-1), adicionar:
+1. **`src/types/orderItems.ts`** -- Adicionar `order_type` ao tipo `OrderItemWithOrder.orders`
 
-1. **Borda** -- tarja laranja piscante (igual ao KDSItemCard):
-```tsx
-{item.edge_type && (
-  <div className="mt-1 p-1.5 bg-orange-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-    <p className="text-sm text-white font-bold whitespace-pre-line">
-      {item.edge_type}
-    </p>
-  </div>
-)}
-```
+2. **`src/hooks/useOrderItems.ts`** -- Adicionar `order_type` na query SELECT do Supabase (duas queries: items e siblings)
 
-2. **Complementos** -- texto secundario:
-```tsx
-{item.complements && (
-  <p className="mt-1 text-sm text-muted-foreground whitespace-pre-line">
-    {item.complements}
-  </p>
-)}
-```
+3. **`src/lib/orderTypeUtils.ts`** (novo) -- Funcao utilitaria `getOrderTypeBadge` extraida do OrderCard
 
-3. **Observacoes** -- tarja vermelha piscante:
-```tsx
-{item.notes && (
-  <div className="mt-1 p-1.5 bg-red-600 rounded-md animate-[pulse_0.8s_ease-in-out_infinite]">
-    <p className="text-sm text-white font-bold uppercase">
-      OBS: {item.notes}
-    </p>
-  </div>
-)}
-```
+4. **`src/components/kds/OvenItemRow.tsx`** -- Aumentar fontes + adicionar badge de tipo de pedido
 
-### Arquivo: `src/components/kds/OrderOvenBlock.tsx`
+5. **`src/components/kds/OrderOvenBlock.tsx`** -- Aumentar fontes + adicionar badge de tipo de pedido no header
 
-Aplicar as mesmas alteracoes em tres lugares:
-
-1. **Itens do forno** (dentro do map de `sortedOvenItems`) -- ja usa `OvenItemRow`, entao herda automaticamente.
-
-2. **Itens ja prontos** (`dbReadyItems` map, por volta da linha 119) -- apos o nome do produto, adicionar borda, complementos e observacoes com o mesmo padrao.
-
-3. **Itens aguardando** (`waitingItems` map, por volta da linha 146) -- apos os sabores, adicionar complementos e observacoes (com opacidade reduzida coerente com o estilo existente).
-
-### Resultado
-
-| Informacao | Bancada | Forno (antes) | Forno (depois) |
-|------------|---------|---------------|----------------|
-| Nome produto | Sim | Sim | Sim |
-| Sabores | Sim | Sim | Sim |
-| Borda (laranja) | Sim | Nao | Sim |
-| Complementos | Sim | Nao | Sim |
-| Observacoes (vermelha) | Sim | Nao | Sim |
+6. **`src/components/kds/CancellationAlert.tsx`** -- Reescrever como modal fullscreen + filtrar apenas itens que ja foram iniciados (`claimed_at` preenchido)
