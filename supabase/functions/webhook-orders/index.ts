@@ -294,16 +294,20 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
 
       let itemsToCreate = order.items as any[];
 
-      // Filter by allowed categories using product NAME (API has no category field)
+      // Filter by allowed categories using kind (API field) + fallback to name
       const allowedCategories = store.allowed_categories;
       if (allowedCategories && allowedCategories.length > 0) {
         const before = itemsToCreate.length;
         itemsToCreate = itemsToCreate.filter((item: any) => {
           const name = (item.name || '').toLowerCase();
-          if (!name) return true; // safety net
-          return allowedCategories.some(c => name.includes(c.toLowerCase()));
+          const kind = ((item as any).kind || '').toLowerCase();
+          if (!name && !kind) return true; // safety net
+          return allowedCategories.some(c => {
+            const keyword = c.toLowerCase();
+            return kind.includes(keyword) || name.includes(keyword);
+          });
         });
-        console.log(`Category filter by name: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
+        console.log(`Category filter (kind+name): ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
       }
 
       if (itemsToCreate.length === 0) {

@@ -374,7 +374,7 @@ async function pollStoreOrders(
           // Log item keys for debugging category field
           if (orderDetails.items[0]) {
             console.log(`[poll-orders] Item keys sample:`, Object.keys(orderDetails.items[0]));
-            console.log(`[poll-orders] First item raw:`, JSON.stringify(orderDetails.items[0]).substring(0, 500));
+            console.log(`[poll-orders] First item sample: name="${orderDetails.items[0].name}", kind="${orderDetails.items[0].kind}"`);
           }
 
           let itemsToCreate = orderDetails.items;
@@ -385,10 +385,14 @@ async function pollStoreOrders(
             const before = itemsToCreate.length;
             itemsToCreate = itemsToCreate.filter((item: any) => {
               const name = (item.name || '').toLowerCase();
-              if (!name) return true; // safety net
-              return allowedCategories.some((c: string) => name.includes(c.toLowerCase()));
+              const kind = (item.kind || '').toLowerCase();
+              if (!name && !kind) return true; // safety net
+              return allowedCategories.some((c: string) => {
+                const keyword = c.toLowerCase();
+                return kind.includes(keyword) || name.includes(keyword);
+              });
             });
-            console.log(`[poll-orders] Category filter by name: ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
+            console.log(`[poll-orders] Category filter (kind+name): ${before} -> ${itemsToCreate.length} items (allowed: ${allowedCategories.join(', ')})`);
           }
 
           if (itemsToCreate.length === 0) {
