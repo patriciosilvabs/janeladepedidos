@@ -90,6 +90,8 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     for (const item of readyFromOvenItems) {
       // Skip items from already-dispatched orders
       if (item.orders?.dispatched_at) continue;
+      const orderStatus = item.orders?.status;
+      if (orderStatus === 'closed' || orderStatus === 'cancelled' || orderStatus === 'dispatched') continue;
       ensureGroup(item).ovenItems.push(item);
     }
 
@@ -103,7 +105,13 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     }
 
     return Object.values(groups)
-      .filter(g => !g.ovenItems[0]?.orders?.dispatched_at)
+      .filter(g => {
+        const order = g.ovenItems[0]?.orders;
+        if (!order) return true;
+        if (order.dispatched_at) return false;
+        if (order.status === 'closed' || order.status === 'cancelled' || order.status === 'dispatched') return false;
+        return true;
+      })
       .sort((a, b) => {
         const aMin = Math.min(...a.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
         const bMin = Math.min(...b.ovenItems.map(i => i.estimated_exit_at ? new Date(i.estimated_exit_at).getTime() : Infinity));
