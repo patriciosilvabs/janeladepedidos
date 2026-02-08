@@ -1,67 +1,77 @@
 
-# Corrigir filtro de categorias que permite bebidas no tablet
 
-## Problema identificado
+# Corrigir filtro de categorias: extrair categoria do nome do produto
 
-O filtro de categorias **nao funciona** porque todos os itens estao com `category = null` no banco de dados. Isso acontece por dois motivos:
+## Problema
 
-1. **A API do CardapioWeb nao retorna `category` nem `category_name` nos itens** - o mapeamento atual (`item.category || item.category_name || ''`) nunca encontra esses campos, resultando em string vazia.
-2. **A logica do filtro deixa passar itens sem categoria**: a condicao `return !cat || allowedCategories.some(...)` significa "se nao tem categoria, aceita o item". Entao TODOS os itens passam.
+A API do CardapioWeb **nao possui um campo `category`** nos itens. Os campos retornados sao: `name`, `kind`, `options`, `quantity`, `status`, etc. A mudanca anterior inverteu a logica para bloquear itens sem categoria, o que bloqueou **todos** os itens de todos os pedidos, impedindo que aparecam nas bancadas do KDS.
+
+O pedido #6631 existe na tabela `orders` (aparece no Dashboard admin), mas tem **0 registros** em `order_items`, entao nao aparece em nenhuma bancada.
 
 ## Solucao
 
-### 1. Extrair categoria da API do CardapioWeb corretamente
+Extrair a categoria a partir do **nome do produto** (`item.name`), comparando-o diretamente com as palavras-chaves configuradas em `allowed_categories` da loja. Se o nome do produto contem alguma das categorias permitidas, o item e aceito; caso contrario, e bloqueado.
 
-Os itens da API do CardapioWeb geralmente vem com um campo `group` ou similar que indica a categoria do produto. Vamos adicionar logs detalhados para capturar a estrutura real dos itens e tambem tentar extrair de campos alternativos como `group`, `group_name`, `type`, etc.
+### Nova logica de filtro
 
-### 2. Inverter a logica do filtro
+Em vez de depender de um campo `category` inexistente, o filtro usara o `item.name` diretamente:
 
-Quando `allowed_categories` esta configurado, itens SEM categoria devem ser **bloqueados** (nao aceitos). A logica correta e:
+```text
+Exemplo: allowed_categories = ["Pizza", "Combo", "Lanche"]
+Item name = "Pizza Grande - 1 Sabor"
+  -> "pizza grande - 1 sabor" includes "pizza" -> ACEITO
 
+Item name = "Refrigerante Coca-Cola 2L"
+  -> nao contem nenhuma keyword -> BLOQUEADO
 ```
-Antes:  return !cat || allowedCategories.some(c => c.toLowerCase() === cat)
-Depois: return cat && allowedCategories.some(c => cat.includes(c.toLowerCase()))
-```
 
-Alem disso, usar `includes` em vez de igualdade exata para que "Bebida" capture "Bebidas", e a categoria "Pizza" capture "Pizzas Especiais", etc.
+### Mudancas
 
-### 3. Adicionar logs para diagnosticar os campos da API
+**Arquivo 1: `supabase/functions/poll-orders/index.ts`** (linhas 298-316)
 
-Inserir um log que mostre as chaves de cada item retornado pela API, para que possamos identificar o campo correto de categoria.
+- Remover o mapeamento artificial de `category` (linhas 298-302) que tenta ler campos inexistentes
+- Alterar o filtro para usar `item.name` em vez de `item.category`:
 
-## Arquivos a alterar
-
-### `supabase/functions/poll-orders/index.ts`
-
-- Linhas 291-306: Adicionar log das chaves dos itens, expandir mapeamento de categoria para incluir `group`, `group_name`, `type`, e inverter logica do filtro.
-
-### `supabase/functions/webhook-orders/index.ts`
-
-- Linhas 210-227: Mesma correcao no webhook.
-- Linhas 366-374: Corrigir mapeamento na funcao de parse tambem.
-
-## Detalhes tecnicos da mudanca
-
-Mapeamento expandido de categoria:
 ```typescript
-category: item.category || item.category_name || item.group || item.group_name || item.type || '',
-```
-
-Nova logica de filtro (ambos os arquivos):
-```typescript
-itemsToCreate = itemsToCreate.filter(item => {
-  const cat = (item.category || '').toLowerCase();
-  // Se o item nao tem categoria e ha filtro ativo, bloquear
-  if (!cat) return false;
-  // Verificar se a categoria contem alguma das permitidas (match parcial)
-  return allowedCategories.some(c => cat.includes(c.toLowerCase()));
-});
-```
-
-Log de diagnostico (temporario, para identificar o campo correto):
-```typescript
-if (orderDetails.items?.[0]) {
-  console.log(`[poll-orders] Item keys sample:`, Object.keys(orderDetails.items[0]));
-  console.log(`[poll-orders] First item raw:`, JSON.stringify(orderDetails.items[0]).substring(0, 500));
+// Filter by allowed categories if configured
+const allowedCategories = store.allowed_categories;
+if (allowedCategories && allowedCategories.length > 0) {
+  const before = itemsToCreate.length;
+  itemsToCreate = itemsToCreate.filter((item: any) => {
+    const name = (item.name || '').toLowerCase();
+    // If item has no name, allow it (safety net)
+    if (!name) return true;
+    // Check if the product name contains any allowed category keyword
+    return allowedCategories.some((c: string) => name.includes(c.toLowerCase()));
+  });
+  console.log(`[poll-orders] Category filter by name: ${before} -> ${itemsToCreate.length} items`);
 }
 ```
+
+**Arquivo 2: `supabase/functions/webhook-orders/index.ts`** (linhas 218-236)
+
+- Mesma correcao aplicada no webhook.
+
+**Arquivo 3: `supabase/functions/webhook-orders/index.ts`** (linha 382)
+
+- Remover o mapeamento de `category` no `parseOrderFromWebhook` tambem, ja que nao serve.
+
+### Sobre o pedido #6631 ja existente
+
+Como o pedido ja foi inserido sem `order_items`, sera necessario reimporta-lo. A solucao mais simples e deletar o pedido do banco e deixar o proximo poll reimportar:
+
+```sql
+DELETE FROM orders WHERE id = '449af86f-788b-407e-a389-74469393f297';
+```
+
+Isso permitira que o poll-orders reimporte o pedido com a nova logica de filtro, criando os `order_items` corretamente.
+
+## Resumo
+
+| O que muda | Antes | Depois |
+|---|---|---|
+| Campo usado no filtro | `item.category` (inexistente) | `item.name` (sempre presente) |
+| Item sem match | Bloqueado | Bloqueado |
+| Item sem nome | Bloqueado | Aceito (safety net) |
+| "Pizza Grande" com filtro "Pizza" | Bloqueado (category vazio) | Aceito (nome contem "Pizza") |
+| "Refrigerante" sem filtro "Refrigerante" | Bloqueado | Bloqueado |
