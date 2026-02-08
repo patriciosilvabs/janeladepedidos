@@ -111,7 +111,10 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
 
     for (const item of siblingItems) {
       if (groups[item.order_id]) {
-        groups[item.order_id].siblingItems.push(item);
+        const alreadyInOven = groups[item.order_id].ovenItems.some(o => o.id === item.id);
+        if (!alreadyInOven) {
+          groups[item.order_id].siblingItems.push(item);
+        }
       }
     }
 
