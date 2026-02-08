@@ -1,32 +1,36 @@
-import { useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useSectors, Sector } from '@/hooks/useSectors';
 import { SectorQueuePanel } from './SectorQueuePanel';
-import { OvenTimerPanel } from './OvenTimerPanel';
+import { OvenTimerPanel, DispatchedOrder } from './OvenTimerPanel';
+import { OvenHistoryPanel } from './OvenHistoryPanel';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useAuth } from '@/hooks/useAuth';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Loader2, CheckCircle2, Flame } from 'lucide-react';
+import { Loader2, CheckCircle2, Flame, History } from 'lucide-react';
 
 interface KDSItemsDashboardProps {
   userSector?: Sector | null;
 }
 
 export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
-  // If user has a sector, use it as filter
   const filterSectorId = userSector?.id;
   
   const { sectors, isLoading: sectorsLoading } = useSectors();
   const { isAdmin } = useAuth();
   const { inOvenItems } = useOrderItems({ status: 'in_oven' });
+  const [dispatchedOrders, setDispatchedOrders] = useState<DispatchedOrder[]>([]);
+  const [ovenSubTab, setOvenSubTab] = useState<'forno' | 'historico'>('forno');
 
-  // Filter KDS sectors (view_type = 'kds') - only for admins without sector
+  const handleDispatch = useCallback((order: DispatchedOrder) => {
+    setDispatchedOrders(prev => [order, ...prev]);
+  }, []);
+
   const kdsSectors = useMemo(
     () => sectors?.filter((s) => s.view_type === 'kds') ?? [],
     [sectors]
   );
 
-  // Show oven tab for admins without a fixed sector
   const showOvenTab = isAdmin && !filterSectorId;
 
   if (sectorsLoading) {
@@ -52,21 +56,55 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
   const ovenTabContent = showOvenTab && (
     <TabsContent value="__oven__" className="flex-1 mt-4">
       <div className="max-w-2xl mx-auto">
-        <OvenTimerPanel />
+        <div className="flex justify-center mb-4">
+          <div className="inline-flex items-center rounded-lg border bg-card p-1 gap-1">
+            <button
+              onClick={() => setOvenSubTab('forno')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                ovenSubTab === 'forno'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <Flame className="h-3 w-3 inline mr-1" />
+              Forno
+            </button>
+            <button
+              onClick={() => setOvenSubTab('historico')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                ovenSubTab === 'historico'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              <History className="h-3 w-3 inline mr-1" />
+              Histórico
+              {dispatchedOrders.length > 0 && (
+                <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">
+                  {dispatchedOrders.length}
+                </Badge>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {ovenSubTab === 'forno' ? (
+          <OvenTimerPanel onDispatch={handleDispatch} />
+        ) : (
+          <OvenHistoryPanel dispatchedOrders={dispatchedOrders} />
+        )}
       </div>
     </TabsContent>
   );
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] p-4 gap-4">
-      {/* Header Stats */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-semibold">KDS - Itens</h1>
         </div>
       </div>
 
-      {/* If user is linked to a sector, show ONLY that sector's queue (no tabs) */}
       {filterSectorId ? (
         <div className="flex-1">
           <SectorQueuePanel 
@@ -75,7 +113,6 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
           />
         </div>
       ) : (
-        /* Admins/owners without sector see each sector in separate tabs */
         kdsSectors.length > 0 ? (
           <Tabs defaultValue={kdsSectors[0]?.id} className="flex-1 flex flex-col">
             <TabsList>
