@@ -17,7 +17,7 @@ const Index = () => {
   const { settings, isLoading: settingsLoading } = useSettings();
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
+  const [mainView, setMainView] = useState<'dashboard' | 'kds' | 'dispatch'>('dashboard');
   
   // Track if we've successfully loaded content before
   // to prevent showing loading spinner during brief reloads
@@ -85,13 +85,16 @@ const Index = () => {
       <Header sectorName={userSector?.name} isFullscreen={isFullscreen}>
         {/* Main view tabs for admins without KDS sector */}
         {showMainViewTabs && !isFullscreen && (
-          <Tabs value={mainView} onValueChange={(v) => setMainView(v as 'dashboard' | 'kds')}>
+        <Tabs value={mainView} onValueChange={(v) => setMainView(v as 'dashboard' | 'kds' | 'dispatch')}>
             <TabsList className="h-8">
               <TabsTrigger value="dashboard" className="text-xs px-3">
                 Despacho
               </TabsTrigger>
               <TabsTrigger value="kds" className="text-xs px-3">
                 KDS Produção
+              </TabsTrigger>
+              <TabsTrigger value="dispatch" className="text-xs px-3">
+                Forno
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -120,6 +123,8 @@ const Index = () => {
           ? (effectiveKdsMode === 'items' 
               ? <KDSItemsDashboard />
               : <KDSDashboard />)
+          : mainView === 'dispatch'
+            ? <DispatchDashboard />
             : <Dashboard />
       }
     </div>
