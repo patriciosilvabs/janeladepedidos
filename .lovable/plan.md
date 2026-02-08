@@ -1,98 +1,49 @@
 
+# Classificar produto como borda quando o nome do produto contém palavra-chave de borda
 
-# Persistir pedidos multi-item no Forno usando dados do banco
+## Problema
 
-## Problema raiz
+Atualmente, o sistema só verifica as **opções** (options) de um item contra as palavras-chave de borda. Se o próprio **nome do produto** contiver uma palavra-chave (ex: "Borda de Chocolate", "Domzitos"), o sistema não reconhece como borda e o item não aparece com a tarja laranja nem é roteado para o setor de bordas.
 
-O painel do Forno usa uma variavel local na memoria (`knownOvenOrderIds` ref) para decidir quais pedidos mostrar. Quando o usuario troca de aba, muda de bancada, ou a internet oscila, o componente e desmontado e essa memoria e perdida. Ao voltar, pedidos onde todos os itens ja estao "prontos" desaparecem porque o sistema nao reconhece mais aquele pedido como pertencente ao forno.
+## Solução
 
-A mesma coisa acontece com `dispatchedOrderIds` (controle de pedidos despachados) -- tambem e memoria local que se perde ao desmontar.
+Adicionar uma verificação do **nome do produto** contra as palavras-chave de borda na função `create_order_items_from_json`. Se o nome do produto contiver alguma palavra-chave de borda, o próprio nome do produto será classificado como `edge_type`.
 
-## Solucao
+## Detalhes Técnicos
 
-Eliminar toda dependencia de memoria local da sessao e usar exclusivamente dados do banco de dados para decidir o que mostrar e o que esconder.
+### Arquivo: Migração SQL (nova)
 
-### Regra simplificada
+Atualizar a função `create_order_items_from_json` para, **após processar as options**, verificar se o nome do produto (`v_item->>'name'`) contém alguma palavra-chave de borda. Se sim e se `v_edge_type` ainda estiver vazio (ou seja, nenhuma option já foi classificada como borda), setar o nome do produto como `edge_type` e marcar `v_has_edge := true`.
 
-- **Mostrar** no Forno: qualquer pedido que tenha itens com `oven_entry_at` preenchido E cujo pedido NAO tenha `dispatched_at` preenchido
-- **Esconder** do Forno: pedidos cujo `dispatched_at` ja foi preenchido (ou seja, ja foram despachados)
-
-### Resultado
-
-Mesmo apos troca de aba, internet cair e voltar, ou troca de bancada, os pedidos multi-item continuam visiveis ate o clique em DESPACHAR.
-
-## Detalhes Tecnicos
-
-### 1. Adicionar `dispatched_at` e `status` na query de items
-
-**Arquivo:** `src/hooks/useOrderItems.ts`
-
-Alterar o `select` da query principal e da query de siblings para incluir `dispatched_at` e `status` do pedido:
+A lógica será inserida logo após o bloco de processamento de options (depois da linha 153 atual), antes da lógica de splitting por sabores:
 
 ```sql
-orders!inner(
-  id, customer_name, cardapioweb_order_id, external_id,
-  neighborhood, address, dispatched_at, status,
-  stores(id, name)
-)
+-- Se nenhuma option foi classificada como borda,
+-- verificar se o NOME DO PRODUTO contém keyword de borda
+IF NOT v_has_edge AND v_edge_arr IS NOT NULL THEN
+  FOREACH v_keyword IN ARRAY v_edge_arr
+  LOOP
+    IF v_keyword = '#' THEN
+      IF (v_item->>'name') LIKE '#%' THEN
+        v_has_edge := true;
+        v_edge_type := COALESCE(v_item->>'name', '');
+        EXIT;
+      END IF;
+    ELSIF (v_item->>'name') ILIKE '%' || v_keyword || '%' THEN
+      v_has_edge := true;
+      v_edge_type := COALESCE(v_item->>'name', '');
+      EXIT;
+    END IF;
+  END LOOP;
+END IF;
 ```
 
-Tambem atualizar o tipo `OrderItemWithOrder` em `src/types/orderItems.ts` para incluir esses campos.
+### Resultado esperado
 
-### 2. Remover `knownOvenOrderIds` e `dispatchedOrderIds`
+| Cenário | Antes | Depois |
+|---------|-------|--------|
+| Produto "Borda de Chocolate" com keyword "Borda" | Aparece como item normal | Aparece com tarja laranja + roteado para setor de bordas |
+| Produto "Domzitos" com keyword "Domzitos" | Aparece como item normal | Aparece com tarja laranja + roteado para setor de bordas |
+| Produto "Pizza Calabresa" com option "Borda Catupiry" | Já funciona | Continua funcionando igual |
 
-**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
-
-- Remover o `useRef` de `knownOvenOrderIds`
-- Remover o `useState` de `dispatchedOrderIds`
-- Na logica do `useMemo`, permitir que itens `ready` com `oven_entry_at` SEMPRE criem grupos, sem verificacao de sessao
-- Filtrar grupos cujo pedido ja tem `dispatched_at` preenchido (usando dados do join com orders)
-
-### 3. Persistir despacho no banco
-
-**Arquivo:** `src/components/kds/OvenTimerPanel.tsx`
-
-Na funcao `handleMasterReady`, ao despachar, chamar a funcao RPC `set_order_dispatched` que ja existe no banco (seta `status = 'dispatched'` e `dispatched_at = NOW()`):
-
-```typescript
-await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
-```
-
-Isso garante que mesmo apos remount, o pedido despachado nao reaparece.
-
-### 4. Atualizar tipo OrderItemWithOrder
-
-**Arquivo:** `src/types/orderItems.ts`
-
-Adicionar ao tipo `orders`:
-```typescript
-orders?: {
-  id: string;
-  customer_name: string;
-  cardapioweb_order_id: string | null;
-  external_id: string | null;
-  neighborhood: string | null;
-  address: string;
-  dispatched_at: string | null;  // NOVO
-  status: string;                // NOVO
-  stores?: { id: string; name: string } | null;
-} | null;
-```
-
-### Fluxo apos a mudanca
-
-```text
-Item vai pro forno --> status 'in_oven', oven_entry_at preenchido
-  |
-Item marcado PRONTO --> status 'ready', oven_entry_at permanece
-  |
-Todos prontos --> botao DESPACHAR fica disponivel
-  |
-Click DESPACHAR --> chama set_order_dispatched (DB)
-  |                 dispatched_at preenchido no banco
-  |
-Pedido some do Forno (baseado em dispatched_at != null)
-```
-
-Nenhuma dependencia de memoria local. Tudo baseado no banco.
-
+Nenhuma mudança no frontend -- apenas a função SQL de classificação precisa ser atualizada.
