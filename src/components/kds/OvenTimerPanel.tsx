@@ -3,11 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
 import { usePrintNode } from '@/hooks/usePrintNode';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { Flame, Volume2, VolumeX } from 'lucide-react';
 import { CancellationAlert } from './CancellationAlert';
 import { OrderOvenBlock } from './OrderOvenBlock';
 import { OvenItemRow } from './OvenItemRow';
@@ -196,67 +192,43 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   }
 
   return (
-    <Card className="border-orange-500/30 bg-gradient-to-br from-orange-500/5 to-transparent">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="flex items-center gap-2 text-lg">
-            <Flame className="h-5 w-5 text-orange-500" />
-            Forno
-            <Badge className="bg-orange-500 text-white">
-              {totalActiveOvenItems}
-            </Badge>
-          </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setAudioEnabled(!audioEnabled)}
-            className={cn(
-              "h-8 w-8",
-              audioEnabled ? "text-orange-500" : "text-muted-foreground"
-            )}
-          >
-            {audioEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {sectorId && <CancellationAlert sectorId={sectorId} />}
-        {orderGroups.map((group) => {
-          const pendingSiblings = group.siblingItems.filter(i => i.status !== 'ready');
-          
-          if (group.ovenItems.length === 1 && pendingSiblings.length === 0) {
-            return (
-              <OvenItemRow
-                key={group.ovenItems[0].id}
-                item={group.ovenItems[0]}
-                onMarkReady={() => handleMarkItemReady(group.ovenItems[0].id)}
-                isProcessing={processingId === group.ovenItems[0].id}
-                isAnyProcessing={processingId !== null}
-                audioEnabled={audioEnabled}
-                ovenTimeSeconds={ovenTimeSeconds}
-                orderDisplayId={group.orderDisplayId}
-              />
-            );
-          }
-          
+    <div className="space-y-4">
+      {sectorId && <CancellationAlert sectorId={sectorId} />}
+      {orderGroups.map((group) => {
+        const pendingSiblings = group.siblingItems.filter(i => i.status !== 'ready');
+        
+        if (group.ovenItems.length === 1 && pendingSiblings.length === 0) {
           return (
-            <OrderOvenBlock
-              key={group.orderId}
-              orderId={group.orderId}
-              orderDisplayId={group.orderDisplayId}
-              storeName={group.storeName}
-              customerName={group.customerName}
-              ovenItems={group.ovenItems}
-              siblingItems={group.siblingItems}
-              onMarkItemReady={handleMarkItemReady}
-              onMasterReady={handleMasterReady}
-              processingId={processingId}
+            <OvenItemRow
+              key={group.ovenItems[0].id}
+              item={group.ovenItems[0]}
+              onMarkReady={() => handleMarkItemReady(group.ovenItems[0].id)}
+              isProcessing={processingId === group.ovenItems[0].id}
+              isAnyProcessing={processingId !== null}
               audioEnabled={audioEnabled}
               ovenTimeSeconds={ovenTimeSeconds}
+              orderDisplayId={group.orderDisplayId}
             />
           );
-        })}
-      </CardContent>
-    </Card>
+        }
+        
+        return (
+          <OrderOvenBlock
+            key={group.orderId}
+            orderId={group.orderId}
+            orderDisplayId={group.orderDisplayId}
+            storeName={group.storeName}
+            customerName={group.customerName}
+            ovenItems={group.ovenItems}
+            siblingItems={group.siblingItems}
+            onMarkItemReady={handleMarkItemReady}
+            onMasterReady={handleMasterReady}
+            processingId={processingId}
+            audioEnabled={audioEnabled}
+            ovenTimeSeconds={ovenTimeSeconds}
+          />
+        );
+      })}
+    </div>
   );
 }
