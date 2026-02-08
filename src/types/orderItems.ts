@@ -30,6 +30,7 @@ export interface OrderItemWithOrder extends OrderItem {
     address: string;
     dispatched_at: string | null;
     status: string;
+    order_type: string | null;
     stores?: {
       id: string;
       name: string;
