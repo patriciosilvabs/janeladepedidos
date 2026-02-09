@@ -1,37 +1,35 @@
 
-## Corrigir notificacao ao CardapioWeb quando pedido fica pronto no Forno
+
+## Mover polling para o nível raiz da aplicação
 
 ### Problema
 
-A funcao `handleMasterReady` no `OvenTimerPanel.tsx` despacha o pedido localmente (via `set_order_dispatched`) mas **nunca chama** a edge function `notify-order-ready`. Isso significa que pedidos despachados pelo painel do forno nao comunicam ao CardapioWeb que estao prontos.
+O polling de pedidos (`usePolling`) só é chamado dentro do componente `Dashboard` (aba "Despacho"). Quando o admin troca para "KDS Produção", o `Dashboard` é desmontado, o polling para, e nenhum pedido novo é importado do CardápioWeb.
 
-A edge function ja existe e funciona -- ela e usada corretamente no `useOrders.ts` (Dashboard/Buffer). So falta chamar no fluxo do forno.
+### Solução
 
-### Solucao
+Mover a chamada do `usePolling` do `Dashboard.tsx` para o `Index.tsx` (componente raiz da página). Assim, o polling roda independente de qual aba está ativa.
 
-Adicionar a chamada `supabase.functions.invoke('notify-order-ready')` dentro de `handleMasterReady`, logo apos o `set_order_dispatched`.
+### Mudanças
 
-### Mudanca unica
+1. **`src/pages/Index.tsx`**
+   - Importar `usePolling` 
+   - Chamar `usePolling(20000)` no corpo do componente (ao lado dos outros hooks globais como `useAuth`, `useSettings`)
 
-**`src/components/kds/OvenTimerPanel.tsx`** -- dentro de `handleMasterReady`, apos a linha `await supabase.rpc('set_order_dispatched', ...)`:
+2. **`src/components/Dashboard.tsx`**
+   - Remover o import e a chamada de `usePolling`
+   - Remover referências a `isPolling`, `lastSync`, `pollingEnabled`, `manualPoll` do Dashboard (se usadas apenas para exibição de status de sincronização, mover essa UI para o Header ou manter como props vindas do Index)
+
+3. **`src/lib/version.ts`** - Bump para `v1.0.6`
+
+### Detalhes técnicos
+
+No `Index.tsx`, adicionar logo abaixo dos hooks existentes:
 
 ```text
-// Notify CardapioWeb that order is READY
-try {
-  const { error: notifyError } = await supabase.functions.invoke('notify-order-ready', {
-    body: { orderIds: [orderId] },
-  });
-  if (notifyError) {
-    console.error('Erro ao notificar CardapioWeb:', notifyError);
-  }
-} catch (notifyErr) {
-  console.error('Erro ao chamar notify-order-ready:', notifyErr);
-}
+const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(20000);
 ```
 
-Tambem bump de versao em `src/lib/version.ts` para `v1.0.5`.
+No `Dashboard.tsx`, verificar se `isPolling`, `lastSync`, `manualPoll` são usados na UI do Dashboard (ex: botão de sincronizar manual, indicador de última sincronização). Se sim, passar como props do Index para o Dashboard. Se não, apenas remover.
 
-### Arquivos a modificar
-
-1. **`src/components/kds/OvenTimerPanel.tsx`** -- Adicionar chamada notify-order-ready no handleMasterReady
-2. **`src/lib/version.ts`** -- Bump para v1.0.5
+Isso garante que basta o sistema estar aberto para os pedidos fluírem, independente da aba ativa.
