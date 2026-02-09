@@ -486,15 +486,39 @@ async function pollStoreOrders(
       
       for (const order of existingPendingOrders) {
         try {
-          // === AUTO-REPAIR: Check if order has items, if not, re-create them ===
+          // === AUTO-REPAIR: Check if order has missing items (partial or zero) ===
           const { data: orderItems } = await supabase
             .from('order_items')
             .select('id')
-            .eq('order_id', order.id)
-            .limit(1);
+            .eq('order_id', order.id);
 
-          if (!orderItems || orderItems.length === 0) {
-            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} (${order.id}) has NO items, repairing...`);
+          const { data: orderData } = await supabase
+            .from('orders')
+            .select('items')
+            .eq('id', order.id)
+            .single();
+
+          const actualCount = orderItems?.length || 0;
+          const rawItems = orderData?.items || [];
+          const expectedCount = Array.isArray(rawItems) ? rawItems.length : 0;
+
+          if (actualCount < expectedCount) {
+            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has ${actualCount}/${expectedCount} items, repairing...`);
+
+            // Delete existing items before re-creating (only for pending orders)
+            if (actualCount > 0) {
+              const { error: deleteError } = await supabase
+                .from('order_items')
+                .delete()
+                .eq('order_id', order.id)
+                .in('status', ['pending']);
+              
+              if (deleteError) {
+                console.error(`[poll-orders] Repair: Error deleting existing items:`, deleteError);
+                continue;
+              }
+              console.log(`[poll-orders] Repair: Deleted ${actualCount} existing pending items for re-creation`);
+            }
             
             try {
               const repairResponse = await fetch(
