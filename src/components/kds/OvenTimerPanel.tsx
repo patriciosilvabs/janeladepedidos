@@ -164,6 +164,19 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     if (orderId) {
       try {
         await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
+        
+        // Notify CardapioWeb that order is READY
+        try {
+          const { error: notifyError } = await supabase.functions.invoke('notify-order-ready', {
+            body: { orderIds: [orderId] },
+          });
+          if (notifyError) {
+            console.error('Erro ao notificar CardapioWeb:', notifyError);
+          }
+        } catch (notifyErr) {
+          console.error('Erro ao chamar notify-order-ready:', notifyErr);
+        }
+        
         queryClient.invalidateQueries({ queryKey: ['order-items'] });
         queryClient.invalidateQueries({ queryKey: ['orders'] });
       } catch (dbError) {
