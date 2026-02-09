@@ -9,7 +9,7 @@ import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
 import { OvenTimerPanel } from './kds/OvenTimerPanel';
-import { Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -391,8 +391,32 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
         </div>
       )}
       
-      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-3 min-h-0">
-        {/* Column 1: Buffer de Espera - Single Timer */}
+      <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-4 min-h-0">
+        {/* Column 1: Em Produção */}
+        <OrderColumn
+          title="Em Produção"
+          count={pendingOrders.length}
+          icon={<ChefHat className="h-5 w-5" />}
+          variant="pending"
+        >
+          {pendingOrders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
+              <ChefHat className="mb-2 h-8 w-8 opacity-50" />
+              <p>Nenhum pedido em produção</p>
+            </div>
+          ) : (
+            pendingOrders.map((order) => (
+              <OrderCard
+                key={order.id}
+                order={order}
+                onMarkReady={() => handleMarkReady(order.id)}
+                isMarkingReady={processingOrderId === order.id}
+              />
+            ))
+          )}
+        </OrderColumn>
+
+        {/* Column 2: Buffer de Espera - Single Timer */}
         <OrderColumn
           title="Buffer de Espera"
           count={bufferOrders.length}
