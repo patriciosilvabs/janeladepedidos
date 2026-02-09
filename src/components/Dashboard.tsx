@@ -4,11 +4,9 @@ import { supabase } from '@/integrations/supabase/client';
 import { useSettings } from '@/hooks/useSettings';
 import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
-import { useOrderItems } from '@/hooks/useOrderItems';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
-import { OvenTimerPanel } from './kds/OvenTimerPanel';
 import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -38,7 +36,6 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
   const { getTodayBufferTimeout } = useBufferSettings();
   const { settings: dynamicSettings, calculateDynamicTimer } = useDynamicBufferSettings();
   const { toast } = useToast();
-  const { inOvenItems } = useOrderItems({ status: 'in_oven' });
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
@@ -384,13 +381,8 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
         </div>
       </div>
 
-      {/* Oven Timer Panel - visible when there are items in oven */}
-      {inOvenItems.length > 0 && (
-        <div className="px-4 pt-4">
-          <OvenTimerPanel />
-        </div>
-      )}
-      
+
+
       <div className="grid flex-1 grid-cols-1 gap-4 p-4 md:grid-cols-4 min-h-0">
         {/* Column 1: Em Produção */}
         <OrderColumn
