@@ -45,6 +45,20 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
 
     const flavorGroupKeys = Object.keys(flavorGroups);
 
+    // Detect half-and-half: if ALL flavors across ALL groups
+    // start with "1/2", "½", or "meia", skip explosion
+    const allFlavors = Object.values(flavorGroups).flat();
+    const allHalf = allFlavors.length > 1 && allFlavors.every((f: any) => {
+      const n = (f.name || '').trim();
+      return /^(1\/2|½|meia)\s/i.test(n);
+    });
+
+    if (allHalf) {
+      console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
+      result.push(item);
+      continue;
+    }
+
     // If only 0 or 1 flavor group, no explosion needed
     if (flavorGroupKeys.length <= 1) {
       result.push(item);
