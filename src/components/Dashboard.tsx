@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
 import { useOrders } from '@/hooks/useOrders';
-import { usePolling } from '@/hooks/usePolling';
 import { useSettings } from '@/hooks/useSettings';
 import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
@@ -24,14 +23,20 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 
-export function Dashboard() {
+interface DashboardProps {
+  isPolling?: boolean;
+  lastSync?: Date | null;
+  pollingEnabled?: boolean;
+  manualPoll?: () => void;
+}
+
+export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled = false, manualPoll }: DashboardProps) {
   const { orders, isLoading, isFetching, error, markAsReady, moveToReady, markAsCollected, forceDispatch, syncOrdersStatus, retryNotification, cleanupErrors, manualCleanup, forceCloseOrder } =
     useOrders();
   const { settings } = useSettings();
   const { getTodayBufferTimeout } = useBufferSettings();
   const { settings: dynamicSettings, calculateDynamicTimer } = useDynamicBufferSettings();
   const { toast } = useToast();
-  const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(20000);
   const { inOvenItems } = useOrderItems({ status: 'in_oven' });
   const [processingOrderId, setProcessingOrderId] = useState<string | null>(null);
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
