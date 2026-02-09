@@ -86,7 +86,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
   for (const item of items) {
     const options = item.options || [];
     if (options.length === 0) {
-      result.push(item);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
     }
 
@@ -117,7 +117,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
     const flavorGroupKeys = Object.keys(flavorGroups);
 
     if (flavorGroupKeys.length <= 1) {
-      result.push(item);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
     }
 
@@ -145,6 +145,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
         quantity: 1,
         options: newOptions,
         observation: index === 0 ? item.observation : null,
+        _source_item_id: item.item_id || item.name,
       });
     });
 
@@ -166,7 +167,10 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
       return edgeKeywords.some(k => k === '#' ? n.startsWith('#') : n.includes(k.toLowerCase()));
     });
 
-    if (!hasFlavor && !hasEdge && finalResult.length > 0) {
+    const sourceId = ri._source_item_id;
+
+    if (!hasFlavor && !hasEdge && finalResult.length > 0
+        && finalResult[finalResult.length - 1]._source_item_id === sourceId) {
       pendingComplements.push(...opts);
     } else {
       finalResult.push(ri);
@@ -178,7 +182,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
     console.log(`[explodeCombo] Merged ${pendingComplements.length} complement options back into first item`);
   }
 
-  return finalResult;
+  return finalResult.map(({ _source_item_id, ...rest }) => rest);
 }
 
 // ================== HELPERS ==================
