@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useOrders } from '@/hooks/useOrders';
+import { supabase } from '@/integrations/supabase/client';
 import { useSettings } from '@/hooks/useSettings';
 import { useBufferSettings } from '@/hooks/useBufferSettings';
 import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
@@ -42,6 +43,41 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
   const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
+
+  // Track which orders we've already notified to avoid duplicate calls
+  const notifiedOrdersRef = useRef<Set<string>>(new Set());
+
+  // Auto-notify CardápioWeb for non-delivery orders that skip buffer and go directly to 'ready'
+  useEffect(() => {
+    const unnotifiedReadyOrders = orders.filter(
+      (o) =>
+        o.status === 'ready' &&
+        o.cardapioweb_notified === false &&
+        o.order_type !== 'delivery' &&
+        o.order_type !== null &&
+        !notifiedOrdersRef.current.has(o.id)
+    );
+
+    if (unnotifiedReadyOrders.length === 0) return;
+
+    const orderIds = unnotifiedReadyOrders.map((o) => o.id);
+    // Mark as notifying immediately to prevent duplicate calls
+    orderIds.forEach((id) => notifiedOrdersRef.current.add(id));
+
+    console.log('[Dashboard] Auto-notifying CardápioWeb for non-delivery ready orders:', orderIds);
+
+    supabase.functions
+      .invoke('notify-order-ready', { body: { orderIds } })
+      .then(({ error }) => {
+        if (error) {
+          console.error('[Dashboard] Auto-notify error:', error);
+          // Remove from set so it can retry on next render
+          orderIds.forEach((id) => notifiedOrdersRef.current.delete(id));
+        } else {
+          console.log('[Dashboard] Auto-notify success for', orderIds.length, 'orders');
+        }
+      });
+  }, [orders]);
 
   // Filter orders by status
   const pendingOrders = useMemo(

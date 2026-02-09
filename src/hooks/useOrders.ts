@@ -125,16 +125,19 @@ export function useOrders(options: UseOrdersOptions = {}) {
       const previousOrders = queryClient.getQueryData<OrderWithGroup[]>(['orders']);
       
       queryClient.setQueryData<OrderWithGroup[]>(['orders'], (old) => 
-        old?.map((order) =>
-          order.id === orderId
-            ? { 
-                ...order, 
-                status: 'waiting_buffer' as const,
-                ready_at: new Date().toISOString(), // Otimista - será corrigido pelo servidor
-                group_id: null,
-              }
-            : order
-        ) ?? []
+        old?.map((order) => {
+          if (order.id !== orderId) return order;
+          // Non-delivery orders skip buffer and go directly to ready
+          const newStatus = (order.order_type && order.order_type !== 'delivery') 
+            ? 'ready' as const 
+            : 'waiting_buffer' as const;
+          return { 
+            ...order, 
+            status: newStatus,
+            ready_at: new Date().toISOString(),
+            group_id: null,
+          };
+        }) ?? []
       );
       
       return { previousOrders };
