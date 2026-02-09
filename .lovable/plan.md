@@ -1,86 +1,93 @@
 
 
-## Corrigir importacao parcial de itens do pedido #6759
+## Corrigir itens simples sendo engolidos pela pos-explosao de combo
 
 ### Problema
 
-O pedido #6759 tem 3 itens na API do CardapioWeb:
-1. **Pizza Grande | Massa Artesanal** (com Borda de Cheddar + sabores) -- importado com sucesso
-2. **Pizza Chocolate Branco (G)** -- NAO importado (perdido)
-3. **Domzitos de chocolate preto e coco ralado (G)** -- NAO importado (filtrado por `allowed_categories` na epoca)
+Itens sem opcoes (como "Domzitos de chocolate preto e coco ralado") sao removidos da lista final pela logica de "pos-explosao" no `explodeComboItems`. Essa logica foi criada para mesclar itens residuais (como bebidas dentro de combos) de volta no item principal, mas esta afetando itens completamente independentes.
 
-Os itens foram perdidos por dois motivos:
-- "Domzitos" nao estava nas `allowed_categories` da loja (ja corrigido)
-- "Pizza Chocolate Branco (G)" deveria ter passado no filtro (contem "Pizza"), mas possivelmente foi perdida na funcao `create_order_items_from_json` por nao ter opcoes/sabores (item simples sem opcionais)
+O trecho problematico (linhas 100-125 do `poll-orders/index.ts`):
 
-Alem disso, o mecanismo de **auto-reparo** so atua quando o pedido tem **ZERO itens**. Como o pedido #6759 ja tem 1 item, a reparacao nunca e acionada -- itens faltantes ficam perdidos permanentemente.
+```text
+for (const ri of result) {
+  const hasFlavor = opts.some(...);
+  const hasEdge = opts.some(...);
 
-### Solucao em duas partes
+  if (!hasFlavor && !hasEdge && finalResult.length > 0) {
+    pendingComplements.push(...opts);  // <-- ENGOLE o item
+  } else {
+    finalResult.push(ri);
+  }
+}
+```
 
-#### Parte 1: Reparo imediato do pedido #6759
+Como "Domzitos" nao tem opcoes, `hasFlavor` e `hasEdge` sao ambos `false`, e como `finalResult` ja tem a pizza, o Domzitos e descartado -- suas opcoes (vazias) sao "mescladas" e o item desaparece completamente.
 
-Chamar manualmente a funcao `create_order_items_from_json` para os 2 itens faltantes, usando os dados ja armazenados no campo `orders.items` do pedido.
+### Solucao
 
-#### Parte 2: Melhorar auto-reparo para itens parciais
+Modificar a logica de pos-explosao para **nunca engolir itens que possuem `item_id` diferente** do item que foi explodido. O merge so deve ocorrer entre fragmentos do **mesmo combo/produto original**.
 
-Alterar a logica de reparo no `poll-orders/index.ts` para comparar a **quantidade de itens esperada** (campo `orders.items` no banco) com a **quantidade real de `order_items`**. Se houver diferenca, re-processar os itens faltantes.
+Para isso, vamos rastrear o `item_id` de origem em cada item e so aplicar o merge quando os itens compartilham o mesmo `item_id`.
 
 ### Mudancas tecnicas
 
-**1. `supabase/functions/poll-orders/index.ts`**
+**1. `supabase/functions/poll-orders/index.ts` (funcao `explodeComboItems`)**
 
-Na secao de auto-reparo (linhas ~488-570), trocar a verificacao de "zero items" por comparacao de contagem:
+Na explosao (linhas 78-95), marcar cada item gerado com `_source_item_id`:
 
 ```text
-// ANTES:
-const { data: orderItems } = await supabase
-  .from('order_items')
-  .select('id')
-  .eq('order_id', order.id)
-  .limit(1);
-
-if (!orderItems || orderItems.length === 0) {
-
-// DEPOIS:
-// Buscar contagem real de items + dados do pedido para comparar
-const { data: orderItems } = await supabase
-  .from('order_items')
-  .select('id')
-  .eq('order_id', order.id);
-
-const { data: orderData } = await supabase
-  .from('orders')
-  .select('items')
-  .eq('id', order.id)
-  .single();
-
-const actualCount = orderItems?.length || 0;
-const rawItems = orderData?.items || [];
-const expectedCount = Array.isArray(rawItems) ? rawItems.length : 0;
-
-if (actualCount < expectedCount) {
-  // Deletar items existentes e re-criar todos
-  // (mais seguro que tentar criar apenas os faltantes)
+result.push({
+  ...item,
+  quantity: 1,
+  options: newOptions,
+  observation: index === 0 ? item.observation : null,
+  _source_item_id: item.item_id || item.name,  // rastrear origem
+});
 ```
 
-Quando detectar diferenca:
-- Deletar os `order_items` existentes do pedido
-- Re-buscar detalhes da API (ou usar `orders.items`)
-- Aplicar filtro de categorias e combo explosion
-- Chamar `create_order_items_from_json` novamente com todos os itens
+Itens que nao sao explodidos (passam direto) tambem recebem a marcacao:
 
-Tambem adicionar log para rastreabilidade:
 ```text
-console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has ${actualCount}/${expectedCount} items, repairing...`);
+result.push({ ...item, _source_item_id: item.item_id || item.name });
 ```
 
-**2. `src/lib/version.ts`** -- Bump para `v1.0.7`
+Na pos-explosao (linhas 100-125), mudar a condicao para comparar o `_source_item_id`:
 
-### Reparo manual do pedido #6759
+```text
+for (const ri of result) {
+  const opts = ri.options || [];
+  const hasFlavor = opts.some(...);
+  const hasEdge = opts.some(...);
+  const sourceId = ri._source_item_id;
 
-Apos deploy da correcao, o proximo ciclo de polling detectara que o pedido #6759 tem 1/3 itens e re-processara automaticamente. Como "Domzitos" ja esta nas categorias permitidas, todos os 3 itens serao criados.
+  // So mescla se: (1) nao tem sabor/borda, (2) ja existe resultado,
+  // E (3) pertence ao mesmo produto de origem
+  if (!hasFlavor && !hasEdge && finalResult.length > 0 
+      && finalResult[finalResult.length - 1]._source_item_id === sourceId) {
+    pendingComplements.push(...opts);
+  } else {
+    finalResult.push(ri);
+  }
+}
+```
 
-### Risco
+Antes de retornar, limpar a propriedade temporaria:
 
-A estrategia de "deletar e re-criar" pode afetar itens que ja estao em preparo (status `in_prep` ou `in_oven`). Para mitigar, a logica so ira deletar/re-criar itens de pedidos que ainda estejam com status `pending`.
+```text
+return finalResult.map(({ _source_item_id, ...rest }) => rest);
+```
+
+**2. `supabase/functions/webhook-orders/index.ts`** - Aplicar a mesma correcao (funcao duplicada)
+
+**3. `src/lib/version.ts`** - Bump para `v1.0.8`
+
+### Impacto
+
+- Itens independentes como "Domzitos" passam a ser preservados corretamente
+- A logica de merge continua funcionando para combos reais (bebida dentro de combo pizza)
+- Nenhuma alteracao no banco de dados necessaria
+
+### Teste
+
+Apos deploy, o proximo ciclo de polling vai detectar que o pedido 6760 tem 1/2 itens e reparar automaticamente, criando o Domzitos corretamente.
 
