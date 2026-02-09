@@ -7,6 +7,7 @@ import { KDSItemsDashboard } from '@/components/kds';
 import { useAuth } from '@/hooks/useAuth';
 import { useUserSector } from '@/hooks/useSectors';
 import { useSettings } from '@/hooks/useSettings';
+import { usePolling } from '@/hooks/usePolling';
 import { useSectorPresence } from '@/hooks/useSectorPresence';
 import { Loader2 } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -15,6 +16,7 @@ const Index = () => {
   const { user, loading: authLoading, isAdmin } = useAuth();
   const { userSector, isLoading: sectorLoading } = useUserSector(user?.id);
   const { settings, isLoading: settingsLoading } = useSettings();
+  const { isPolling, lastSync, isEnabled: pollingEnabled, manualPoll } = usePolling(20000);
   const [kdsMode, setKdsMode] = useState<'orders' | 'items'>('items');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [mainView, setMainView] = useState<'dashboard' | 'kds'>('dashboard');
@@ -120,7 +122,7 @@ const Index = () => {
           ? (effectiveKdsMode === 'items' 
               ? <KDSItemsDashboard />
               : <KDSDashboard />)
-            : <Dashboard />
+            : <Dashboard isPolling={isPolling} lastSync={lastSync} pollingEnabled={pollingEnabled} manualPoll={manualPoll} />
       }
     </div>
   );
