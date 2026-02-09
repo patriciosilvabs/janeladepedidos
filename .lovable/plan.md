@@ -1,45 +1,75 @@
 
 
-## Adicionar deteccao de meio-a-meio no webhook-orders
+## Corrigir fluxo: Painel do Forno deve enviar para Buffer, nao para Despachado
 
 ### Problema
 
-A funcao `webhook-orders/index.ts` NAO possui a verificacao de pizza meio-a-meio que ja existe no `poll-orders/index.ts`. Quando um pedido chega via webhook (como o #9672), os sabores "1/2 MUSSARELA (G)" e "1/2 PORTUGUESA (G)" estao em `option_group_id` diferentes (955264 vs 955249), gerando 2 grupos de sabores. Sem a verificacao de meio-a-meio, o sistema explode o item em 2 itens separados -- cada um indo para uma bancada diferente.
+Quando todos os itens do forno ficam prontos, o `OvenTimerPanel` chama `set_order_dispatched` (linha 166), que move o pedido direto para status `dispatched`, pulando completamente a etapa de buffer. Alem disso, chama `notify-order-ready` imediatamente (linha 170), notificando o CardapioWeb antes da hora.
 
-No `poll-orders` ja existe esta logica (linhas 48-60) que detecta quando TODOS os sabores comecam com "1/2", "meia" ou "1/2" e pula a explosao. Falta replicar no webhook.
-
-### Correcao
-
-**`supabase/functions/webhook-orders/index.ts`** -- Adicionar a deteccao de meio-a-meio ANTES da verificacao de `flavorGroupKeys.length <= 1` (entre as linhas 117 e 119):
-
+O fluxo atual (ERRADO):
 ```text
-const flavorGroupKeys = Object.keys(flavorGroups);
-
-// NOVO: Detectar meio-a-meio
-const allFlavors = Object.values(flavorGroups).flat();
-const allHalf = allFlavors.length > 1 && allFlavors.every((f: any) => {
-  const n = (f.name || '').trim();
-  return /^(1\/2|½|meia)\s/i.test(n);
-});
-
-if (allHalf) {
-  console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
-  result.push({ ...item, _source_item_id: item.item_id || item.name });
-  continue;
-}
-
-if (flavorGroupKeys.length <= 1) {
+Itens prontos no forno --> dispatched + notifica CardapioWeb
 ```
 
-Isso replica exatamente a mesma logica que ja funciona no `poll-orders`.
+O fluxo correto:
+```text
+Itens prontos no forno --> waiting_buffer --> (timer do buffer expira) --> ready + notifica CardapioWeb
+```
 
-### Reparo do pedido #9672
+### Solucao
 
-O pedido #9672 ja tem 3 order_items (explodidos incorretamente). O auto-reparo v1.0.7 ira detectar que tem 3 items mas o JSON original tem apenas 1 item... porem nesse caso `actualCount > expectedCount`, entao NAO vai reparar automaticamente (so repara quando `actualCount < expectedCount`).
+A funcao `mark_item_ready` no banco de dados JA chama `check_order_completion`, que automaticamente move o pedido para `waiting_buffer` quando todos os itens estao prontos. Portanto, o `handleMasterReady` esta fazendo trabalho duplicado e ERRADO.
 
-Sera necessario deletar manualmente os order_items do pedido #9672 e re-processar para que a nova logica (com deteccao de meio-a-meio) crie um unico item correto.
+### Mudancas tecnicas
 
-### Bump de versao
+**`src/components/kds/OvenTimerPanel.tsx`** -- Simplificar `handleMasterReady`:
 
-**`src/lib/version.ts`** -- Manter em `v1.0.8` (ja esta nessa versao, esta e uma correcao complementar).
+1. **Remover** a chamada a `set_order_dispatched` (o DB trigger ja cuida de mover para buffer)
+2. **Remover** a chamada a `notify-order-ready` (a notificacao deve ocorrer apenas quando sair do buffer, no Dashboard via `moveToReady`)
+3. **Manter** apenas a impressao do ticket (se habilitada) e o callback `onDispatch` para o historico visual do painel
+4. **Manter** a invalidacao de cache para atualizar a UI
+
+A funcao ficara assim:
+
+```text
+const handleMasterReady = async (ovenItems: OrderItemWithOrder[]) => {
+  const orderId = ovenItems[0]?.order_id;
+  const firstItem = ovenItems[0];
+
+  // Print dispatch ticket (opcional)
+  if (printEnabled && dispatchPrintEnabled && printerId && ovenItems.length > 0) {
+    try {
+      const ticketContent = formatDispatchTicket(firstItem);
+      await printRaw(printerId, ticketContent, ...);
+    } catch (printError) { ... }
+  }
+
+  // Invalidar cache para refletir que o pedido saiu do forno e foi para buffer
+  queryClient.invalidateQueries({ queryKey: ['order-items'] });
+  queryClient.invalidateQueries({ queryKey: ['orders'] });
+
+  // Callback visual para historico do painel
+  if (orderId) {
+    const group = orderGroups.find(g => g.orderId === orderId);
+    if (group && onDispatch) {
+      onDispatch({ ... });
+    }
+  }
+};
+```
+
+**Tambem ajustar o safety net** (useEffect na linha 196-208) para usar a mesma logica simplificada.
+
+### O que NAO muda
+
+- A logica de `mark_item_ready` (RPC no banco) continua chamando `check_order_completion`
+- `check_order_completion` continua movendo o pedido para `waiting_buffer` quando todos os itens estao prontos
+- O Dashboard continua mostrando pedidos no buffer e, quando o timer expira, chama `moveToReady` que notifica o CardapioWeb
+- O fluxo do botao "PRONTO" no Dashboard (que marca todos os itens de uma vez) continua funcionando igual
+
+### Impacto
+
+- Pedidos que saem do forno vao corretamente para o buffer antes de notificar o CardapioWeb
+- O CardapioWeb so sera notificado quando o buffer expirar (via Dashboard)
+- O timer do buffer funciona normalmente, respeitando as configuracoes por dia da semana e o buffer dinamico
 
