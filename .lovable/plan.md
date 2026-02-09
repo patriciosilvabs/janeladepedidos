@@ -1,46 +1,37 @@
 
-## Corrigir pizza meio a meio aparecendo em bancadas diferentes
+## Corrigir notificacao ao CardapioWeb quando pedido fica pronto no Forno
 
 ### Problema
 
-Pizzas meio a meio (com "1/2" no nome do sabor) estao sendo separadas em bancadas diferentes. Isso acontece porque:
+A funcao `handleMasterReady` no `OvenTimerPanel.tsx` despacha o pedido localmente (via `set_order_dispatched`) mas **nunca chama** a edge function `notify-order-ready`. Isso significa que pedidos despachados pelo painel do forno nao comunicam ao CardapioWeb que estao prontos.
 
-1. A funcao `explodeComboItems` no poll-orders separa sabores por `option_group_id` -- cada metade tem um group_id diferente
-2. Cada item separado e entao enviado ao banco, onde o balanceador de carga distribui para bancadas diferentes
-3. O banco ja tem deteccao de "1/2" (`v_all_half`), mas ela so roda DEPOIS da explosao -- quando os sabores ja chegam separados, cada item tem apenas 1 sabor e nao dispara a logica
+A edge function ja existe e funciona -- ela e usada corretamente no `useOrders.ts` (Dashboard/Buffer). So falta chamar no fluxo do forno.
 
 ### Solucao
 
-Adicionar deteccao de meio a meio na funcao `explodeComboItems` (edge function), ANTES de separar os itens. Se todos os sabores de todos os grupos comecam com "1/2", "1/2" ou "meia", pular a explosao e manter como um unico item.
+Adicionar a chamada `supabase.functions.invoke('notify-order-ready')` dentro de `handleMasterReady`, logo apos o `set_order_dispatched`.
 
-### Mudancas
+### Mudanca unica
 
-1. **`supabase/functions/poll-orders/index.ts`** -- funcao `explodeComboItems` (linhas 46-83):
-   - Antes de explodir, coletar todos os nomes de sabores de todos os grupos
-   - Verificar se TODOS comecam com `1/2`, `1/2` ou `meia` (case-insensitive)
-   - Se sim, tratar como 1 grupo so (pular a explosao), mantendo o item intacto
-   - Isso garante que o banco receba o item com multiplos sabores e ative a logica `v_all_half`
-
-2. **`src/lib/version.ts`** -- Bump para `v1.0.4`
-
-### Detalhes tecnicos
-
-Antes da linha que faz `if (flavorGroupKeys.length <= 1)`, inserir:
+**`src/components/kds/OvenTimerPanel.tsx`** -- dentro de `handleMasterReady`, apos a linha `await supabase.rpc('set_order_dispatched', ...)`:
 
 ```text
-// Detect half-and-half: if ALL flavors across ALL groups
-// start with "1/2", "½", or "meia", skip explosion
-const allFlavors = Object.values(flavorGroups).flat();
-const allHalf = allFlavors.length > 1 && allFlavors.every(f => {
-  const n = (f.name || '').trim();
-  return /^(1\/2|½|meia)\s/i.test(n);
-});
-
-if (allHalf) {
-  console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
-  result.push(item);
-  continue;
+// Notify CardapioWeb that order is READY
+try {
+  const { error: notifyError } = await supabase.functions.invoke('notify-order-ready', {
+    body: { orderIds: [orderId] },
+  });
+  if (notifyError) {
+    console.error('Erro ao notificar CardapioWeb:', notifyError);
+  }
+} catch (notifyErr) {
+  console.error('Erro ao chamar notify-order-ready:', notifyErr);
 }
 ```
 
-Isso resolve o problema na raiz: a pizza meio a meio chega ao banco como um unico item, o balanceador atribui a UMA bancada so, e os sabores ficam juntos no card do KDS.
+Tambem bump de versao em `src/lib/version.ts` para `v1.0.5`.
+
+### Arquivos a modificar
+
+1. **`src/components/kds/OvenTimerPanel.tsx`** -- Adicionar chamada notify-order-ready no handleMasterReady
+2. **`src/lib/version.ts`** -- Bump para v1.0.5
