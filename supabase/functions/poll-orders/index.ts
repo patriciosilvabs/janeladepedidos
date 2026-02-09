@@ -13,7 +13,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
   for (const item of items) {
     const options = item.options || [];
     if (options.length === 0) {
-      result.push(item);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
     }
 
@@ -55,13 +55,13 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
 
     if (allHalf) {
       console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
-      result.push(item);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
     }
 
     // If only 0 or 1 flavor group, no explosion needed
     if (flavorGroupKeys.length <= 1) {
-      result.push(item);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
     }
 
@@ -91,6 +91,7 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
         quantity: 1,
         options: newOptions,
         observation: index === 0 ? item.observation : null,
+        _source_item_id: item.item_id || item.name,
       });
     });
 
@@ -112,7 +113,12 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
       return edgeKeywords.some(k => k === '#' ? n.startsWith('#') : n.includes(k.toLowerCase()));
     });
 
-    if (!hasFlavor && !hasEdge && finalResult.length > 0) {
+    const sourceId = ri._source_item_id;
+
+    // Only merge if: (1) no flavor/edge, (2) already has results,
+    // AND (3) belongs to the same source product
+    if (!hasFlavor && !hasEdge && finalResult.length > 0
+        && finalResult[finalResult.length - 1]._source_item_id === sourceId) {
       pendingComplements.push(...opts);
     } else {
       finalResult.push(ri);
@@ -124,7 +130,8 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
     console.log(`[explodeCombo] Merged ${pendingComplements.length} complement options back into first item`);
   }
 
-  return finalResult;
+  // Clean up temporary tracking property
+  return finalResult.map(({ _source_item_id, ...rest }) => rest);
 }
 
 function getOrderTypeLabel(orderType: string): string {
