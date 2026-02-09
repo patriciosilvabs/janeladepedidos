@@ -116,6 +116,19 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
 
     const flavorGroupKeys = Object.keys(flavorGroups);
 
+    // Detect half-and-half pizzas — keep as single item
+    const allFlavors = Object.values(flavorGroups).flat();
+    const allHalf = allFlavors.length > 1 && allFlavors.every((f: any) => {
+      const n = (f.name || '').trim();
+      return /^(1\/2|½|meia)\s/i.test(n);
+    });
+
+    if (allHalf) {
+      console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
+      result.push({ ...item, _source_item_id: item.item_id || item.name });
+      continue;
+    }
+
     if (flavorGroupKeys.length <= 1) {
       result.push({ ...item, _source_item_id: item.item_id || item.name });
       continue;
