@@ -1,93 +1,45 @@
 
 
-## Corrigir itens simples sendo engolidos pela pos-explosao de combo
+## Adicionar deteccao de meio-a-meio no webhook-orders
 
 ### Problema
 
-Itens sem opcoes (como "Domzitos de chocolate preto e coco ralado") sao removidos da lista final pela logica de "pos-explosao" no `explodeComboItems`. Essa logica foi criada para mesclar itens residuais (como bebidas dentro de combos) de volta no item principal, mas esta afetando itens completamente independentes.
+A funcao `webhook-orders/index.ts` NAO possui a verificacao de pizza meio-a-meio que ja existe no `poll-orders/index.ts`. Quando um pedido chega via webhook (como o #9672), os sabores "1/2 MUSSARELA (G)" e "1/2 PORTUGUESA (G)" estao em `option_group_id` diferentes (955264 vs 955249), gerando 2 grupos de sabores. Sem a verificacao de meio-a-meio, o sistema explode o item em 2 itens separados -- cada um indo para uma bancada diferente.
 
-O trecho problematico (linhas 100-125 do `poll-orders/index.ts`):
+No `poll-orders` ja existe esta logica (linhas 48-60) que detecta quando TODOS os sabores comecam com "1/2", "meia" ou "1/2" e pula a explosao. Falta replicar no webhook.
 
-```text
-for (const ri of result) {
-  const hasFlavor = opts.some(...);
-  const hasEdge = opts.some(...);
+### Correcao
 
-  if (!hasFlavor && !hasEdge && finalResult.length > 0) {
-    pendingComplements.push(...opts);  // <-- ENGOLE o item
-  } else {
-    finalResult.push(ri);
-  }
-}
-```
-
-Como "Domzitos" nao tem opcoes, `hasFlavor` e `hasEdge` sao ambos `false`, e como `finalResult` ja tem a pizza, o Domzitos e descartado -- suas opcoes (vazias) sao "mescladas" e o item desaparece completamente.
-
-### Solucao
-
-Modificar a logica de pos-explosao para **nunca engolir itens que possuem `item_id` diferente** do item que foi explodido. O merge so deve ocorrer entre fragmentos do **mesmo combo/produto original**.
-
-Para isso, vamos rastrear o `item_id` de origem em cada item e so aplicar o merge quando os itens compartilham o mesmo `item_id`.
-
-### Mudancas tecnicas
-
-**1. `supabase/functions/poll-orders/index.ts` (funcao `explodeComboItems`)**
-
-Na explosao (linhas 78-95), marcar cada item gerado com `_source_item_id`:
+**`supabase/functions/webhook-orders/index.ts`** -- Adicionar a deteccao de meio-a-meio ANTES da verificacao de `flavorGroupKeys.length <= 1` (entre as linhas 117 e 119):
 
 ```text
-result.push({
-  ...item,
-  quantity: 1,
-  options: newOptions,
-  observation: index === 0 ? item.observation : null,
-  _source_item_id: item.item_id || item.name,  // rastrear origem
+const flavorGroupKeys = Object.keys(flavorGroups);
+
+// NOVO: Detectar meio-a-meio
+const allFlavors = Object.values(flavorGroups).flat();
+const allHalf = allFlavors.length > 1 && allFlavors.every((f: any) => {
+  const n = (f.name || '').trim();
+  return /^(1\/2|½|meia)\s/i.test(n);
 });
-```
 
-Itens que nao sao explodidos (passam direto) tambem recebem a marcacao:
-
-```text
-result.push({ ...item, _source_item_id: item.item_id || item.name });
-```
-
-Na pos-explosao (linhas 100-125), mudar a condicao para comparar o `_source_item_id`:
-
-```text
-for (const ri of result) {
-  const opts = ri.options || [];
-  const hasFlavor = opts.some(...);
-  const hasEdge = opts.some(...);
-  const sourceId = ri._source_item_id;
-
-  // So mescla se: (1) nao tem sabor/borda, (2) ja existe resultado,
-  // E (3) pertence ao mesmo produto de origem
-  if (!hasFlavor && !hasEdge && finalResult.length > 0 
-      && finalResult[finalResult.length - 1]._source_item_id === sourceId) {
-    pendingComplements.push(...opts);
-  } else {
-    finalResult.push(ri);
-  }
+if (allHalf) {
+  console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
+  result.push({ ...item, _source_item_id: item.item_id || item.name });
+  continue;
 }
+
+if (flavorGroupKeys.length <= 1) {
 ```
 
-Antes de retornar, limpar a propriedade temporaria:
+Isso replica exatamente a mesma logica que ja funciona no `poll-orders`.
 
-```text
-return finalResult.map(({ _source_item_id, ...rest }) => rest);
-```
+### Reparo do pedido #9672
 
-**2. `supabase/functions/webhook-orders/index.ts`** - Aplicar a mesma correcao (funcao duplicada)
+O pedido #9672 ja tem 3 order_items (explodidos incorretamente). O auto-reparo v1.0.7 ira detectar que tem 3 items mas o JSON original tem apenas 1 item... porem nesse caso `actualCount > expectedCount`, entao NAO vai reparar automaticamente (so repara quando `actualCount < expectedCount`).
 
-**3. `src/lib/version.ts`** - Bump para `v1.0.8`
+Sera necessario deletar manualmente os order_items do pedido #9672 e re-processar para que a nova logica (com deteccao de meio-a-meio) crie um unico item correto.
 
-### Impacto
+### Bump de versao
 
-- Itens independentes como "Domzitos" passam a ser preservados corretamente
-- A logica de merge continua funcionando para combos reais (bebida dentro de combo pizza)
-- Nenhuma alteracao no banco de dados necessaria
-
-### Teste
-
-Apos deploy, o proximo ciclo de polling vai detectar que o pedido 6760 tem 1/2 itens e reparar automaticamente, criando o Domzitos corretamente.
+**`src/lib/version.ts`** -- Manter em `v1.0.8` (ja esta nessa versao, esta e uma correcao complementar).
 
