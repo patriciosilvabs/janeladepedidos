@@ -9,7 +9,7 @@ import { OrderOvenBlock } from './OrderOvenBlock';
 import { OvenItemRow } from './OvenItemRow';
 import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
-import { supabase } from '@/integrations/supabase/client';
+
 
 export interface DispatchedOrder {
   orderId: string;
@@ -150,7 +150,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     const orderId = ovenItems[0]?.order_id;
     const firstItem = ovenItems[0];
     
-    // Print dispatch ticket
+    // Print dispatch ticket (optional)
     if (printEnabled && dispatchPrintEnabled && printerId && ovenItems.length > 0) {
       try {
         const ticketContent = formatDispatchTicket(firstItem);
@@ -160,30 +160,13 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
       }
     }
 
-    // Persist dispatch in database and notify history
+    // Invalidate cache — mark_item_ready already triggers check_order_completion
+    // which moves the order to waiting_buffer automatically
+    queryClient.invalidateQueries({ queryKey: ['order-items'] });
+    queryClient.invalidateQueries({ queryKey: ['orders'] });
+
+    // Visual callback for oven history panel
     if (orderId) {
-      try {
-        await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
-        
-        // Notify CardapioWeb that order is READY
-        try {
-          const { error: notifyError } = await supabase.functions.invoke('notify-order-ready', {
-            body: { orderIds: [orderId] },
-          });
-          if (notifyError) {
-            console.error('Erro ao notificar CardapioWeb:', notifyError);
-          }
-        } catch (notifyErr) {
-          console.error('Erro ao chamar notify-order-ready:', notifyErr);
-        }
-        
-        queryClient.invalidateQueries({ queryKey: ['order-items'] });
-        queryClient.invalidateQueries({ queryKey: ['orders'] });
-      } catch (dbError) {
-        console.error('Erro ao persistir despacho:', dbError);
-      }
-      
-      // Find group info to pass to history
       const group = orderGroups.find(g => g.orderId === orderId);
       if (group && onDispatch) {
         onDispatch({
