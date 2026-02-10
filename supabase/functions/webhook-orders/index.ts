@@ -1,202 +1,83 @@
- import { createClient, SupabaseClient } from '@supabase/supabase-js';
- 
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { explodeComboItems } from '../_shared/explodeCombo.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-webhook-token, x-api-key, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
- 
- // ================== TYPES ==================
- 
- interface CardapioWebCustomer {
-   name: string;
-   phone?: string | null;
- }
- 
- interface CardapioWebAddress {
-   formatted?: string;
-   street?: string;
-   number?: string;
-   neighborhood?: string;
-   city?: string;
-   state?: string;
-   country?: string;
-   postal_code?: string;
-   lat?: number;
-   lng?: number;
-   complement?: string;
- }
- 
- interface CardapioWebOption {
-   name: string;
-   group?: string;
- }
- 
-  interface CardapioWebItem {
-    name: string;
-    quantity: number;
-    options?: CardapioWebOption[];
-    observation?: string;
-    unit_price?: number;
-    total_price?: number;
-    category?: string;
-    category_name?: string;
-  }
- 
- interface CardapioWebOrder {
-   id: number;
-   display_id?: number;
-   status?: string;
-   order_type?: string;
-   customer?: CardapioWebCustomer;
-   address?: CardapioWebAddress;
-   items?: CardapioWebItem[];
-   total?: number;
-   delivery_fee?: number;
-   payment_method?: string;
-   observation?: string;
-   created_at?: string;
- }
- 
- interface CardapioWebWebhookPayload {
-   event_type: string;
-   event_id?: string;
-   order_id: number;
-   merchant_id?: number;
-   created_at?: string;
-   order?: CardapioWebOrder;
-   // Legacy status event fields
-   order_status?: string;
- }
- 
-  interface StoreRecord {
-    id: string;
-    name: string;
-    default_city: string | null;
-    default_region: string | null;
-    default_country: string | null;
-    allowed_order_types: string[] | null;
-    allowed_categories: string[] | null;
-  }
- 
-// ================== COMBO EXPLOSION ==================
 
-function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords: string[]): any[] {
-  const result: any[] = [];
+// ================== TYPES ==================
 
-  for (const item of items) {
-    const options = item.options || [];
-    if (options.length === 0) {
-      result.push({ ...item, _source_item_id: item.item_id || item.name });
-      continue;
-    }
-
-    const flavorGroups: Record<string, any[]> = {};
-    const edgeOptions: any[] = [];
-    const complementOptions: any[] = [];
-
-    for (const opt of options) {
-      const name = (opt.name || '').toLowerCase();
-      const isEdge = edgeKeywords.some(k =>
-        k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
-      );
-      const isFlavor = !isEdge && flavorKeywords.some(k =>
-        name.includes(k.toLowerCase())
-      );
-
-      if (isEdge) {
-        edgeOptions.push(opt);
-      } else if (isFlavor) {
-        const groupId = String(opt.option_group_id || 'default');
-        if (!flavorGroups[groupId]) flavorGroups[groupId] = [];
-        flavorGroups[groupId].push(opt);
-      } else {
-        complementOptions.push(opt);
-      }
-    }
-
-    const flavorGroupKeys = Object.keys(flavorGroups);
-
-    // Detect half-and-half pizzas — keep as single item
-    const allFlavors = Object.values(flavorGroups).flat();
-    const allHalf = allFlavors.length > 1 && allFlavors.every((f: any) => {
-      const n = (f.name || '').trim();
-      return /^(1\/2|½|meia)\s/i.test(n);
-    });
-
-    if (allHalf) {
-      console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
-      result.push({ ...item, _source_item_id: item.item_id || item.name });
-      continue;
-    }
-
-    if (flavorGroupKeys.length <= 1) {
-      result.push({ ...item, _source_item_id: item.item_id || item.name });
-      continue;
-    }
-
-    // Expand edge options by quantity
-    const expandedEdges: any[] = [];
-    for (const edge of edgeOptions) {
-      const qty = edge.quantity || 1;
-      for (let i = 0; i < qty; i++) {
-        expandedEdges.push({ ...edge, quantity: 1 });
-      }
-    }
-
-    flavorGroupKeys.forEach((groupId, index) => {
-      const groupFlavors = flavorGroups[groupId];
-      const pairedEdge = index < expandedEdges.length ? [expandedEdges[index]] : [];
-
-      const newOptions = [
-        ...groupFlavors,
-        ...pairedEdge,
-        ...(index === 0 ? complementOptions : []),
-      ];
-
-      result.push({
-        ...item,
-        quantity: 1,
-        options: newOptions,
-        observation: index === 0 ? item.observation : null,
-        _source_item_id: item.item_id || item.name,
-      });
-    });
-
-    console.log(`[explodeCombo] Exploded "${item.name}" into ${flavorGroupKeys.length} items`);
-  }
-
-  // Post-explosion: merge complement-only items back into first flavor item
-  const finalResult: any[] = [];
-  const pendingComplements: any[] = [];
-
-  for (const ri of result) {
-    const opts = ri.options || [];
-    const hasFlavor = opts.some((o: any) => {
-      const n = (o.name || '').toLowerCase();
-      return flavorKeywords.some(k => n.includes(k.toLowerCase()));
-    });
-    const hasEdge = opts.some((o: any) => {
-      const n = (o.name || '').toLowerCase();
-      return edgeKeywords.some(k => k === '#' ? n.startsWith('#') : n.includes(k.toLowerCase()));
-    });
-
-    const sourceId = ri._source_item_id;
-
-    if (!hasFlavor && !hasEdge && finalResult.length > 0
-        && finalResult[finalResult.length - 1]._source_item_id === sourceId) {
-      pendingComplements.push(...opts);
-    } else {
-      finalResult.push(ri);
-    }
-  }
-
-  if (pendingComplements.length > 0 && finalResult.length > 0) {
-    finalResult[0].options = [...(finalResult[0].options || []), ...pendingComplements];
-    console.log(`[explodeCombo] Merged ${pendingComplements.length} complement options back into first item`);
-  }
-
-  return finalResult.map(({ _source_item_id, ...rest }) => rest);
+interface CardapioWebCustomer {
+  name: string;
+  phone?: string | null;
 }
+
+interface CardapioWebAddress {
+  formatted?: string;
+  street?: string;
+  number?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  postal_code?: string;
+  lat?: number;
+  lng?: number;
+  complement?: string;
+}
+
+interface CardapioWebOption {
+  name: string;
+  group?: string;
+}
+
+ interface CardapioWebItem {
+   name: string;
+   quantity: number;
+   options?: CardapioWebOption[];
+   observation?: string;
+   unit_price?: number;
+   total_price?: number;
+   category?: string;
+   category_name?: string;
+ }
+
+interface CardapioWebOrder {
+  id: number;
+  display_id?: number;
+  status?: string;
+  order_type?: string;
+  customer?: CardapioWebCustomer;
+  address?: CardapioWebAddress;
+  items?: CardapioWebItem[];
+  total?: number;
+  delivery_fee?: number;
+  payment_method?: string;
+  observation?: string;
+  created_at?: string;
+}
+
+interface CardapioWebWebhookPayload {
+  event_type: string;
+  event_id?: string;
+  order_id: number;
+  merchant_id?: number;
+  created_at?: string;
+  order?: CardapioWebOrder;
+  // Legacy status event fields
+  order_status?: string;
+}
+
+ interface StoreRecord {
+   id: string;
+   name: string;
+   default_city: string | null;
+   default_region: string | null;
+   default_country: string | null;
+   allowed_order_types: string[] | null;
+   allowed_categories: string[] | null;
+ }
 
 // ================== HELPERS ==================
  
