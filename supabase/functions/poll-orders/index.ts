@@ -53,6 +53,16 @@ function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords:
       return /^(1\/2|½|meia)\s/i.test(n);
     });
 
+    // Enhanced logging for half-and-half detection
+    if (allFlavors.length > 1) {
+      console.log(`[explodeCombo] "${item.name}": ${allFlavors.length} flavors in ${flavorGroupKeys.length} groups, allHalf=${allHalf}`);
+      allFlavors.forEach((f: any, i: number) => {
+        const n = (f.name || '').trim();
+        const matches = /^(1\/2|½|meia)\s/i.test(n);
+        console.log(`[explodeCombo]   flavor[${i}]: "${n}" → half=${matches}`);
+      });
+    }
+
     if (allHalf) {
       console.log(`[explodeCombo] Half-and-half detected for "${item.name}", keeping as single item`);
       result.push({ ...item, _source_item_id: item.item_id || item.name });
