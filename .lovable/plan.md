@@ -1,57 +1,76 @@
 
 
-## Correção: Observação não aparece como tarja vermelha
+## Correção: Fluxo de roteamento invertido (BORDAS → PRODUÇÃO)
 
 ### Problema
 
-A observação do cliente aparece misturada nos complementos (texto simples) em vez de aparecer como a tarja vermelha piscante no card KDS.
+A lógica na RPC `create_order_items_from_json` está com o roteamento invertido. Itens com borda estão indo primeiro para a PRODUÇÃO e depois para BORDAS, quando o fluxo correto é:
+
+**BORDAS → PRODUÇÃO (distribuição) → FORNO (despacho)**
 
 ### Causa raiz
 
-Na RPC `create_order_items_from_json`, o campo `notes` da tabela `order_items` é preenchido com `v_item->>'notes'`, mas o JSON enviado pelo webhook usa o campo `observation` (não `notes`). Resultado: `notes` fica sempre NULL no banco.
+No código atual da RPC, quando um item tem borda (`v_has_edge = true`):
 
-A observação é extraída corretamente para a variável `v_observation`, mas é adicionada aos complementos em vez de ir para o campo `notes`.
+```text
+-- Código atual (ERRADO):
+IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
+  v_next_sector_id := v_edge_sector_id;  -- próximo = BORDAS (errado!)
+END IF;
+-- assigned_sector_id = v_sector_id (PRODUÇÃO) -- item começa na PRODUÇÃO
+```
+
+O item é atribuído à PRODUÇÃO (`assigned_sector_id`) e o próximo setor é BORDAS (`next_sector_id`). Isso é o oposto do fluxo correto.
 
 ### Solução
 
-1. **Migration SQL**: Alterar a RPC para:
-   - Usar `v_observation` no campo `notes` dos 3 INSERTs (em vez de `v_item->>'notes'`)
-   - Remover o bloco que concatena `v_observation` em `v_complements` (linhas 145-151), pois agora a observação vai direto para o campo correto
+Inverter a lógica: quando tem borda, o item deve **começar** em BORDAS e depois ir para PRODUÇÃO.
 
-2. **Reparar pedidos existentes**: Executar um UPDATE nos `order_items` que têm observação embutida nos complementos (prefixo "📝") para mover esse texto para o campo `notes`
-
-3. **Versão**: Atualizar para v1.0.17
-
-### Detalhes técnicos
-
-**Alterações na RPC (3 pontos de INSERT):**
-
-Trocar todas as ocorrências de:
 ```text
-NULLIF(v_item->>'notes', '')
-```
-por:
-```text
-NULLIF(v_observation, '')
-```
-
-Remover o bloco que mistura observação nos complementos:
-```text
--- REMOVER este bloco:
-IF v_observation != '' THEN
-  IF v_complements != '' THEN
-    v_complements := v_complements || E'\n📝 ' || v_observation;
-  ELSE
-    v_complements := '📝 ' || v_observation;
-  END IF;
+-- Código corrigido:
+IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
+  v_next_sector_id := v_sector_id;        -- próximo = PRODUÇÃO (correto!)
+  v_sector_id := v_edge_sector_id;        -- começa em BORDAS (correto!)
 END IF;
 ```
 
-**Reparo de dados existentes:**
+### Reparo de dados existentes
+
+Corrigir itens pendentes que estão com roteamento invertido (na PRODUÇÃO com `next_sector_id` apontando para BORDAS):
+
 ```text
 UPDATE order_items
-SET notes = regexp_replace(complements, '.*📝\s*', ''),
-    complements = NULLIF(regexp_replace(complements, '\n?📝\s*.*$', ''), '')
-WHERE complements LIKE '%📝%';
+SET assigned_sector_id = next_sector_id,
+    next_sector_id = assigned_sector_id
+WHERE next_sector_id = '42470e75-5c62-438d-9a7e-31c6f57f4a30'  -- BORDAS
+  AND assigned_sector_id != '42470e75-5c62-438d-9a7e-31c6f57f4a30'
+  AND status IN ('pending', 'in_prep');
 ```
+
+### Passos
+
+1. Migration SQL para corrigir a RPC (inverter `v_sector_id` e `v_next_sector_id`)
+2. UPDATE para corrigir itens pendentes com roteamento invertido
+3. Atualizar versao para v1.0.18
+
+### Detalhes tecnicos
+
+**Alteracao na RPC** (1 bloco):
+
+Trocar:
+```text
+IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
+  v_next_sector_id := v_edge_sector_id;
+END IF;
+```
+
+Por:
+```text
+IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
+  v_next_sector_id := v_sector_id;
+  v_sector_id := v_edge_sector_id;
+END IF;
+```
+
+Isso garante que `assigned_sector_id = BORDAS` (primeiro destino) e `next_sector_id = PRODUCAO` (destino apos preparo da borda).
 
