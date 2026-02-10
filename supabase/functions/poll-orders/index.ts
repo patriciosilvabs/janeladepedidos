@@ -461,19 +461,29 @@ async function pollStoreOrders(
               console.error(`[poll-orders] Error in combo explosion (continuing with original items):`, explodeErr);
             }
 
-            const { data: itemsResult, error: itemsError } = await supabase.rpc(
-              'create_order_items_from_json',
-              {
-                p_order_id: insertedOrder.id,
-                p_items: itemsToCreate,
-                p_default_sector_id: null,
-              }
-            );
+            // Guard: check if items already exist (webhook may have created them)
+            const { count: existingItemCount } = await supabase
+              .from('order_items')
+              .select('id', { count: 'exact', head: true })
+              .eq('order_id', insertedOrder.id);
 
-            if (itemsError) {
-              console.error(`[poll-orders] Error creating order items:`, itemsError);
+            if (existingItemCount && existingItemCount > 0) {
+              console.log(`[poll-orders] Items already exist for order ${insertedOrder.id} (created by webhook?), skipping`);
             } else {
-              console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+              const { data: itemsResult, error: itemsError } = await supabase.rpc(
+                'create_order_items_from_json',
+                {
+                  p_order_id: insertedOrder.id,
+                  p_items: itemsToCreate,
+                  p_default_sector_id: null,
+                }
+              );
+
+              if (itemsError) {
+                console.error(`[poll-orders] Error creating order items:`, itemsError);
+              } else {
+                console.log(`[poll-orders] Created ${itemsResult} items for order ${insertedOrder.id}`);
+              }
             }
           }
         }
