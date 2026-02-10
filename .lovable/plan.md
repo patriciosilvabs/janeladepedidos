@@ -1,116 +1,57 @@
 
 
-## Correção: Pedido 6809 sem setor (não aparece nos tablets)
+## Correção: Observação não aparece como tarja vermelha
 
 ### Problema
 
-O pedido 6809 (Karolina Archer) foi criado com sucesso, mas seu item tem `assigned_sector_id = NULL`. Sem setor atribuído, o item não aparece em nenhum tablet KDS.
+A observação do cliente aparece misturada nos complementos (texto simples) em vez de aparecer como a tarja vermelha piscante no card KDS.
 
 ### Causa raiz
 
-A migration de idempotência (v1.0.15) substituiu a RPC `create_order_items_from_json` inteira, mas **perdeu a lógica de distribuição automática de setor** que existia na versão anterior.
+Na RPC `create_order_items_from_json`, o campo `notes` da tabela `order_items` é preenchido com `v_item->>'notes'`, mas o JSON enviado pelo webhook usa o campo `observation` (não `notes`). Resultado: `notes` fica sempre NULL no banco.
 
-A versão anterior (migration `20260208115107`) continha este bloco essencial:
+A observação é extraída corretamente para a variável `v_observation`, mas é adicionada aos complementos em vez de ir para o campo `notes`.
 
+### Solução
+
+1. **Migration SQL**: Alterar a RPC para:
+   - Usar `v_observation` no campo `notes` dos 3 INSERTs (em vez de `v_item->>'notes'`)
+   - Remover o bloco que concatena `v_observation` em `v_complements` (linhas 145-151), pois agora a observação vai direto para o campo correto
+
+2. **Reparar pedidos existentes**: Executar um UPDATE nos `order_items` que têm observação embutida nos complementos (prefixo "📝") para mover esse texto para o campo `notes`
+
+3. **Versão**: Atualizar para v1.0.17
+
+### Detalhes técnicos
+
+**Alterações na RPC (3 pontos de INSERT):**
+
+Trocar todas as ocorrências de:
 ```text
-IF p_default_sector_id IS NULL THEN
-  -- Busca o setor KDS online com menos itens pendentes
-  SELECT s.id INTO v_sector_id
-  FROM sectors s
-  JOIN sector_presence sp ON sp.sector_id = s.id
-  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
-    AND oi.status IN ('pending', 'in_prep')
-  WHERE s.view_type = 'kds'
-    AND sp.is_online = true
-    AND sp.last_seen_at > NOW() - INTERVAL '30 seconds'
-    AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
-  GROUP BY s.id
-  ORDER BY COUNT(oi.id) ASC
-  LIMIT 1;
-  
-  -- Fallback: qualquer setor KDS (mesmo offline)
-  IF v_sector_id IS NULL THEN
-    SELECT s.id INTO v_sector_id FROM sectors s
-    LEFT JOIN order_items oi ON ...
-    WHERE s.view_type = 'kds' ...
-    ORDER BY COUNT(oi.id) ASC LIMIT 1;
+NULLIF(v_item->>'notes', '')
+```
+por:
+```text
+NULLIF(v_observation, '')
+```
+
+Remover o bloco que mistura observação nos complementos:
+```text
+-- REMOVER este bloco:
+IF v_observation != '' THEN
+  IF v_complements != '' THEN
+    v_complements := v_complements || E'\n📝 ' || v_observation;
+  ELSE
+    v_complements := '📝 ' || v_observation;
   END IF;
-ELSE
-  v_sector_id := p_default_sector_id;
 END IF;
 ```
 
-A versão substituida (idempotência) manteve apenas `v_sector_id := p_default_sector_id`, que e NULL. Resultado: todos os itens criados apos a v1.0.15 ficam sem setor.
-
-### Solucao
-
-**1. Restaurar a lógica de auto-distribuição na RPC `create_order_items_from_json`**
-
-Recriar a RPC mantendo AMBOS: o guard de idempotência E a distribuição inteligente de setor. Trocar a linha `v_sector_id := p_default_sector_id` pela lógica completa de busca de setor online com fallback.
-
-**2. Corrigir o pedido 6809 no banco**
-
-Atribuir o item orfao do pedido 6809 a um setor KDS disponivel (BANCADA = PRODUCAO A ou B, com base em carga).
-
-**3. Atualizar versao para v1.0.16**
-
-### Detalhes tecnicos
-
-**Migration SQL -- Alterar RPC `create_order_items_from_json`:**
-
-Substituir o bloco `v_sector_id := p_default_sector_id` (que aparece uma vez, antes do loop de quantidades) pelo seguinte:
-
+**Reparo de dados existentes:**
 ```text
--- Auto-distribute when no default sector provided
-IF p_default_sector_id IS NULL THEN
-  -- Try: least loaded ONLINE KDS sector (excluding edge sector)
-  SELECT s.id INTO v_sector_id
-  FROM sectors s
-  JOIN sector_presence sp ON sp.sector_id = s.id
-  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
-    AND oi.status IN ('pending', 'in_prep')
-  WHERE s.view_type = 'kds'
-    AND sp.is_online = true
-    AND sp.last_seen_at > NOW() - INTERVAL '30 seconds'
-    AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
-  GROUP BY s.id
-  ORDER BY COUNT(oi.id) ASC
-  LIMIT 1;
-  
-  -- Fallback: any KDS sector (even offline)
-  IF v_sector_id IS NULL THEN
-    SELECT s.id INTO v_sector_id
-    FROM sectors s
-    LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
-      AND oi.status IN ('pending', 'in_prep')
-    WHERE s.view_type = 'kds'
-      AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
-    GROUP BY s.id
-    ORDER BY COUNT(oi.id) ASC
-    LIMIT 1;
-  END IF;
-ELSE
-  v_sector_id := p_default_sector_id;
-END IF;
+UPDATE order_items
+SET notes = regexp_replace(complements, '.*📝\s*', ''),
+    complements = NULLIF(regexp_replace(complements, '\n?📝\s*.*$', ''), '')
+WHERE complements LIKE '%📝%';
 ```
 
-**Correcao do pedido 6809:**
-
-```text
-UPDATE order_items 
-SET assigned_sector_id = (
-  SELECT s.id FROM sectors s
-  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id AND oi.status IN ('pending', 'in_prep')
-  WHERE s.view_type = 'kds' 
-    AND s.id != (SELECT kds_edge_sector_id FROM app_settings WHERE id = 'default')
-  GROUP BY s.id ORDER BY COUNT(oi.id) ASC LIMIT 1
-)
-WHERE order_id = 'c55c52a8-c1cc-4bd4-b35d-7b8bc2ada326'
-  AND assigned_sector_id IS NULL;
-```
-
-### Impacto
-
-- Restaura a distribuicao inteligente de carga entre bancadas
-- Mantém o guard de idempotência contra duplicação
-- O pedido 6809 aparecerá imediatamente no tablet apos a correção no banco
