@@ -107,7 +107,7 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
         const order = g.ovenItems[0]?.orders;
         if (!order) return true;
         if (order.dispatched_at) return false;
-        if (['closed', 'cancelled', 'dispatched', 'waiting_buffer'].includes(order.status)) return false;
+        if (['closed', 'cancelled', 'dispatched', 'waiting_buffer', 'ready'].includes(order.status)) return false;
         return true;
       })
       .sort((a, b) => {
