@@ -1,74 +1,30 @@
 
 
-## Correcao: Duplicacao de itens pelo auto-repair
+## Correção: Pedidos prontos travados no Despacho
 
-### Problema identificado
+### Problema
 
-O mecanismo de **auto-repair** no `poll-orders` esta criando itens duplicados. A causa raiz:
+A função `check_order_completion` move pedidos non-delivery diretamente para `status = 'ready'` (sem passar por `waiting_buffer`). Porém, o filtro do `OvenTimerPanel` só exclui os status `closed`, `cancelled`, `dispatched` e `waiting_buffer` -- **não exclui `ready`**.
 
-1. Um pedido e importado com 2 itens no JSON original (ex: 2 pizzas meio a meio)
-2. Os itens sao criados corretamente no `order_items` (2 registros, meio a meio detectado)
-3. Os operadores processam os itens (status muda para `in_prep`, `in_oven`, `ready`)
-4. No proximo ciclo de polling, o auto-repair compara: `actualCount (2) < expectedCount (2)` -- OK, nao repara
-5. **Porem**, quando um item e deletado ou ha uma inconsistencia momentanea, o repair dispara
-6. O repair tenta deletar apenas itens com status `pending`, mas os itens ja estao em `ready`/`in_prep` -- **nao deleta nada**
-7. O repair cria novos itens em cima dos existentes -- **duplicacao**
+Resultado: pedidos de retirada/balcão/mesa ficam travados na tela do despacho após serem marcados como prontos.
 
-Dados reais encontrados no banco:
-- Renato Santos (pedido 6790): 2 itens no JSON, 4 no banco (duplicado)
-- Ana Regina (pedido 9688): 2 itens no JSON, 14 no banco (7x duplicado!)
-- Ju Freitas (pedido 6789): 2 itens no JSON, 2 no banco (OK)
+Dados confirmados no banco: múltiplos pedidos com `order_status = 'ready'` e todos os itens `ready`, permanecendo visíveis no painel.
 
-### Solucao
+### Solução
 
-**1. Corrigir o auto-repair no `poll-orders/index.ts`**
+**1. `src/components/kds/OvenTimerPanel.tsx`** (linha 110)
 
-Alterar a logica de repair para:
-- Comparar `actualCount` contra o resultado **pos-explosao** (nao contra o JSON original)
-- OU simplesmente pular o repair quando `actualCount >= expectedCount` pos-explosao
-- Remover a restricao `.in('status', ['pending'])` na exclusao -- se vai reparar, deve limpar tudo ou nao reparar
+Adicionar `'ready'` à lista de status excluídos no filtro de `orderGroups`:
 
-Abordagem escolhida: calcular o `expectedCount` APOS a explosao de combos, nao antes. Assim, se o pedido tem 2 items no JSON mas apos explosao gera 3, o repair so dispara se `actualCount < 3`.
-
-Alem disso, quando o repair deletar itens, deve deletar **todos** os itens do pedido (nao apenas `pending`), ou melhor, **nao disparar o repair se o pedido ja tem itens nao-pending** (itens ja estao sendo processados pelos operadores).
-
-**Regra final**: Se existem itens com status diferente de `pending` (ou seja, ja estao sendo trabalhados), o repair NAO deve executar. Isso evita interferir no trabalho dos operadores.
-
-**2. Aplicar a mesma correcao no `webhook-orders/index.ts`** (se houver logica de repair similar)
-
-**3. Limpar duplicatas existentes no banco**
-
-Executar uma query SQL para remover os itens duplicados que ja foram criados, mantendo apenas o mais antigo de cada grupo.
-
-### Detalhes tecnicos
-
-**`supabase/functions/poll-orders/index.ts` (linhas ~496-586)**
-
-Alterar a secao de auto-repair para:
-
-```text
-// Antes de verificar repair, checar se ha itens nao-pending
-const { data: nonPendingItems } = await supabase
-  .from('order_items')
-  .select('id')
-  .eq('order_id', order.id)
-  .neq('status', 'pending')
-  .limit(1);
-
-// Se existem itens ja em processamento, NAO reparar
-if (nonPendingItems && nonPendingItems.length > 0) {
-  // Skip repair - items already being worked on
-  continue; // (pula para verificacao de status)
-}
+```
+if (['closed', 'cancelled', 'dispatched', 'waiting_buffer', 'ready'].includes(order.status)) return false;
 ```
 
-Isso garante que o repair so executa quando TODOS os itens ainda estao `pending` (ou nao existem), evitando duplicacao.
+**2. `src/lib/version.ts`**
 
-**Limpeza de dados existentes** (migration SQL):
+Atualizar para `v1.0.14`.
 
-Remover itens duplicados mantendo apenas o registro mais antigo de cada `(order_id, product_name, flavors)`.
+### Impacto
 
-**`src/lib/version.ts`**
-
-Atualizar para `v1.0.13`.
+Correção de uma linha. Pedidos cujo status do order já é `ready` serão removidos do painel do forno imediatamente, sem afetar o fluxo dos itens individuais nas bancadas KDS.
 
