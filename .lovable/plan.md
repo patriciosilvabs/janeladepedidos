@@ -1,69 +1,116 @@
 
 
-## Correção: Duplicação de itens por race condition webhook + polling
+## Correção: Pedido 6809 sem setor (não aparece nos tablets)
 
 ### Problema
 
-O pedido 6807 (Rodrigo Elamid) tem 6 itens no banco quando deveria ter 3. A causa é uma **race condition** entre o webhook (`webhook-orders`) e o polling (`poll-orders`):
+O pedido 6809 (Karolina Archer) foi criado com sucesso, mas seu item tem `assigned_sector_id = NULL`. Sem setor atribuído, o item não aparece em nenhum tablet KDS.
 
-1. O webhook recebe `order.placed` e insere o pedido + 3 itens (21:20:19.172)
-2. O polling roda quase ao mesmo tempo, tenta inserir o mesmo pedido, falha pela constraint UNIQUE em `external_id`, mas no cenário onde o pedido já existe, o auto-repair verifica os itens e pode criar duplicatas (21:20:20.050)
+### Causa raiz
 
-A RPC `create_order_items_from_json` não tem nenhuma verificação de idempotência — sempre insere.
+A migration de idempotência (v1.0.15) substituiu a RPC `create_order_items_from_json` inteira, mas **perdeu a lógica de distribuição automática de setor** que existia na versão anterior.
 
-### Solução
-
-**1. Adicionar guard de idempotência na RPC `create_order_items_from_json`**
-
-No início da função, verificar se já existem itens para o `p_order_id`. Se sim, retornar 0 sem criar nada. Isso garante que mesmo que webhook e polling chamem a RPC simultaneamente, apenas a primeira execução cria os itens.
-
-**2. Adicionar guard no `poll-orders` para pular pedidos que já têm itens**
-
-No bloco de criação de itens após inserir um novo pedido (linhas ~464-477), verificar se já existem itens antes de chamar a RPC.
-
-**3. Limpar os itens duplicados do pedido 6807**
-
-Remover os 3 itens mais recentes (criados às 21:20:20), mantendo os 3 originais.
-
-**4. Atualizar a versão para v1.0.15**
-
-### Detalhes técnicos
-
-**Migration SQL - Alterar RPC `create_order_items_from_json`:**
-
-Adicionar no início do `BEGIN`:
+A versão anterior (migration `20260208115107`) continha este bloco essencial:
 
 ```text
--- Idempotency guard: if items already exist for this order, skip
-IF EXISTS (SELECT 1 FROM order_items WHERE order_id = p_order_id LIMIT 1) THEN
-  RETURN 0;
+IF p_default_sector_id IS NULL THEN
+  -- Busca o setor KDS online com menos itens pendentes
+  SELECT s.id INTO v_sector_id
+  FROM sectors s
+  JOIN sector_presence sp ON sp.sector_id = s.id
+  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
+    AND oi.status IN ('pending', 'in_prep')
+  WHERE s.view_type = 'kds'
+    AND sp.is_online = true
+    AND sp.last_seen_at > NOW() - INTERVAL '30 seconds'
+    AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
+  GROUP BY s.id
+  ORDER BY COUNT(oi.id) ASC
+  LIMIT 1;
+  
+  -- Fallback: qualquer setor KDS (mesmo offline)
+  IF v_sector_id IS NULL THEN
+    SELECT s.id INTO v_sector_id FROM sectors s
+    LEFT JOIN order_items oi ON ...
+    WHERE s.view_type = 'kds' ...
+    ORDER BY COUNT(oi.id) ASC LIMIT 1;
+  END IF;
+ELSE
+  v_sector_id := p_default_sector_id;
 END IF;
 ```
 
-**`supabase/functions/poll-orders/index.ts` (linhas ~464-477):**
+A versão substituida (idempotência) manteve apenas `v_sector_id := p_default_sector_id`, que e NULL. Resultado: todos os itens criados apos a v1.0.15 ficam sem setor.
 
-Antes de chamar `create_order_items_from_json`, adicionar:
+### Solucao
+
+**1. Restaurar a lógica de auto-distribuição na RPC `create_order_items_from_json`**
+
+Recriar a RPC mantendo AMBOS: o guard de idempotência E a distribuição inteligente de setor. Trocar a linha `v_sector_id := p_default_sector_id` pela lógica completa de busca de setor online com fallback.
+
+**2. Corrigir o pedido 6809 no banco**
+
+Atribuir o item orfao do pedido 6809 a um setor KDS disponivel (BANCADA = PRODUCAO A ou B, com base em carga).
+
+**3. Atualizar versao para v1.0.16**
+
+### Detalhes tecnicos
+
+**Migration SQL -- Alterar RPC `create_order_items_from_json`:**
+
+Substituir o bloco `v_sector_id := p_default_sector_id` (que aparece uma vez, antes do loop de quantidades) pelo seguinte:
 
 ```text
-// Guard: check if items already exist (webhook may have created them)
-const { count: existingItemCount } = await supabase
-  .from('order_items')
-  .select('id', { count: 'exact', head: true })
-  .eq('order_id', insertedOrder.id);
-
-if (existingItemCount && existingItemCount > 0) {
-  console.log(`[poll-orders] Items already exist for order ${insertedOrder.id} (created by webhook?), skipping`);
-} else {
-  // ... existing RPC call ...
-}
+-- Auto-distribute when no default sector provided
+IF p_default_sector_id IS NULL THEN
+  -- Try: least loaded ONLINE KDS sector (excluding edge sector)
+  SELECT s.id INTO v_sector_id
+  FROM sectors s
+  JOIN sector_presence sp ON sp.sector_id = s.id
+  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
+    AND oi.status IN ('pending', 'in_prep')
+  WHERE s.view_type = 'kds'
+    AND sp.is_online = true
+    AND sp.last_seen_at > NOW() - INTERVAL '30 seconds'
+    AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
+  GROUP BY s.id
+  ORDER BY COUNT(oi.id) ASC
+  LIMIT 1;
+  
+  -- Fallback: any KDS sector (even offline)
+  IF v_sector_id IS NULL THEN
+    SELECT s.id INTO v_sector_id
+    FROM sectors s
+    LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id 
+      AND oi.status IN ('pending', 'in_prep')
+    WHERE s.view_type = 'kds'
+      AND (v_edge_sector_id IS NULL OR s.id != v_edge_sector_id)
+    GROUP BY s.id
+    ORDER BY COUNT(oi.id) ASC
+    LIMIT 1;
+  END IF;
+ELSE
+  v_sector_id := p_default_sector_id;
+END IF;
 ```
 
-**Limpeza SQL do pedido 6807:**
+**Correcao do pedido 6809:**
 
-Deletar os 3 itens duplicados (IDs com `created_at = 2026-02-10 21:20:20.050001`).
+```text
+UPDATE order_items 
+SET assigned_sector_id = (
+  SELECT s.id FROM sectors s
+  LEFT JOIN order_items oi ON oi.assigned_sector_id = s.id AND oi.status IN ('pending', 'in_prep')
+  WHERE s.view_type = 'kds' 
+    AND s.id != (SELECT kds_edge_sector_id FROM app_settings WHERE id = 'default')
+  GROUP BY s.id ORDER BY COUNT(oi.id) ASC LIMIT 1
+)
+WHERE order_id = 'c55c52a8-c1cc-4bd4-b35d-7b8bc2ada326'
+  AND assigned_sector_id IS NULL;
+```
 
 ### Impacto
 
-- A RPC se torna idempotente — segura para chamadas concorrentes
-- O polling não cria itens se o webhook já os criou
-- Nenhum impacto no fluxo normal (a guard só atua quando itens já existem)
+- Restaura a distribuicao inteligente de carga entre bancadas
+- Mantém o guard de idempotência contra duplicação
+- O pedido 6809 aparecerá imediatamente no tablet apos a correção no banco
