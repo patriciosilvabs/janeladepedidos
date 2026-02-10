@@ -1,76 +1,125 @@
 
 
-## Correção: Fluxo de roteamento invertido (BORDAS → PRODUÇÃO)
+## Melhoria da Sincronizacao com CardapioWeb: Classificacao Inteligente de Pizzas
 
-### Problema
+### Diagnostico
 
-A lógica na RPC `create_order_items_from_json` está com o roteamento invertido. Itens com borda estão indo primeiro para a PRODUÇÃO e depois para BORDAS, quando o fluxo correto é:
+Analisei os dados reais dos pedidos recentes e identifiquei que:
 
-**BORDAS → PRODUÇÃO (distribuição) → FORNO (despacho)**
+1. **Pedidos 6820 e 6821** (criados APOS a correcao): meio-a-meio detectado corretamente, 1 item cada. A correcao esta funcionando.
+2. **Pedido 6819** (criado ANTES da correcao): dados legados com explosao incorreta - precisa ser reparado.
+3. **Problema arquitetural**: a logica de explosao de combos existe DUPLICADA em dois lugares (poll-orders e webhook-orders) e precisa ser mantida em sincronia. Alem disso, a RPC `create_order_items_from_json` tambem tem sua propria logica de separacao de sabores, criando duas camadas que podem conflitar.
 
-### Causa raiz
+### Padroes reais do CardapioWeb identificados
 
-No código atual da RPC, quando um item tem borda (`v_has_edge = true`):
-
-```text
--- Código atual (ERRADO):
-IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
-  v_next_sector_id := v_edge_sector_id;  -- próximo = BORDAS (errado!)
-END IF;
--- assigned_sector_id = v_sector_id (PRODUÇÃO) -- item começa na PRODUÇÃO
-```
-
-O item é atribuído à PRODUÇÃO (`assigned_sector_id`) e o próximo setor é BORDAS (`next_sector_id`). Isso é o oposto do fluxo correto.
-
-### Solução
-
-Inverter a lógica: quando tem borda, o item deve **começar** em BORDAS e depois ir para PRODUÇÃO.
+Analisando os dados da API:
 
 ```text
--- Código corrigido:
-IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
-  v_next_sector_id := v_sector_id;        -- próximo = PRODUÇÃO (correto!)
-  v_sector_id := v_edge_sector_id;        -- começa em BORDAS (correto!)
-END IF;
+CASO 1 - Pizza meio a meio (MESMA grupo):
+  option_group_id: 956482 -> "1/2 Calabresa (G)", "1/2 Portuguesa (G)"
+  Resultado correto: 1 item (JA FUNCIONA)
+
+CASO 2 - Pizza meio a meio (GRUPOS diferentes no combo):
+  option_group_id: 944283 -> "1/2 MARGUERITA (G)"
+  option_group_id: 955201 -> "1/2 MARGUERITA (G)"
+  Resultado correto: 1 item (JA FUNCIONA com allHalf)
+
+CASO 3 - Combo 2 pizzas inteiras:
+  option_group_id: 955409 -> "CALABRESA (G)"
+  option_group_id: 955408 -> "MILHO VERDE (G)"
+  Resultado correto: 2 itens (JA FUNCIONA)
+
+CASO 4 - Combo misto (inteira + meio a meio):
+  option_group_id: A -> "CALABRESA (G)"
+  option_group_id: B -> "1/2 FRANGO (G)"
+  option_group_id: C -> "1/2 MARGUERITA (G)"
+  Resultado correto: 2 itens (inteira + meio a meio)
+  Status: NAO TRATADO (allHalf=false -> explode em 3)
 ```
 
-### Reparo de dados existentes
+### Plano de Correcao
 
-Corrigir itens pendentes que estão com roteamento invertido (na PRODUÇÃO com `next_sector_id` apontando para BORDAS):
+#### 1. Criar funcao compartilhada de classificacao
+
+Extrair a logica `explodeComboItems` para um arquivo compartilhado (`supabase/functions/_shared/explodeCombo.ts`) para garantir que poll-orders e webhook-orders usem EXATAMENTE o mesmo codigo. Hoje sao copias independentes que podem divergir.
+
+#### 2. Melhorar deteccao de meio-a-meio (smart grouping)
+
+Em vez do `allHalf` (tudo-ou-nada), implementar agrupamento inteligente:
 
 ```text
-UPDATE order_items
-SET assigned_sector_id = next_sector_id,
-    next_sector_id = assigned_sector_id
-WHERE next_sector_id = '42470e75-5c62-438d-9a7e-31c6f57f4a30'  -- BORDAS
-  AND assigned_sector_id != '42470e75-5c62-438d-9a7e-31c6f57f4a30'
-  AND status IN ('pending', 'in_prep');
+Para cada grupo de sabores:
+  - Se TODOS os sabores do grupo comecam com "1/2" -> marcar como "half-group"
+  - Se NENHUM comeca com "1/2" -> marcar como "whole-group"
+
+Depois, MESCLAR grupos adjacentes de "half" em uma unica "unidade pizza":
+  - 2 half-groups consecutivos = 1 pizza meio a meio
+  - 1 whole-group = 1 pizza inteira
+
+Resultado: explodir por "unidade pizza", nao por option_group_id
 ```
 
-### Passos
+Isso resolve o CASO 4 (combo misto) corretamente.
 
-1. Migration SQL para corrigir a RPC (inverter `v_sector_id` e `v_next_sector_id`)
-2. UPDATE para corrigir itens pendentes com roteamento invertido
-3. Atualizar versao para v1.0.18
+#### 3. Reparar dados legados do pedido 6819
+
+Executar UPDATE para corrigir os itens explodidos incorretamente do pedido 6819 (deletar itens fragmentados e recriar usando a logica corrigida).
+
+#### 4. Adicionar logging estruturado
+
+Log detalhado com formato padrao para rastrear cada decisao de classificacao:
+
+```text
+[classify] "Combo: Pizza G + Refri 1L"
+  -> 3 flavor groups: [half, half, whole]
+  -> Merged: [half+half=1 pizza, whole=1 pizza]
+  -> Result: 2 pizza units
+```
+
+#### 5. Atualizar versao para v1.0.20
 
 ### Detalhes tecnicos
 
-**Alteracao na RPC** (1 bloco):
+**Arquivos modificados:**
+- `supabase/functions/poll-orders/index.ts` - substituir explodeComboItems pela versao melhorada
+- `supabase/functions/webhook-orders/index.ts` - mesma substituicao
+- `src/lib/version.ts` - bump para v1.0.20
 
-Trocar:
+**Logica do smart grouping (pseudocodigo):**
 ```text
-IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
-  v_next_sector_id := v_edge_sector_id;
-END IF;
+function explodeComboItems(items, edgeKeywords, flavorKeywords):
+  for each item:
+    classify options -> edges, flavors (by group), complements
+    
+    if <= 1 flavor group -> no explosion
+    
+    // Smart half detection per group
+    pizzaUnits = []
+    pendingHalves = []
+    
+    for each flavorGroup ordered by group_id:
+      allGroupHalf = every flavor in group starts with "1/2"
+      
+      if allGroupHalf:
+        pendingHalves.push(group)
+        // Check if we have a pair of halves
+        if pendingHalves has 2 groups:
+          pizzaUnits.push(merge(pendingHalves))
+          pendingHalves = []
+      else:
+        // Flush any unpaired halves as their own unit
+        if pendingHalves.length > 0:
+          pizzaUnits.push(merge(pendingHalves))
+          pendingHalves = []
+        pizzaUnits.push(group)  // whole pizza
+    
+    // Flush remaining halves
+    if pendingHalves.length > 0:
+      pizzaUnits.push(merge(pendingHalves))
+    
+    // Explode by pizza units (not by raw groups)
+    create one item per pizza unit
 ```
 
-Por:
-```text
-IF v_has_edge AND v_edge_sector_id IS NOT NULL THEN
-  v_next_sector_id := v_sector_id;
-  v_sector_id := v_edge_sector_id;
-END IF;
-```
-
-Isso garante que `assigned_sector_id = BORDAS` (primeiro destino) e `next_sector_id = PRODUCAO` (destino apos preparo da borda).
+**Migration SQL:** Nenhuma alteracao de schema necessaria. Apenas reparo de dados do pedido 6819.
 
