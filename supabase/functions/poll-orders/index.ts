@@ -496,92 +496,175 @@ async function pollStoreOrders(
           // === AUTO-REPAIR: Check if order has missing items (partial or zero) ===
           const { data: orderItems } = await supabase
             .from('order_items')
-            .select('id')
+            .select('id, status')
             .eq('order_id', order.id);
 
-          const { data: orderData } = await supabase
-            .from('orders')
-            .select('items')
-            .eq('id', order.id)
-            .single();
-
           const actualCount = orderItems?.length || 0;
-          const rawItems = orderData?.items || [];
-          const expectedCount = Array.isArray(rawItems) ? rawItems.length : 0;
 
-          if (actualCount < expectedCount) {
-            console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has ${actualCount}/${expectedCount} items, repairing...`);
+          // GUARD: If ANY item is already being processed (not pending),
+          // skip repair entirely to avoid duplicating items operators are working on
+          const hasNonPendingItems = orderItems?.some((item: any) => item.status !== 'pending') || false;
 
-            // Delete existing items before re-creating (only for pending orders)
-            if (actualCount > 0) {
+          if (hasNonPendingItems) {
+            // Items are already being worked on - never interfere
+            // (skip to status check below)
+          } else {
+            const { data: orderData } = await supabase
+              .from('orders')
+              .select('items')
+              .eq('id', order.id)
+              .single();
+
+            const rawItems = orderData?.items || [];
+            
+            // Calculate expected count AFTER explosion (not raw JSON count)
+            let expectedItems = Array.isArray(rawItems) ? [...rawItems] : [];
+
+            // Apply category filter (same as import)
+            const allowedCategories = store.allowed_categories;
+            if (allowedCategories && allowedCategories.length > 0) {
+              expectedItems = expectedItems.filter((item: any) => {
+                const name = (item.name || '').toLowerCase();
+                const kind = (item.kind || '').toLowerCase();
+                if (!name && !kind) return true;
+                return allowedCategories.some((c: string) => {
+                  const keyword = c.toLowerCase();
+                  return kind.includes(keyword) || name.includes(keyword);
+                });
+              });
+            }
+
+            // Explode combos to get accurate expected count
+            let expectedCount = expectedItems.length;
+            try {
+              const { data: settingsData } = await supabase
+                .from('app_settings')
+                .select('kds_edge_keywords, kds_flavor_keywords')
+                .eq('id', 'default')
+                .maybeSingle();
+              
+              const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
+              const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
+              const explodedItems = explodeComboItems(expectedItems, edgeKw, flavorKw);
+              expectedCount = explodedItems.length;
+            } catch (explodeErr) {
+              console.error(`[poll-orders] Repair: combo explosion error for count (using raw count):`, explodeErr);
+            }
+
+            if (actualCount === 0 && expectedCount > 0) {
+              // No items at all - safe to create
+              console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has 0 items, expected ${expectedCount}, creating...`);
+              
+              try {
+                let itemsToRepair = Array.isArray(rawItems) ? [...rawItems] : [];
+
+                if (allowedCategories && allowedCategories.length > 0) {
+                  itemsToRepair = itemsToRepair.filter((item: any) => {
+                    const name = (item.name || '').toLowerCase();
+                    const kind = (item.kind || '').toLowerCase();
+                    if (!name && !kind) return true;
+                    return allowedCategories.some((c: string) => {
+                      const keyword = c.toLowerCase();
+                      return kind.includes(keyword) || name.includes(keyword);
+                    });
+                  });
+                }
+
+                if (itemsToRepair.length > 0) {
+                  try {
+                    const { data: settingsData2 } = await supabase
+                      .from('app_settings')
+                      .select('kds_edge_keywords, kds_flavor_keywords')
+                      .eq('id', 'default')
+                      .maybeSingle();
+                    
+                    const edgeKw2 = (settingsData2?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
+                    const flavorKw2 = (settingsData2?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
+                    itemsToRepair = explodeComboItems(itemsToRepair, edgeKw2, flavorKw2);
+                  } catch (explodeErr) {
+                    console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
+                  }
+
+                  const { data: repairResult, error: repairError } = await supabase.rpc(
+                    'create_order_items_from_json',
+                    {
+                      p_order_id: order.id,
+                      p_items: itemsToRepair,
+                      p_default_sector_id: null,
+                    }
+                  );
+
+                  if (repairError) {
+                    console.error(`[poll-orders] Repair: Error creating items for order ${order.id}:`, repairError);
+                  } else {
+                    console.log(`[poll-orders] Repair: Created ${repairResult} items for order ${order.cardapioweb_order_id}`);
+                  }
+                }
+              } catch (repairErr) {
+                console.error(`[poll-orders] Repair: Error repairing order ${order.id}:`, repairErr);
+              }
+            } else if (actualCount < expectedCount) {
+              // Has some pending items but fewer than expected - delete all pending and recreate
+              console.log(`[poll-orders] Order ${order.cardapioweb_order_id} has ${actualCount}/${expectedCount} items (all pending), repairing...`);
+
               const { error: deleteError } = await supabase
                 .from('order_items')
                 .delete()
                 .eq('order_id', order.id)
-                .in('status', ['pending']);
+                .eq('status', 'pending');
               
               if (deleteError) {
-                console.error(`[poll-orders] Repair: Error deleting existing items:`, deleteError);
-                continue;
-              }
-              console.log(`[poll-orders] Repair: Deleted ${actualCount} existing pending items for re-creation`);
-            }
-            
-            try {
-              // Use items already stored in orders.items (more reliable than re-fetching API)
-              let itemsToRepair = Array.isArray(rawItems) ? [...rawItems] : [];
-
-              // Apply category filter
-              const allowedCategories = store.allowed_categories;
-              if (allowedCategories && allowedCategories.length > 0) {
-                const before = itemsToRepair.length;
-                itemsToRepair = itemsToRepair.filter((item: any) => {
-                  const name = (item.name || '').toLowerCase();
-                  const kind = (item.kind || '').toLowerCase();
-                  if (!name && !kind) return true;
-                  return allowedCategories.some((c: string) => {
-                    const keyword = c.toLowerCase();
-                    return kind.includes(keyword) || name.includes(keyword);
-                  });
-                });
-                console.log(`[poll-orders] Repair category filter: ${before} -> ${itemsToRepair.length} items`);
-              }
-
-              if (itemsToRepair.length > 0) {
-                // Explode combos
-                try {
-                  const { data: settingsData } = await supabase
-                    .from('app_settings')
-                    .select('kds_edge_keywords, kds_flavor_keywords')
-                    .eq('id', 'default')
-                    .maybeSingle();
-                  
-                  const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
-                  const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
-                  itemsToRepair = explodeComboItems(itemsToRepair, edgeKw, flavorKw);
-                } catch (explodeErr) {
-                  console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
-                }
-
-                const { data: repairResult, error: repairError } = await supabase.rpc(
-                  'create_order_items_from_json',
-                  {
-                    p_order_id: order.id,
-                    p_items: itemsToRepair,
-                    p_default_sector_id: null,
-                  }
-                );
-
-                if (repairError) {
-                  console.error(`[poll-orders] Repair: Error creating items for order ${order.id}:`, repairError);
-                } else {
-                  console.log(`[poll-orders] Repair: Created ${repairResult} items for order ${order.cardapioweb_order_id}`);
-                }
+                console.error(`[poll-orders] Repair: Error deleting pending items:`, deleteError);
               } else {
-                console.log(`[poll-orders] Repair: No items after category filter for order ${order.cardapioweb_order_id}`);
+                try {
+                  let itemsToRepair = Array.isArray(rawItems) ? [...rawItems] : [];
+
+                  if (allowedCategories && allowedCategories.length > 0) {
+                    itemsToRepair = itemsToRepair.filter((item: any) => {
+                      const name = (item.name || '').toLowerCase();
+                      const kind = (item.kind || '').toLowerCase();
+                      if (!name && !kind) return true;
+                      return allowedCategories.some((c: string) => {
+                        const keyword = c.toLowerCase();
+                        return kind.includes(keyword) || name.includes(keyword);
+                      });
+                    });
+                  }
+
+                  if (itemsToRepair.length > 0) {
+                    try {
+                      const { data: settingsData3 } = await supabase
+                        .from('app_settings')
+                        .select('kds_edge_keywords, kds_flavor_keywords')
+                        .eq('id', 'default')
+                        .maybeSingle();
+                      
+                      const edgeKw3 = (settingsData3?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
+                      const flavorKw3 = (settingsData3?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
+                      itemsToRepair = explodeComboItems(itemsToRepair, edgeKw3, flavorKw3);
+                    } catch (explodeErr) {
+                      console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
+                    }
+
+                    const { data: repairResult, error: repairError } = await supabase.rpc(
+                      'create_order_items_from_json',
+                      {
+                        p_order_id: order.id,
+                        p_items: itemsToRepair,
+                        p_default_sector_id: null,
+                      }
+                    );
+
+                    if (repairError) {
+                      console.error(`[poll-orders] Repair: Error creating items for order ${order.id}:`, repairError);
+                    } else {
+                      console.log(`[poll-orders] Repair: Created ${repairResult} items for order ${order.cardapioweb_order_id}`);
+                    }
+                  }
+                } catch (repairErr) {
+                  console.error(`[poll-orders] Repair: Error repairing order ${order.id}:`, repairErr);
+                }
               }
-            } catch (repairErr) {
-              console.error(`[poll-orders] Repair: Error repairing order ${order.id}:`, repairErr);
             }
           }
           // === END AUTO-REPAIR ===
