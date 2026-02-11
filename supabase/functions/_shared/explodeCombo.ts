@@ -13,6 +13,11 @@ export interface PizzaUnit {
   sourceGroups: string[];
 }
 
+export interface GroupMapping {
+  option_group_id: number;
+  option_type: string;
+}
+
 /**
  * Classifies flavor groups and merges adjacent half-groups into pizza units.
  * 
@@ -89,8 +94,16 @@ function buildPizzaUnits(flavorGroups: Record<string, any[]>): PizzaUnit[] {
   return pizzaUnits;
 }
 
-export function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords: string[]): any[] {
+export function explodeComboItems(items: any[], edgeKeywords: string[], flavorKeywords: string[], groupMappings?: GroupMapping[]): any[] {
   const result: any[] = [];
+
+  // Build lookup map from option_group_id → type (hybrid classification)
+  const mappingMap = new Map<number, string>();
+  if (groupMappings) {
+    for (const m of groupMappings) {
+      mappingMap.set(m.option_group_id, m.option_type);
+    }
+  }
 
   for (const item of items) {
     const options = item.options || [];
@@ -106,12 +119,25 @@ export function explodeComboItems(items: any[], edgeKeywords: string[], flavorKe
 
     for (const opt of options) {
       const name = (opt.name || '').toLowerCase();
-      const isEdge = edgeKeywords.some(k =>
-        k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
-      );
-      const isFlavor = !isEdge && flavorKeywords.some(k =>
-        name.includes(k.toLowerCase())
-      );
+      const optGroupId = opt.option_group_id;
+      
+      // Hybrid: check mapping first, then fallback to keywords
+      let isEdge = false;
+      let isFlavor = false;
+      
+      if (optGroupId && mappingMap.has(optGroupId)) {
+        const mappedType = mappingMap.get(optGroupId)!;
+        opt._type = mappedType;
+        isEdge = mappedType === 'edge';
+        isFlavor = mappedType === 'flavor';
+      } else {
+        isEdge = edgeKeywords.some(k =>
+          k === '#' ? name.startsWith('#') : name.includes(k.toLowerCase())
+        );
+        isFlavor = !isEdge && flavorKeywords.some(k =>
+          name.includes(k.toLowerCase())
+        );
+      }
 
       if (isEdge) {
         edgeOptions.push(opt);

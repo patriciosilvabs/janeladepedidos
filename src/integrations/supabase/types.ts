@@ -559,6 +559,41 @@ export type Database = {
         }
         Relationships: []
       }
+      store_option_group_mappings: {
+        Row: {
+          created_at: string
+          group_name: string | null
+          id: string
+          option_group_id: number
+          option_type: string
+          store_id: string
+        }
+        Insert: {
+          created_at?: string
+          group_name?: string | null
+          id?: string
+          option_group_id: number
+          option_type?: string
+          store_id: string
+        }
+        Update: {
+          created_at?: string
+          group_name?: string | null
+          id?: string
+          option_group_id?: number
+          option_type?: string
+          store_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "store_option_group_mappings_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       stores: {
         Row: {
           allowed_categories: string[] | null

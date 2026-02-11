@@ -85,8 +85,23 @@ async function pollStoreOrders(
   const token = store.cardapioweb_api_token;
 
   console.log(`[poll-orders] Fetching orders for store "${store.name}" from: ${baseUrl}`);
-  
+
+  // Fetch option group mappings for hybrid classification
+  let storeMappings: { option_group_id: number; option_type: string }[] = [];
   try {
+    const { data: gm } = await supabase
+      .from('store_option_group_mappings')
+      .select('option_group_id, option_type')
+      .eq('store_id', store.id);
+    storeMappings = (gm || []) as any[];
+    if (storeMappings.length > 0) {
+      console.log(`[poll-orders] Store "${store.name}": ${storeMappings.length} group mappings loaded`);
+    }
+  } catch (e) {
+    console.error(`[poll-orders] Error fetching group mappings:`, e);
+  }
+
+   try {
    // Buscar todos os pedidos sem filtrar por status
    // Isso permite capturar pedidos de Mesa (status diferente de confirmed)
    // e descobrir quais valores de status a API retorna
@@ -325,7 +340,7 @@ async function pollStoreOrders(
               const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
               const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
               const beforeExplode = itemsToCreate.length;
-              itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw);
+              itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw, storeMappings);
               if (itemsToCreate.length !== beforeExplode) {
                 console.log(`[poll-orders] Combo explosion: ${beforeExplode} -> ${itemsToCreate.length} items`);
               }
@@ -427,7 +442,7 @@ async function pollStoreOrders(
               
               const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
               const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
-              const explodedItems = explodeComboItems(expectedItems, edgeKw, flavorKw);
+              const explodedItems = explodeComboItems(expectedItems, edgeKw, flavorKw, storeMappings);
               expectedCount = explodedItems.length;
             } catch (explodeErr) {
               console.error(`[poll-orders] Repair: combo explosion error for count (using raw count):`, explodeErr);
@@ -462,7 +477,7 @@ async function pollStoreOrders(
                     
                     const edgeKw2 = (settingsData2?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
                     const flavorKw2 = (settingsData2?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
-                    itemsToRepair = explodeComboItems(itemsToRepair, edgeKw2, flavorKw2);
+                    itemsToRepair = explodeComboItems(itemsToRepair, edgeKw2, flavorKw2, storeMappings);
                   } catch (explodeErr) {
                     console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
                   }
@@ -523,7 +538,7 @@ async function pollStoreOrders(
                       
                       const edgeKw3 = (settingsData3?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
                       const flavorKw3 = (settingsData3?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
-                      itemsToRepair = explodeComboItems(itemsToRepair, edgeKw3, flavorKw3);
+                      itemsToRepair = explodeComboItems(itemsToRepair, edgeKw3, flavorKw3, storeMappings);
                     } catch (explodeErr) {
                       console.error(`[poll-orders] Repair: combo explosion error (continuing):`, explodeErr);
                     }
