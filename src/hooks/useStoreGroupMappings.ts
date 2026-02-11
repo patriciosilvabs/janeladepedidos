@@ -71,8 +71,12 @@ export function useStoreGroupMappings(storeId: string | null) {
       }>
     ) => {
       if (items.length === 0) return [];
-      // Filter out duplicates with existing mappings
-      const existingIds = new Set(mappings?.map((m) => m.option_group_id) || []);
+      // Query current mappings for THIS store to avoid stale closure data
+      const { data: currentMappings } = await supabase
+        .from('store_option_group_mappings' as any)
+        .select('option_group_id')
+        .eq('store_id', storeId);
+      const existingIds = new Set((currentMappings || []).map((m: any) => m.option_group_id));
       const newItems = items.filter((i) => !existingIds.has(i.option_group_id));
       if (newItems.length === 0) return [];
 
