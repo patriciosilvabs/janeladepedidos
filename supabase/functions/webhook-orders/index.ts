@@ -206,7 +206,19 @@ interface CardapioWebWebhookPayload {
    }
  
    console.log(`Order created: ${insertedOrder.id}`);
- 
+
+   // Fetch option group mappings for hybrid classification
+   let storeMappings: { option_group_id: number; option_type: string }[] = [];
+   try {
+     const { data: gm } = await supabase
+       .from('store_option_group_mappings')
+       .select('option_group_id, option_type')
+       .eq('store_id', store.id);
+     storeMappings = (gm || []) as any[];
+   } catch (e) {
+     console.error('[webhook] Error fetching group mappings:', e);
+   }
+
    // Create order_items using RPC
     let itemsCreated = 0;
     if (order.items && order.items.length > 0) {
@@ -248,7 +260,7 @@ interface CardapioWebWebhookPayload {
           const edgeKw = (settingsData?.kds_edge_keywords || '#, Borda').split(',').map((s: string) => s.trim());
           const flavorKw = (settingsData?.kds_flavor_keywords || '(G), (M), (P), Sabor').split(',').map((s: string) => s.trim());
           const beforeExplode = itemsToCreate.length;
-          itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw);
+          itemsToCreate = explodeComboItems(itemsToCreate, edgeKw, flavorKw, storeMappings);
           if (itemsToCreate.length !== beforeExplode) {
             console.log(`[webhook] Combo explosion: ${beforeExplode} -> ${itemsToCreate.length} items`);
           }

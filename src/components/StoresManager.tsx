@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { CategoriesTagInput } from '@/components/CategoriesTagInput';
+import { StoreGroupMappings } from '@/components/StoreGroupMappings';
 import { Plus, Pencil, Trash2, Store, Eye, EyeOff, Loader2, CheckCircle, XCircle, Copy, ExternalLink, X, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -453,6 +454,11 @@ export function StoresManager() {
               categories={formData.allowed_categories}
               onChange={(cats) => setFormData({ ...formData, allowed_categories: cats })}
             />
+
+            {/* Mapeamento de Grupos de Opções (só na edição) */}
+            {editingStore && (
+              <StoreGroupMappings storeId={editingStore.id} />
+            )}
           </div>
 
           <DialogFooter>
