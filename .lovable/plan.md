@@ -1,35 +1,51 @@
 
 
-# Corrigir: Mapeamentos replicando entre lojas
+# Corrigir: SQL function ignorando mapeamento de grupos
 
 ## Problema
-Ao cadastrar mapeamentos em uma loja, os mesmos codigos sao salvos tambem na outra loja. Atualmente existem 72 mapeamentos duplicados entre as duas lojas.
 
-**Causa raiz:** O componente `StoreGroupMappings` nao usa `key` no React, entao ao trocar de loja o componente reutiliza o estado interno antigo. Alem disso, o `bulkAddMappings` do hook usa `mappings` do closure (que pode estar desatualizado ao trocar de loja), permitindo que itens "novos" sejam inseridos com o `store_id` errado no cache.
+O fluxo de classificacao tem **duas camadas**:
+
+1. **explodeCombo.ts** (TypeScript, edge function) — ja usa o mapeamento hibrido corretamente. Cada option recebe uma tag `_type` (edge/flavor/complement) baseada no `store_option_group_mappings`.
+
+2. **create_order_items_from_json** (SQL, PostgreSQL) — classifica as options usando **apenas keywords** (`kds_edge_keywords`, `kds_flavor_keywords`). Ignora completamente a tag `_type` que o explodeCombo ja adicionou.
+
+Resultado: mesmo com os mapeamentos cadastrados, a tarja laranja de "Borda" nao aparece porque o SQL re-classifica tudo por keywords e nao encontra match (ex: "Borda de Cheddar" so funciona se "Borda" estiver nas keywords).
 
 ## Solucao
 
-### 1. Adicionar `key` no componente (prevencao futura)
-Em `StoresManager.tsx`, forcar remount ao trocar de loja:
-```text
-<StoreGroupMappings key={editingStore.id} storeId={editingStore.id} />
-```
-
-### 2. Adicionar constraint UNIQUE no banco (protecao definitiva)
-Criar um indice unico em `(store_id, option_group_id)` para que o banco nunca aceite duplicatas.
-
-### 3. Limpar dados duplicados
-Remover os 72 mapeamentos que foram replicados indevidamente para a loja errada.
+Atualizar a funcao SQL `create_order_items_from_json` para **checar `_type` primeiro** e so usar keywords como fallback.
 
 ## Detalhes Tecnicos
 
-**Arquivos a modificar:**
-- `src/components/StoresManager.tsx` — adicionar `key={editingStore.id}` no `StoreGroupMappings`
+**Migracao SQL** — alterar a logica de classificacao dentro do loop de options (linhas 88-125 da funcao atual):
 
-**Migracao SQL:**
-1. Deletar mapeamentos duplicados da loja que recebeu dados indevidos
-2. Adicionar constraint `UNIQUE(store_id, option_group_id)` na tabela `store_option_group_mappings`
+Antes:
+```text
+v_is_edge := false;
+v_is_flavor := false;
+-- percorre keywords para classificar
+```
 
-**Mudanca no hook** (`useStoreGroupMappings.ts`):
-- No `bulkAddMappings`, adicionar `.eq('store_id', storeId)` na verificacao de duplicatas para garantir que so filtra mapeamentos da loja correta (defesa em profundidade)
+Depois:
+```text
+v_is_edge := false;
+v_is_flavor := false;
+
+-- 1) Checar tag _type do mapeamento hibrido (prioridade)
+IF v_option->>'_type' = 'edge' THEN
+  v_is_edge := true;
+ELSIF v_option->>'_type' = 'flavor' THEN
+  v_is_flavor := true;
+ELSIF v_option->>'_type' = 'complement' THEN
+  -- nada, vai cair em complemento
+ELSE
+  -- 2) Fallback: keywords (comportamento atual)
+  ... (logica existente de keywords)
+END IF;
+```
+
+Isso garante que quando o `explodeCombo.ts` ja classificou a option via mapeamento, o SQL respeita essa decisao. Quando nao ha tag `_type` (pedidos antigos ou sem mapeamento), o fallback de keywords continua funcionando normalmente.
+
+**Nenhuma mudanca em arquivos TypeScript** — o `explodeCombo.ts` ja injeta `_type` corretamente.
 
