@@ -261,7 +261,7 @@ export function StoresManager() {
 
       {/* Create/Edit Dialog */}
       <Dialog open={isCreating || !!editingStore} onOpenChange={closeDialogs}>
-        <DialogContent>
+        <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>{editingStore ? 'Editar Loja' : 'Nova Loja'}</DialogTitle>
             <DialogDescription>
@@ -269,7 +269,7 @@ export function StoresManager() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
+          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-2">
             <div className="space-y-2">
               <Label htmlFor="store-name">Nome da Loja *</Label>
               <Input
