@@ -89,23 +89,29 @@ Deno.serve(async (req) => {
     // Collect unique option groups from order details
     const groupMap = new Map<number, string>();
 
-    // Fetch details for each order (up to 20 to be reasonable)
-    const ordersToCheck = orders.slice(0, 20);
-    
-    for (const order of ordersToCheck) {
-      try {
-        const detailRes = await fetch(`${baseUrl}/api/partner/v1/orders/${order.id}`, {
-          method: 'GET',
-          headers: {
-            'X-API-KEY': store.cardapioweb_api_token,
-            'Accept': 'application/json',
-          },
-        });
+    // Process ALL orders in parallel batches of 5
+    const BATCH_SIZE = 5;
+    console.log(`[fetch-groups] Processing all ${orders.length} orders in batches of ${BATCH_SIZE}...`);
 
-        if (!detailRes.ok) continue;
-        const detail = await detailRes.json();
+    for (let i = 0; i < orders.length; i += BATCH_SIZE) {
+      const batch = orders.slice(i, i + BATCH_SIZE);
+      const results = await Promise.allSettled(
+        batch.map(async (order: any) => {
+          const detailRes = await fetch(`${baseUrl}/api/partner/v1/orders/${order.id}`, {
+            method: 'GET',
+            headers: {
+              'X-API-KEY': store.cardapioweb_api_token,
+              'Accept': 'application/json',
+            },
+          });
+          if (!detailRes.ok) return null;
+          return detailRes.json();
+        })
+      );
 
-        // Extract option groups from items
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        const detail = result.value;
         const items = detail.items || [];
         for (const item of items) {
           const options = item.options || item.additions || [];
@@ -116,8 +122,6 @@ Deno.serve(async (req) => {
             }
           }
         }
-      } catch (err) {
-        console.error(`[fetch-groups] Error fetching order ${order.id}:`, err);
       }
     }
 
@@ -126,9 +130,9 @@ Deno.serve(async (req) => {
       .map(([id, name]) => ({ option_group_id: id, group_name: name }))
       .sort((a, b) => a.group_name.localeCompare(b.group_name));
 
-    console.log(`[fetch-groups] Found ${groups.length} unique option groups`);
+    console.log(`[fetch-groups] Found ${groups.length} unique option groups from ${orders.length} orders`);
 
-    return new Response(JSON.stringify({ groups, orders_checked: ordersToCheck.length }), {
+    return new Response(JSON.stringify({ groups, orders_checked: orders.length }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
