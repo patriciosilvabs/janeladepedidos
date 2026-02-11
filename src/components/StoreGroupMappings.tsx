@@ -274,8 +274,8 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
       </div>
 
       {/* Import Dialog */}
-      <Dialog open={importOpen} onOpenChange={setImportOpen}>
-        <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-[550px]">
+      <Dialog open={importOpen} onOpenChange={setImportOpen} modal>
+        <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-[550px] z-[60]">
           <DialogHeader>
             <DialogTitle className="text-base">Importar Grupos da API</DialogTitle>
             <DialogDescription className="text-xs">
