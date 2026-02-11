@@ -317,7 +317,7 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
                       <SelectTrigger className="h-7 w-28 text-xs">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className="z-[70]">
                         <SelectItem value="edge">Borda</SelectItem>
                         <SelectItem value="flavor">Sabor</SelectItem>
                         <SelectItem value="complement">Complemento</SelectItem>
