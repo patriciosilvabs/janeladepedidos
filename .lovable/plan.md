@@ -1,51 +1,46 @@
 
 
-# Corrigir: SQL function ignorando mapeamento de grupos
+# Fix: Borda nao aparece em destaque
 
 ## Problema
 
-O fluxo de classificacao tem **duas camadas**:
+Os campos `kds_edge_keywords` e `kds_flavor_keywords` na tabela `app_settings` estao com valor vazio (`''`) em vez de NULL. Isso quebra a classificacao de bordas e sabores:
 
-1. **explodeCombo.ts** (TypeScript, edge function) — ja usa o mapeamento hibrido corretamente. Cada option recebe uma tag `_type` (edge/flavor/complement) baseada no `store_option_group_mappings`.
+- **SQL (create_order_items_from_json):** `COALESCE('', '#, Borda')` retorna `''` (string vazia NAO e NULL). Os arrays de keywords ficam vazios e TUDO vai para `complements`.
+- **Edge function (explodeCombo.ts):** JavaScript trata corretamente (`'' || default`), mas so adiciona `_type` em opcoes com mapeamento no banco. Sem mapeamento, nao coloca `_type`.
+- **Resultado:** Sem `_type` + sem keywords = tudo vira complemento. Borda, sabores, tudo misturado.
 
-2. **create_order_items_from_json** (SQL, PostgreSQL) — classifica as options usando **apenas keywords** (`kds_edge_keywords`, `kds_flavor_keywords`). Ignora completamente a tag `_type` que o explodeCombo ja adicionou.
+## Solucao (duas camadas de defesa)
 
-Resultado: mesmo com os mapeamentos cadastrados, a tarja laranja de "Borda" nao aparece porque o SQL re-classifica tudo por keywords e nao encontra match (ex: "Borda de Cheddar" so funciona se "Borda" estiver nas keywords).
+### 1. Corrigir SQL: tratar string vazia como NULL
+Na funcao `create_order_items_from_json`, trocar `COALESCE` por `COALESCE(NULLIF(..., ''), default)`:
 
-## Solucao
+```text
+COALESCE(NULLIF(kds_edge_keywords, ''), '#, Borda')
+COALESCE(NULLIF(kds_flavor_keywords, ''), '(G), (M), (P), Sabor')
+```
 
-Atualizar a funcao SQL `create_order_items_from_json` para **checar `_type` primeiro** e so usar keywords como fallback.
+Isso garante que strings vazias usem os defaults, igual ao JavaScript.
+
+### 2. explodeCombo: sempre injetar _type (mesmo via keywords)
+Atualmente o `_type` so e adicionado quando ha mapeamento no banco. Quando a classificacao e feita por keywords, o `_type` nao e setado, e o SQL fica "cego".
+
+Adicionar `opt._type = 'edge'` / `opt._type = 'flavor'` / `opt._type = 'complement'` tambem no branch de keyword fallback do `explodeCombo.ts`.
+
+## Impacto
+
+- Pedidos NOVOS serao classificados corretamente (borda com tarja laranja, sabores em destaque)
+- Pedidos ANTIGOS ja criados (como o 6861) precisariam ser reprocessados ou corrigidos manualmente no banco
+- Nenhuma mudanca visual no frontend (KDSItemCard ja exibe `edge_type` e `flavors` corretamente)
 
 ## Detalhes Tecnicos
 
-**Migracao SQL** — alterar a logica de classificacao dentro do loop de options (linhas 88-125 da funcao atual):
+**Arquivos a modificar:**
+- `supabase/functions/_shared/explodeCombo.ts` -- adicionar `opt._type` no branch de keywords (linhas 131-145)
 
-Antes:
-```text
-v_is_edge := false;
-v_is_flavor := false;
--- percorre keywords para classificar
-```
+**Migracao SQL:**
+- Recriar `create_order_items_from_json` com `NULLIF` nos keywords
 
-Depois:
-```text
-v_is_edge := false;
-v_is_flavor := false;
-
--- 1) Checar tag _type do mapeamento hibrido (prioridade)
-IF v_option->>'_type' = 'edge' THEN
-  v_is_edge := true;
-ELSIF v_option->>'_type' = 'flavor' THEN
-  v_is_flavor := true;
-ELSIF v_option->>'_type' = 'complement' THEN
-  -- nada, vai cair em complemento
-ELSE
-  -- 2) Fallback: keywords (comportamento atual)
-  ... (logica existente de keywords)
-END IF;
-```
-
-Isso garante que quando o `explodeCombo.ts` ja classificou a option via mapeamento, o SQL respeita essa decisao. Quando nao ha tag `_type` (pedidos antigos ou sem mapeamento), o fallback de keywords continua funcionando normalmente.
-
-**Nenhuma mudanca em arquivos TypeScript** — o `explodeCombo.ts` ja injeta `_type` corretamente.
+**Correcao de dados (pedido 6861):**
+- UPDATE direto no `order_items` para separar edge_type e flavors do campo complements
 
