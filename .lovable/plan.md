@@ -1,43 +1,35 @@
 
 
-# Colar Mapeamentos em Lote (Bulk Paste)
+# Corrigir: Mapeamentos replicando entre lojas
 
-## O que sera feito
+## Problema
+Ao cadastrar mapeamentos em uma loja, os mesmos codigos sao salvos tambem na outra loja. Atualmente existem 72 mapeamentos duplicados entre as duas lojas.
 
-Adicionar um botao "Colar em Lote" que abre um dialog onde voce pode colar texto com codigos e nomes, escolher o tipo (Borda/Sabor/Complemento) e salvar tudo de uma vez.
+**Causa raiz:** O componente `StoreGroupMappings` nao usa `key` no React, entao ao trocar de loja o componente reutiliza o estado interno antigo. Alem disso, o `bulkAddMappings` do hook usa `mappings` do closure (que pode estar desatualizado ao trocar de loja), permitindo que itens "novos" sejam inseridos com o `store_id` errado no cache.
 
-## Como funciona
+## Solucao
 
-1. Voce cola o texto no formato livre, uma linha por grupo. Cada linha deve ter o **codigo numerico** e o **nome**, separados por espaco, tab, ou ponto-e-virgula. Exemplos aceitos:
-
+### 1. Adicionar `key` no componente (prevencao futura)
+Em `StoresManager.tsx`, forcar remount ao trocar de loja:
 ```text
-944280 Massas & Bordas
-944281;Sabores Pizza Grande
-944282  Complementos
+<StoreGroupMappings key={editingStore.id} storeId={editingStore.id} />
 ```
 
-2. O sistema faz o parse automatico, identifica o numero (codigo) e o restante como nome
-3. Voce escolhe o tipo padrao (Sabor/Borda/Complemento) que sera aplicado a todos — ou pode ajustar individualmente antes de salvar
-4. Grupos ja mapeados sao ignorados automaticamente
+### 2. Adicionar constraint UNIQUE no banco (protecao definitiva)
+Criar um indice unico em `(store_id, option_group_id)` para que o banco nunca aceite duplicatas.
+
+### 3. Limpar dados duplicados
+Remover os 72 mapeamentos que foram replicados indevidamente para a loja errada.
 
 ## Detalhes Tecnicos
 
-**Arquivo a modificar:** `src/components/StoreGroupMappings.tsx`
+**Arquivos a modificar:**
+- `src/components/StoresManager.tsx` — adicionar `key={editingStore.id}` no `StoreGroupMappings`
 
-### Mudancas:
-1. Adicionar botao "Colar em Lote" (icone ClipboardPaste) ao lado do botao "Importar da API"
-2. Novo dialog com:
-   - Um `Textarea` para colar o texto
-   - Um `Select` para escolher o tipo padrao
-   - Botao "Processar" que faz o parse das linhas
-   - Preview das linhas parseadas (igual ao dialog de importacao da API) com opcao de ajustar tipo individual
-   - Botao "Salvar" que usa o `bulkAddMappings` ja existente
-3. Logica de parse: para cada linha nao vazia, extrair o primeiro numero como `option_group_id` e o restante como `group_name`
-4. Reutilizar o hook `useStoreGroupMappings` (ja tem `bulkAddMappings`)
+**Migracao SQL:**
+1. Deletar mapeamentos duplicados da loja que recebeu dados indevidos
+2. Adicionar constraint `UNIQUE(store_id, option_group_id)` na tabela `store_option_group_mappings`
 
-### Fluxo do usuario:
-```text
-Colar em Lote → Cola texto → Escolhe tipo → Processar → Revisa → Salvar
-```
+**Mudanca no hook** (`useStoreGroupMappings.ts`):
+- No `bulkAddMappings`, adicionar `.eq('store_id', storeId)` na verificacao de duplicatas para garantir que so filtra mapeamentos da loja correta (defesa em profundidade)
 
-Nenhuma mudanca no banco de dados ou edge function — tudo reutiliza a infraestrutura existente.
