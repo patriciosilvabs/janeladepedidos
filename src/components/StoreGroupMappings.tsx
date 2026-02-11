@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Loader2, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -11,7 +11,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogDescription,
+} from '@/components/ui/dialog';
 import { useStoreGroupMappings } from '@/hooks/useStoreGroupMappings';
+import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 const TYPE_CONFIG: Record<string, { label: string; variant: 'destructive' | 'default' | 'secondary' | 'outline' }> = {
@@ -20,11 +29,36 @@ const TYPE_CONFIG: Record<string, { label: string; variant: 'destructive' | 'def
   complement: { label: 'Complemento', variant: 'secondary' },
 };
 
+// Auto-classify group name by keywords
+function autoClassify(name: string): string {
+  const lower = name.toLowerCase();
+  const flavorKw = ['sabor', 'sabores', 'escolha', 'selecione', 'pizza'];
+  const edgeKw = ['borda', 'massa', 'tradicional'];
+
+  if (edgeKw.some((k) => lower.includes(k))) return 'edge';
+  if (flavorKw.some((k) => lower.includes(k))) return 'flavor';
+  return 'complement';
+}
+
+interface ImportGroup {
+  option_group_id: number;
+  group_name: string;
+  option_type: string;
+  already_mapped: boolean;
+}
+
 export function StoreGroupMappings({ storeId }: { storeId: string }) {
-  const { mappings, isLoading, addMapping, deleteMapping } = useStoreGroupMappings(storeId);
+  const { mappings, isLoading, addMapping, deleteMapping, bulkAddMappings } =
+    useStoreGroupMappings(storeId);
   const [newGroupId, setNewGroupId] = useState('');
   const [newGroupName, setNewGroupName] = useState('');
   const [newType, setNewType] = useState('flavor');
+
+  // Import dialog state
+  const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importGroups, setImportGroups] = useState<ImportGroup[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const handleAdd = async () => {
     const groupId = parseInt(newGroupId);
@@ -62,16 +96,102 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
     }
   };
 
+  const handleImportFromApi = async () => {
+    setImporting(true);
+    setImportOpen(true);
+    setImportGroups([]);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-store-option-groups', {
+        body: { store_id: storeId },
+      });
+
+      if (error) throw error;
+      if (!data?.groups || data.groups.length === 0) {
+        toast.error('Nenhum grupo de opções encontrado. Verifique se há pedidos recentes na API.');
+        setImportOpen(false);
+        return;
+      }
+
+      const existingIds = new Set(mappings?.map((m) => m.option_group_id) || []);
+
+      const groups: ImportGroup[] = data.groups.map((g: any) => ({
+        option_group_id: g.option_group_id,
+        group_name: g.group_name || '',
+        option_type: autoClassify(g.group_name || ''),
+        already_mapped: existingIds.has(g.option_group_id),
+      }));
+
+      setImportGroups(groups);
+      toast.success(`${groups.length} grupos encontrados (${data.orders_checked} pedidos analisados)`);
+    } catch (err) {
+      console.error('Import error:', err);
+      toast.error('Erro ao buscar grupos da API');
+      setImportOpen(false);
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleChangeImportType = (index: number, type: string) => {
+    setImportGroups((prev) =>
+      prev.map((g, i) => (i === index ? { ...g, option_type: type } : g))
+    );
+  };
+
+  const handleSaveImport = async () => {
+    const toSave = importGroups.filter((g) => !g.already_mapped);
+    if (toSave.length === 0) {
+      toast.info('Todos os grupos já estão mapeados');
+      setImportOpen(false);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await bulkAddMappings.mutateAsync(
+        toSave.map((g) => ({
+          store_id: storeId,
+          option_group_id: g.option_group_id,
+          option_type: g.option_type,
+          group_name: g.group_name || undefined,
+        }))
+      );
+      toast.success(`${toSave.length} mapeamentos criados`);
+      setImportOpen(false);
+    } catch {
+      toast.error('Erro ao salvar mapeamentos');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   if (isLoading) return null;
 
   return (
     <div className="space-y-3">
-      <div>
-        <Label className="text-xs font-medium">Mapeamento de Grupos de Opções</Label>
-        <p className="text-xs text-muted-foreground">
-          Classifique grupos do CardápioWeb por <code className="bg-muted px-1 rounded">option_group_id</code>.
-          Grupos mapeados têm prioridade sobre keywords.
-        </p>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <Label className="text-xs font-medium">Mapeamento de Grupos de Opções</Label>
+          <p className="text-xs text-muted-foreground">
+            Classifique grupos do CardápioWeb por{' '}
+            <code className="bg-muted px-1 rounded">option_group_id</code>.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs gap-1 shrink-0"
+          onClick={handleImportFromApi}
+          disabled={importing}
+        >
+          {importing ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Download className="h-3 w-3" />
+          )}
+          Importar da API
+        </Button>
       </div>
 
       {/* Existing mappings */}
@@ -152,6 +272,80 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
           )}
         </Button>
       </div>
+
+      {/* Import Dialog */}
+      <Dialog open={importOpen} onOpenChange={setImportOpen}>
+        <DialogContent className="max-h-[85vh] flex flex-col sm:max-w-[550px]">
+          <DialogHeader>
+            <DialogTitle className="text-base">Importar Grupos da API</DialogTitle>
+            <DialogDescription className="text-xs">
+              Grupos encontrados nos pedidos recentes. Ajuste o tipo antes de salvar.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto pr-1 space-y-1.5">
+            {importing ? (
+              <div className="flex items-center justify-center py-8 gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Buscando grupos da API...
+              </div>
+            ) : importGroups.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Nenhum grupo encontrado.
+              </p>
+            ) : (
+              importGroups.map((g, idx) => (
+                <div
+                  key={g.option_group_id}
+                  className={`flex items-center gap-2 text-xs p-2 rounded border ${
+                    g.already_mapped ? 'opacity-50 bg-muted/20' : 'bg-muted/30'
+                  }`}
+                >
+                  <span className="font-mono text-muted-foreground w-16 shrink-0">
+                    {g.option_group_id}
+                  </span>
+                  <span className="flex-1 truncate">{g.group_name || '—'}</span>
+                  {g.already_mapped ? (
+                    <Badge variant="outline" className="text-[10px]">
+                      Já mapeado
+                    </Badge>
+                  ) : (
+                    <Select
+                      value={g.option_type}
+                      onValueChange={(v) => handleChangeImportType(idx, v)}
+                    >
+                      <SelectTrigger className="h-7 w-28 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="edge">Borda</SelectItem>
+                        <SelectItem value="flavor">Sabor</SelectItem>
+                        <SelectItem value="complement">Complemento</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setImportOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveImport}
+              disabled={saving || importing || importGroups.filter((g) => !g.already_mapped).length === 0}
+            >
+              {saving ? (
+                <Loader2 className="h-3 w-3 animate-spin mr-1" />
+              ) : null}
+              Salvar {importGroups.filter((g) => !g.already_mapped).length} mapeamentos
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

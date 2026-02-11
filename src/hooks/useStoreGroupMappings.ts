@@ -61,5 +61,32 @@ export function useStoreGroupMappings(storeId: string | null) {
     },
   });
 
-  return { mappings, isLoading, addMapping, deleteMapping };
+  const bulkAddMappings = useMutation({
+    mutationFn: async (
+      items: Array<{
+        store_id: string;
+        option_group_id: number;
+        option_type: string;
+        group_name?: string;
+      }>
+    ) => {
+      if (items.length === 0) return [];
+      // Filter out duplicates with existing mappings
+      const existingIds = new Set(mappings?.map((m) => m.option_group_id) || []);
+      const newItems = items.filter((i) => !existingIds.has(i.option_group_id));
+      if (newItems.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('store_option_group_mappings' as any)
+        .insert(newItems)
+        .select();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['store-group-mappings', storeId] });
+    },
+  });
+
+  return { mappings, isLoading, addMapping, deleteMapping, bulkAddMappings };
 }
