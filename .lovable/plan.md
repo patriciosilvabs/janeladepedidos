@@ -1,31 +1,43 @@
 
 
-# Corrigir: Buscar todos os grupos de opções (não apenas 20 pedidos)
+# Colar Mapeamentos em Lote (Bulk Paste)
 
-## Problema
-A edge function `fetch-store-option-groups` analisa apenas os **primeiros 20 pedidos** para extrair grupos de opções. Isso faz com que grupos que nao apareceram nesses 20 pedidos nao sejam encontrados.
+## O que sera feito
 
-A API do CardápioWeb retorna dezenas de pedidos (46-51 por loja conforme os logs), e cada pedido pode ter diferentes combinacoes de grupos.
+Adicionar um botao "Colar em Lote" que abre um dialog onde voce pode colar texto com codigos e nomes, escolher o tipo (Borda/Sabor/Complemento) e salvar tudo de uma vez.
 
-## Solucao
+## Como funciona
 
-Alterar a edge function para processar **todos os pedidos** retornados pela API (nao apenas 20), e buscar os detalhes em paralelo para ser mais rapido.
+1. Voce cola o texto no formato livre, uma linha por grupo. Cada linha deve ter o **codigo numerico** e o **nome**, separados por espaco, tab, ou ponto-e-virgula. Exemplos aceitos:
+
+```text
+944280 Massas & Bordas
+944281;Sabores Pizza Grande
+944282  Complementos
+```
+
+2. O sistema faz o parse automatico, identifica o numero (codigo) e o restante como nome
+3. Voce escolhe o tipo padrao (Sabor/Borda/Complemento) que sera aplicado a todos — ou pode ajustar individualmente antes de salvar
+4. Grupos ja mapeados sao ignorados automaticamente
 
 ## Detalhes Tecnicos
 
-**Arquivo:** `supabase/functions/fetch-store-option-groups/index.ts`
+**Arquivo a modificar:** `src/components/StoreGroupMappings.tsx`
 
-1. Remover o limite de 20 pedidos (`orders.slice(0, 20)`) e processar todos
-2. Buscar detalhes em lotes paralelos (5 de cada vez) em vez de sequencialmente, para nao demorar muito
-3. Adicionar log da quantidade total de pedidos processados
+### Mudancas:
+1. Adicionar botao "Colar em Lote" (icone ClipboardPaste) ao lado do botao "Importar da API"
+2. Novo dialog com:
+   - Um `Textarea` para colar o texto
+   - Um `Select` para escolher o tipo padrao
+   - Botao "Processar" que faz o parse das linhas
+   - Preview das linhas parseadas (igual ao dialog de importacao da API) com opcao de ajustar tipo individual
+   - Botao "Salvar" que usa o `bulkAddMappings` ja existente
+3. Logica de parse: para cada linha nao vazia, extrair o primeiro numero como `option_group_id` e o restante como `group_name`
+4. Reutilizar o hook `useStoreGroupMappings` (ja tem `bulkAddMappings`)
 
-### Mudanca principal
+### Fluxo do usuario:
 ```text
-ANTES: const ordersToCheck = orders.slice(0, 20);  // max 20
-DEPOIS: processar TODOS os pedidos, em lotes de 5 em paralelo
+Colar em Lote → Cola texto → Escolhe tipo → Processar → Revisa → Salvar
 ```
 
-### Impacto
-- A funcao vai demorar um pouco mais (segundos a mais), mas vai encontrar todos os grupos de opcoes existentes
-- O processamento paralelo (5 por vez) evita sobrecarregar a API do CardápioWeb
-
+Nenhuma mudanca no banco de dados ou edge function — tudo reutiliza a infraestrutura existente.
