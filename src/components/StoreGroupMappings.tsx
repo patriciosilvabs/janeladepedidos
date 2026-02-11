@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Plus, Trash2, Loader2, Download } from 'lucide-react';
+import { Plus, Trash2, Loader2, Download, ClipboardPaste } from 'lucide-react';
+import { BulkPasteDialog } from '@/components/BulkPasteDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,6 +60,9 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
   const [importing, setImporting] = useState(false);
   const [importGroups, setImportGroups] = useState<ImportGroup[]>([]);
   const [saving, setSaving] = useState(false);
+
+  // Bulk paste dialog state
+  const [bulkPasteOpen, setBulkPasteOpen] = useState(false);
 
   const handleAdd = async () => {
     const groupId = parseInt(newGroupId);
@@ -178,20 +182,31 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
             <code className="bg-muted px-1 rounded">option_group_id</code>.
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1 shrink-0"
-          onClick={handleImportFromApi}
-          disabled={importing}
-        >
-          {importing ? (
-            <Loader2 className="h-3 w-3 animate-spin" />
-          ) : (
-            <Download className="h-3 w-3" />
-          )}
-          Importar da API
-        </Button>
+        <div className="flex gap-1">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1 shrink-0"
+            onClick={() => setBulkPasteOpen(true)}
+          >
+            <ClipboardPaste className="h-3 w-3" />
+            Colar em Lote
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1 shrink-0"
+            onClick={handleImportFromApi}
+            disabled={importing}
+          >
+            {importing ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Download className="h-3 w-3" />
+            )}
+            Importar da API
+          </Button>
+        </div>
       </div>
 
       {/* Existing mappings */}
@@ -346,6 +361,14 @@ export function StoreGroupMappings({ storeId }: { storeId: string }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <BulkPasteDialog
+        open={bulkPasteOpen}
+        onOpenChange={setBulkPasteOpen}
+        existingIds={new Set(mappings?.map((m) => m.option_group_id) || [])}
+        storeId={storeId}
+        onSave={async (items) => { await bulkAddMappings.mutateAsync(items); }}
+      />
     </div>
   );
 }
