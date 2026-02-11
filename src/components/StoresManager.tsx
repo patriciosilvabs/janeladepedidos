@@ -457,7 +457,7 @@ export function StoresManager() {
 
             {/* Mapeamento de Grupos de Opções (só na edição) */}
             {editingStore && (
-              <StoreGroupMappings storeId={editingStore.id} />
+              <StoreGroupMappings key={editingStore.id} storeId={editingStore.id} />
             )}
           </div>
 
