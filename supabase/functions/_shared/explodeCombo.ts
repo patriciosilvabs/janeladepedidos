@@ -137,6 +137,14 @@ export function explodeComboItems(items: any[], edgeKeywords: string[], flavorKe
         isFlavor = !isEdge && flavorKeywords.some(k =>
           name.includes(k.toLowerCase())
         );
+        // Inject _type so SQL function can use it (keyword fallback)
+        if (isEdge) {
+          opt._type = 'edge';
+        } else if (isFlavor) {
+          opt._type = 'flavor';
+        } else {
+          opt._type = 'complement';
+        }
       }
 
       if (isEdge) {
