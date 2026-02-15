@@ -39,7 +39,7 @@ export function OvenHistoryPanel() {
       </CardHeader>
       <CardContent className="space-y-3">
         {dispatchedOrders.map((order) => {
-          const timeAgo = getTimeAgo(new Date(order.dispatchedAt));
+          const timeAgo = getTimeAgo(new Date(order.completedAt));
           return (
             <div
               key={order.orderId}
