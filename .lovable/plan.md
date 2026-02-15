@@ -1,51 +1,44 @@
 
-# Correcao: Deteccao e Reprocessamento de Pedidos Orfaos
+# Historico de Despachos Persistente (via Banco de Dados)
 
-## Diagnostico do Pedido 9940
+## Problema
+Atualmente o historico de despachos e armazenado apenas na memoria do React (`useState`). Ao recarregar a pagina ou trocar de aba, todo o historico desaparece. O funcionario nao consegue conferir se um pedido ja foi despachado.
 
-O pedido 9940 (external_id: 184449105, loja CACHOEIRINHA) foi criado na tabela `orders` com status `pending`, porem possui **zero registros** em `order_items`. O filtro de categorias nao e a causa — o nome "Carne de Sol e Cream Cheese" faz match com "Carne de Sol" na lista de categorias permitidas. A causa mais provavel e uma falha silenciosa na RPC `create_order_items_from_json` ou na guarda de idempotencia.
+## Solucao
+Substituir o estado local por uma consulta ao banco de dados, buscando pedidos que possuem `dispatched_at` preenchido (pedidos efetivamente despachados). O historico sera persistente e visivel em qualquer dispositivo.
 
-## Solucao Proposta
+## Detalhes Tecnicos
 
-### 1. Correcao imediata do pedido 9940
+### 1. Criar hook `useDispatchedOrders`
+Novo hook que busca pedidos despachados do dia atual com seus itens:
+- Query: orders com `dispatched_at IS NOT NULL` das ultimas 24h (ou do dia)
+- Join com `order_items` e `stores` para exibir itens e nome da loja
+- Ordenacao por `dispatched_at DESC` (mais recentes primeiro)
+- Realtime subscription para atualizar automaticamente quando novos despachos ocorrerem
 
-Chamar a RPC `create_order_items_from_json` manualmente com os dados do campo `items` (JSONB) ja armazenados no pedido. Isso recria os itens no KDS.
+### 2. Atualizar `OvenHistoryPanel`
+- Remover a prop `dispatchedOrders` (dados vindos de estado local)
+- Buscar dados internamente via o novo hook `useDispatchedOrders`
+- Manter o mesmo layout visual atual (cards verdes com badge DESPACHADO)
+- Exibir horario real do despacho (formatado) ao inves do "tempo atras" relativo
 
-Sera feito via uma query SQL direta:
+### 3. Atualizar `DispatchDashboard` e `KDSItemsDashboard`
+- Remover o `useState<DispatchedOrder[]>` e o callback `handleDispatch`
+- Simplificar a passagem de props para `OvenHistoryPanel` (sem props de dados)
+- Manter o callback `onDispatch` no `OvenTimerPanel` apenas para invalidar cache do React Query
 
-```sql
-SELECT create_order_items_from_json(
-  '5fbe496a-c0ef-4657-9a10-e28012b31750'::uuid,
-  (SELECT items FROM orders WHERE id = '5fbe496a-c0ef-4657-9a10-e28012b31750'),
-  NULL
-);
-```
-
-### 2. Prevencao: Verificacao de pedidos orfaos no poll-orders
-
-Adicionar ao final do ciclo de polling uma verificacao que detecta pedidos com status `pending` que tem zero `order_items` e tenta recriar os itens automaticamente.
-
-Logica no `poll-orders/index.ts`:
-
-```text
-1. SELECT orders com status = 'pending' e zero order_items (LEFT JOIN + COUNT)
-2. Para cada pedido orfao encontrado:
-   a. Se o campo items (JSONB) nao estiver vazio, chamar create_order_items_from_json
-   b. Logar o resultado
-```
-
-### 3. Adicionar log de seguranca no poll-orders e process-webhook-queue
-
-Apos a chamada da RPC `create_order_items_from_json`, verificar se o resultado e `0` e, nesse caso, logar um warning com os dados do pedido para facilitar debug futuro.
+### 4. Atualizar `OvenTimerPanel`
+- Simplificar `onDispatch` para apenas invalidar queries (sem construir objeto `DispatchedOrder`)
 
 ## Arquivos Modificados
+- **Novo**: `src/hooks/useDispatchedOrders.ts` — hook de busca de pedidos despachados
+- **Editado**: `src/components/kds/OvenHistoryPanel.tsx` — busca propria via hook
+- **Editado**: `src/components/DispatchDashboard.tsx` — remover estado local de historico
+- **Editado**: `src/components/kds/KDSItemsDashboard.tsx` — remover estado local de historico
+- **Editado**: `src/components/kds/OvenTimerPanel.tsx` — simplificar callback onDispatch
 
-- **SQL direto**: Recriar itens do pedido 9940 (correcao imediata)
-- **`supabase/functions/poll-orders/index.ts`**: Adicionar verificacao de pedidos orfaos ao final do ciclo
-- **`supabase/functions/process-webhook-queue/index.ts`**: Adicionar log de warning quando RPC retorna 0 itens criados
-
-## Impacto
-
-- Pedido 9940 aparecera no tablet imediatamente apos a correcao
-- Pedidos futuros que falharem na criacao de itens serao detectados e corrigidos automaticamente no proximo ciclo de polling (max 20 segundos)
-- Nenhuma alteracao no fluxo normal — apenas uma rede de seguranca adicional
+## Resultado
+- Historico persiste entre recarregamentos de pagina
+- Visivel em qualquer tablet/dispositivo conectado
+- Atualiza em tempo real quando um novo pedido e despachado
+- Funcionario pode conferir a qualquer momento se um pedido ja saiu
