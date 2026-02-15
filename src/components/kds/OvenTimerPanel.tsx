@@ -11,21 +11,11 @@ import { OrderItemWithOrder } from '@/types/orderItems';
 import { formatDispatchTicket } from '@/utils/printTicket';
 
 
-export interface DispatchedOrder {
-  orderId: string;
-  orderDisplayId: string;
-  storeName: string | null;
-  customerName: string;
-  items: OrderItemWithOrder[];
-  dispatchedAt: Date;
-}
-
 interface OvenTimerPanelProps {
   sectorId?: string;
-  onDispatch?: (order: DispatchedOrder) => void;
 }
 
-export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
+export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
   const { items, siblingItems, markItemReady } = useOrderItems({ status: ['in_oven', 'ready'], sectorId });
   const { settings } = useSettings();
   const { printRaw } = usePrintNode();
@@ -147,7 +137,6 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
   };
 
   const handleMasterReady = async (ovenItems: OrderItemWithOrder[]) => {
-    const orderId = ovenItems[0]?.order_id;
     const firstItem = ovenItems[0];
     
     // Print dispatch ticket (optional)
@@ -161,24 +150,9 @@ export function OvenTimerPanel({ sectorId, onDispatch }: OvenTimerPanelProps) {
     }
 
     // Invalidate cache — mark_item_ready already triggers check_order_completion
-    // which moves the order to waiting_buffer automatically
     queryClient.invalidateQueries({ queryKey: ['order-items'] });
     queryClient.invalidateQueries({ queryKey: ['orders'] });
-
-    // Visual callback for oven history panel
-    if (orderId) {
-      const group = orderGroups.find(g => g.orderId === orderId);
-      if (group && onDispatch) {
-        onDispatch({
-          orderId: group.orderId,
-          orderDisplayId: group.orderDisplayId,
-          storeName: group.storeName,
-          customerName: group.customerName,
-          items: [...group.ovenItems, ...group.siblingItems],
-          dispatchedAt: new Date(),
-        });
-      }
-    }
+    queryClient.invalidateQueries({ queryKey: ['dispatched-orders'] });
   };
 
   // Safety net: auto-dispatch orphan orders where all items are ready
