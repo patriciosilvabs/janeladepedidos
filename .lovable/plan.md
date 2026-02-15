@@ -1,46 +1,96 @@
 
 
-# Fix: Borda nao aparece em destaque
+# Migracao para Webhook Assincrono (Fire-and-Forget)
 
-## Problema
+## Resumo
 
-Os campos `kds_edge_keywords` e `kds_flavor_keywords` na tabela `app_settings` estao com valor vazio (`''`) em vez de NULL. Isso quebra a classificacao de bordas e sabores:
+Separar o webhook em duas fases: **ingestao rapida** (< 200ms) e **processamento em background**. O Cardapio Web recebe 200 OK quase instantaneamente, eliminando pausas por timeout.
 
-- **SQL (create_order_items_from_json):** `COALESCE('', '#, Borda')` retorna `''` (string vazia NAO e NULL). Os arrays de keywords ficam vazios e TUDO vai para `complements`.
-- **Edge function (explodeCombo.ts):** JavaScript trata corretamente (`'' || default`), mas so adiciona `_type` em opcoes com mapeamento no banco. Sem mapeamento, nao coloca `_type`.
-- **Resultado:** Sem `_type` + sem keywords = tudo vira complemento. Borda, sabores, tudo misturado.
-
-## Solucao (duas camadas de defesa)
-
-### 1. Corrigir SQL: tratar string vazia como NULL
-Na funcao `create_order_items_from_json`, trocar `COALESCE` por `COALESCE(NULLIF(..., ''), default)`:
+## Arquitetura
 
 ```text
-COALESCE(NULLIF(kds_edge_keywords, ''), '#, Borda')
-COALESCE(NULLIF(kds_flavor_keywords, ''), '(G), (M), (P), Sabor')
+CardapioWeb  -->  webhook-orders (validar + salvar JSON + 200 OK)
+                        |
+                        +---> fetch fire-and-forget (sem await)
+                                |
+                                v
+                        process-webhook-queue (logica pesada)
+                                |
+                                v
+                        orders + order_items (banco)
 ```
 
-Isso garante que strings vazias usem os defaults, igual ao JavaScript.
+## Passo 1: Criar tabela `webhook_queue`
 
-### 2. explodeCombo: sempre injetar _type (mesmo via keywords)
-Atualmente o `_type` so e adicionado quando ha mapeamento no banco. Quando a classificacao e feita por keywords, o `_type` nao e setado, e o SQL fica "cego".
+Migracao SQL para criar a tabela de fila:
 
-Adicionar `opt._type = 'edge'` / `opt._type = 'flavor'` / `opt._type = 'complement'` tambem no branch de keyword fallback do `explodeCombo.ts`.
+- `id` uuid (PK, default gen_random_uuid)
+- `store_id` uuid (referencia a loja identificada pelo token)
+- `payload` jsonb (JSON bruto do webhook)
+- `status` text (default 'pending' -- valores: pending, processing, completed, error)
+- `error_message` text (nullable, para debug)
+- `created_at` timestamptz (default now)
+- `processed_at` timestamptz (nullable)
+- RLS: allow all (service_role access only via edge functions)
+- Habilitar realtime NAO e necessario
 
-## Impacto
+## Passo 2: Refatorar `webhook-orders/index.ts`
 
-- Pedidos NOVOS serao classificados corretamente (borda com tarja laranja, sabores em destaque)
-- Pedidos ANTIGOS ja criados (como o 6861) precisariam ser reprocessados ou corrigidos manualmente no banco
-- Nenhuma mudanca visual no frontend (KDSItemCard ja exibe `edge_type` e `flavors` corretamente)
+Reduzir ao minimo:
 
-## Detalhes Tecnicos
+1. Validar metodo POST
+2. Extrair token do header (`x-api-key` / `x-webhook-token`)
+3. Buscar store pelo token (query rapida, ja existente)
+4. Parse do body JSON
+5. **INSERT** na `webhook_queue` com `store_id` e `payload`
+6. **Retornar 200 OK** imediatamente com `{"status": "received"}`
+7. **Fire-and-forget**: disparar fetch para `process-webhook-queue` sem `await`, passando o `queue_id`
 
-**Arquivos a modificar:**
-- `supabase/functions/_shared/explodeCombo.ts` -- adicionar `opt._type` no branch de keywords (linhas 131-145)
+Toda a logica de `handleOrderPlaced`, `handleOrderCancelledOrClosed`, `handleOrderStatusChange`, `fetchOrderFromApi`, `explodeComboItems` etc. sera REMOVIDA deste arquivo.
 
-**Migracao SQL:**
-- Recriar `create_order_items_from_json` com `NULLIF` nos keywords
+## Passo 3: Criar nova Edge Function `process-webhook-queue`
 
-**Correcao de dados (pedido 6861):**
-- UPDATE direto no `order_items` para separar edge_type e flavors do campo complements
+Nova funcao em `supabase/functions/process-webhook-queue/index.ts` que:
+
+1. Recebe o `queue_id` no body
+2. Busca o registro na `webhook_queue` (status = 'pending')
+3. Marca como `processing`
+4. Executa TODA a logica atual do webhook-orders:
+   - Normalizar evento
+   - Fetch da API externa (se necessario)
+   - Criar pedido + itens + explosao de combos
+   - Cancelar/fechar pedidos
+5. Marca como `completed` (ou `error` com mensagem)
+
+Adicionar `verify_jwt = false` no `config.toml`.
+
+## Passo 4: Configuracao
+
+Adicionar no `supabase/config.toml`:
+```
+[functions.process-webhook-queue]
+verify_jwt = false
+```
+
+## Vantagens
+
+- **Resposta < 200ms**: INSERT de 1 linha JSONB e extremamente rapido
+- **Sem perda de dados**: mesmo se o processamento falhar, o payload esta salvo na fila
+- **Observabilidade**: tabela `webhook_queue` serve como log historico de todos os webhooks recebidos
+- **Retry facil**: itens com status `error` podem ser reprocessados manualmente ou por cron
+- **Escalabilidade**: multiplos webhooks simultaneos nao causam gargalo
+
+## Arquivos Modificados
+
+- `supabase/functions/webhook-orders/index.ts` -- simplificado drasticamente
+- `supabase/functions/process-webhook-queue/index.ts` -- NOVO, contem toda a logica de processamento
+- `supabase/config.toml` -- adicionar entrada para nova funcao
+- Migracao SQL -- criar tabela `webhook_queue`
+
+## Consideracoes
+
+- O `process-webhook-queue` usa autenticacao interna (service_role_key) e nao precisa de token externo
+- A chamada fire-and-forget garante que o webhook-orders nao espera o processamento
+- Se o fetch fire-and-forget falhar silenciosamente, os itens pendentes na fila podem ser reprocessados via um cron ou botao manual
+- Pedidos existentes e fluxo do poll-orders NAO sao afetados
 
