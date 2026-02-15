@@ -1,96 +1,51 @@
 
+# Correcao: Deteccao e Reprocessamento de Pedidos Orfaos
 
-# Migracao para Webhook Assincrono (Fire-and-Forget)
+## Diagnostico do Pedido 9940
 
-## Resumo
+O pedido 9940 (external_id: 184449105, loja CACHOEIRINHA) foi criado na tabela `orders` com status `pending`, porem possui **zero registros** em `order_items`. O filtro de categorias nao e a causa — o nome "Carne de Sol e Cream Cheese" faz match com "Carne de Sol" na lista de categorias permitidas. A causa mais provavel e uma falha silenciosa na RPC `create_order_items_from_json` ou na guarda de idempotencia.
 
-Separar o webhook em duas fases: **ingestao rapida** (< 200ms) e **processamento em background**. O Cardapio Web recebe 200 OK quase instantaneamente, eliminando pausas por timeout.
+## Solucao Proposta
 
-## Arquitetura
+### 1. Correcao imediata do pedido 9940
+
+Chamar a RPC `create_order_items_from_json` manualmente com os dados do campo `items` (JSONB) ja armazenados no pedido. Isso recria os itens no KDS.
+
+Sera feito via uma query SQL direta:
+
+```sql
+SELECT create_order_items_from_json(
+  '5fbe496a-c0ef-4657-9a10-e28012b31750'::uuid,
+  (SELECT items FROM orders WHERE id = '5fbe496a-c0ef-4657-9a10-e28012b31750'),
+  NULL
+);
+```
+
+### 2. Prevencao: Verificacao de pedidos orfaos no poll-orders
+
+Adicionar ao final do ciclo de polling uma verificacao que detecta pedidos com status `pending` que tem zero `order_items` e tenta recriar os itens automaticamente.
+
+Logica no `poll-orders/index.ts`:
 
 ```text
-CardapioWeb  -->  webhook-orders (validar + salvar JSON + 200 OK)
-                        |
-                        +---> fetch fire-and-forget (sem await)
-                                |
-                                v
-                        process-webhook-queue (logica pesada)
-                                |
-                                v
-                        orders + order_items (banco)
+1. SELECT orders com status = 'pending' e zero order_items (LEFT JOIN + COUNT)
+2. Para cada pedido orfao encontrado:
+   a. Se o campo items (JSONB) nao estiver vazio, chamar create_order_items_from_json
+   b. Logar o resultado
 ```
 
-## Passo 1: Criar tabela `webhook_queue`
+### 3. Adicionar log de seguranca no poll-orders e process-webhook-queue
 
-Migracao SQL para criar a tabela de fila:
-
-- `id` uuid (PK, default gen_random_uuid)
-- `store_id` uuid (referencia a loja identificada pelo token)
-- `payload` jsonb (JSON bruto do webhook)
-- `status` text (default 'pending' -- valores: pending, processing, completed, error)
-- `error_message` text (nullable, para debug)
-- `created_at` timestamptz (default now)
-- `processed_at` timestamptz (nullable)
-- RLS: allow all (service_role access only via edge functions)
-- Habilitar realtime NAO e necessario
-
-## Passo 2: Refatorar `webhook-orders/index.ts`
-
-Reduzir ao minimo:
-
-1. Validar metodo POST
-2. Extrair token do header (`x-api-key` / `x-webhook-token`)
-3. Buscar store pelo token (query rapida, ja existente)
-4. Parse do body JSON
-5. **INSERT** na `webhook_queue` com `store_id` e `payload`
-6. **Retornar 200 OK** imediatamente com `{"status": "received"}`
-7. **Fire-and-forget**: disparar fetch para `process-webhook-queue` sem `await`, passando o `queue_id`
-
-Toda a logica de `handleOrderPlaced`, `handleOrderCancelledOrClosed`, `handleOrderStatusChange`, `fetchOrderFromApi`, `explodeComboItems` etc. sera REMOVIDA deste arquivo.
-
-## Passo 3: Criar nova Edge Function `process-webhook-queue`
-
-Nova funcao em `supabase/functions/process-webhook-queue/index.ts` que:
-
-1. Recebe o `queue_id` no body
-2. Busca o registro na `webhook_queue` (status = 'pending')
-3. Marca como `processing`
-4. Executa TODA a logica atual do webhook-orders:
-   - Normalizar evento
-   - Fetch da API externa (se necessario)
-   - Criar pedido + itens + explosao de combos
-   - Cancelar/fechar pedidos
-5. Marca como `completed` (ou `error` com mensagem)
-
-Adicionar `verify_jwt = false` no `config.toml`.
-
-## Passo 4: Configuracao
-
-Adicionar no `supabase/config.toml`:
-```
-[functions.process-webhook-queue]
-verify_jwt = false
-```
-
-## Vantagens
-
-- **Resposta < 200ms**: INSERT de 1 linha JSONB e extremamente rapido
-- **Sem perda de dados**: mesmo se o processamento falhar, o payload esta salvo na fila
-- **Observabilidade**: tabela `webhook_queue` serve como log historico de todos os webhooks recebidos
-- **Retry facil**: itens com status `error` podem ser reprocessados manualmente ou por cron
-- **Escalabilidade**: multiplos webhooks simultaneos nao causam gargalo
+Apos a chamada da RPC `create_order_items_from_json`, verificar se o resultado e `0` e, nesse caso, logar um warning com os dados do pedido para facilitar debug futuro.
 
 ## Arquivos Modificados
 
-- `supabase/functions/webhook-orders/index.ts` -- simplificado drasticamente
-- `supabase/functions/process-webhook-queue/index.ts` -- NOVO, contem toda a logica de processamento
-- `supabase/config.toml` -- adicionar entrada para nova funcao
-- Migracao SQL -- criar tabela `webhook_queue`
+- **SQL direto**: Recriar itens do pedido 9940 (correcao imediata)
+- **`supabase/functions/poll-orders/index.ts`**: Adicionar verificacao de pedidos orfaos ao final do ciclo
+- **`supabase/functions/process-webhook-queue/index.ts`**: Adicionar log de warning quando RPC retorna 0 itens criados
 
-## Consideracoes
+## Impacto
 
-- O `process-webhook-queue` usa autenticacao interna (service_role_key) e nao precisa de token externo
-- A chamada fire-and-forget garante que o webhook-orders nao espera o processamento
-- Se o fetch fire-and-forget falhar silenciosamente, os itens pendentes na fila podem ser reprocessados via um cron ou botao manual
-- Pedidos existentes e fluxo do poll-orders NAO sao afetados
-
+- Pedido 9940 aparecera no tablet imediatamente apos a correcao
+- Pedidos futuros que falharem na criacao de itens serao detectados e corrigidos automaticamente no proximo ciclo de polling (max 20 segundos)
+- Nenhuma alteracao no fluxo normal — apenas uma rede de seguranca adicional
