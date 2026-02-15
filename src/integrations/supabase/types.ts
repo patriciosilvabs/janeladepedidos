@@ -674,6 +674,44 @@ export type Database = {
           },
         ]
       }
+      webhook_queue: {
+        Row: {
+          created_at: string
+          error_message: string | null
+          id: string
+          payload: Json
+          processed_at: string | null
+          status: string
+          store_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          payload: Json
+          processed_at?: string | null
+          status?: string
+          store_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string | null
+          id?: string
+          payload?: Json
+          processed_at?: string | null
+          status?: string
+          store_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "webhook_queue_store_id_fkey"
+            columns: ["store_id"]
+            isOneToOne: false
+            referencedRelation: "stores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
