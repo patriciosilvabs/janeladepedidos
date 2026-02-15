@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useSettings } from '@/hooks/useSettings';
 import { usePrintNode } from '@/hooks/usePrintNode';
+import { supabase } from '@/integrations/supabase/client';
 import { cn } from '@/lib/utils';
 import { CancellationAlert } from './CancellationAlert';
 import { OrderOvenBlock } from './OrderOvenBlock';
@@ -138,6 +139,17 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
 
   const handleMasterReady = async (ovenItems: OrderItemWithOrder[]) => {
     const firstItem = ovenItems[0];
+    const orderId = firstItem.order_id;
+    const orderType = firstItem.orders?.order_type;
+
+    // For non-delivery orders, mark as dispatched directly
+    if (orderType && orderType !== 'delivery') {
+      try {
+        await supabase.rpc('set_order_dispatched', { p_order_id: orderId });
+      } catch (err) {
+        console.error('Erro ao marcar pedido como despachado:', err);
+      }
+    }
     
     // Print dispatch ticket (optional)
     if (printEnabled && dispatchPrintEnabled && printerId && ovenItems.length > 0) {
@@ -149,7 +161,7 @@ export function OvenTimerPanel({ sectorId }: OvenTimerPanelProps) {
       }
     }
 
-    // Invalidate cache — mark_item_ready already triggers check_order_completion
+    // Invalidate cache
     queryClient.invalidateQueries({ queryKey: ['order-items'] });
     queryClient.invalidateQueries({ queryKey: ['orders'] });
     queryClient.invalidateQueries({ queryKey: ['dispatched-orders'] });
