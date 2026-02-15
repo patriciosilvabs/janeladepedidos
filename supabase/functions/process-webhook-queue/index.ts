@@ -257,6 +257,9 @@ async function handleOrderPlaced(
       } else {
         itemsCreated = itemCount as number;
         console.log(`Created ${itemsCreated} items for order ${insertedOrder.id}`);
+        if (itemsCreated === 0 && order.items && order.items.length > 0) {
+          console.warn(`[process] WARNING: RPC returned 0 items for order ${insertedOrder.id} (external_id=${externalId}) but payload had ${order.items.length} raw items. Possible idempotency guard or explosion issue.`);
+        }
       }
     }
   }
