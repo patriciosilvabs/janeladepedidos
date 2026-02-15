@@ -1,44 +1,41 @@
 
-# Historico de Despachos Persistente (via Banco de Dados)
 
-## Problema
-Atualmente o historico de despachos e armazenado apenas na memoria do React (`useState`). Ao recarregar a pagina ou trocar de aba, todo o historico desaparece. O funcionario nao consegue conferir se um pedido ja foi despachado.
+# Correcao: Despacho do Forno nao marca pedidos como "dispatched"
+
+## Problema Encontrado
+
+O botao "PRONTO" no tablet do forno marca os itens como `ready` e aciona a funcao `check_order_completion` no banco de dados. Essa funcao muda o status do pedido para `waiting_buffer` (delivery) ou `ready` (retirada/mesa), mas **nunca para `dispatched`**.
+
+A funcao `handleMasterReady` no `OvenTimerPanel` apenas invalida caches do React Query -- ela nao chama a RPC `set_order_dispatched` que existe no banco. Por isso, `dispatched_at` nunca e preenchido e o historico (que busca pedidos com `dispatched_at IS NOT NULL`) fica sempre vazio.
 
 ## Solucao
-Substituir o estado local por uma consulta ao banco de dados, buscando pedidos que possuem `dispatched_at` preenchido (pedidos efetivamente despachados). O historico sera persistente e visivel em qualquer dispositivo.
+
+Adicionar a chamada da RPC `set_order_dispatched` dentro de `handleMasterReady` no `OvenTimerPanel`. Quando todos os itens do forno estiverem prontos e nao houver itens pendentes de outros setores, o pedido sera marcado como `dispatched` no banco de dados.
 
 ## Detalhes Tecnicos
 
-### 1. Criar hook `useDispatchedOrders`
-Novo hook que busca pedidos despachados do dia atual com seus itens:
-- Query: orders com `dispatched_at IS NOT NULL` das ultimas 24h (ou do dia)
-- Join com `order_items` e `stores` para exibir itens e nome da loja
-- Ordenacao por `dispatched_at DESC` (mais recentes primeiro)
-- Realtime subscription para atualizar automaticamente quando novos despachos ocorrerem
+### Arquivo: `src/components/kds/OvenTimerPanel.tsx`
 
-### 2. Atualizar `OvenHistoryPanel`
-- Remover a prop `dispatchedOrders` (dados vindos de estado local)
-- Buscar dados internamente via o novo hook `useDispatchedOrders`
-- Manter o mesmo layout visual atual (cards verdes com badge DESPACHADO)
-- Exibir horario real do despacho (formatado) ao inves do "tempo atras" relativo
+Na funcao `handleMasterReady`, antes de invalidar os caches, adicionar:
 
-### 3. Atualizar `DispatchDashboard` e `KDSItemsDashboard`
-- Remover o `useState<DispatchedOrder[]>` e o callback `handleDispatch`
-- Simplificar a passagem de props para `OvenHistoryPanel` (sem props de dados)
-- Manter o callback `onDispatch` no `OvenTimerPanel` apenas para invalidar cache do React Query
+```text
+1. Extrair o order_id do primeiro item do grupo
+2. Chamar supabase.rpc('set_order_dispatched', { p_order_id: orderId })
+3. Manter a logica de impressao e invalidacao de cache existente
+```
 
-### 4. Atualizar `OvenTimerPanel`
-- Simplificar `onDispatch` para apenas invalidar queries (sem construir objeto `DispatchedOrder`)
+A RPC `set_order_dispatched` ja existe no banco e faz:
+```sql
+UPDATE orders SET status = 'dispatched', dispatched_at = NOW() WHERE id = p_order_id;
+```
 
-## Arquivos Modificados
-- **Novo**: `src/hooks/useDispatchedOrders.ts` — hook de busca de pedidos despachados
-- **Editado**: `src/components/kds/OvenHistoryPanel.tsx` — busca propria via hook
-- **Editado**: `src/components/DispatchDashboard.tsx` — remover estado local de historico
-- **Editado**: `src/components/kds/KDSItemsDashboard.tsx` — remover estado local de historico
-- **Editado**: `src/components/kds/OvenTimerPanel.tsx` — simplificar callback onDispatch
+### Observacao sobre pedidos delivery
 
-## Resultado
-- Historico persiste entre recarregamentos de pagina
-- Visivel em qualquer tablet/dispositivo conectado
-- Atualiza em tempo real quando um novo pedido e despachado
-- Funcionario pode conferir a qualquer momento se um pedido ja saiu
+Pedidos do tipo `delivery` normalmente passam pelo buffer antes do despacho (gerenciado pelo Dashboard administrativo). No fluxo do forno/tablet, o despacho direto faz sentido para pedidos de retirada/mesa/balcao. Para delivery, o `check_order_completion` ja envia para `waiting_buffer`. Portanto, a chamada do `set_order_dispatched` no forno deve respeitar essa logica: so despachar automaticamente se o pedido NAO for delivery (ou se todos os itens ja estiverem prontos e nao houver buffer ativo).
+
+A implementacao verificara o `order_type` antes de chamar o RPC: se for `delivery`, nao chama `set_order_dispatched` (o buffer cuida disso); caso contrario, despacha diretamente.
+
+## Arquivo Modificado
+
+- **`src/components/kds/OvenTimerPanel.tsx`** -- adicionar chamada `supabase.rpc('set_order_dispatched')` em `handleMasterReady` para pedidos nao-delivery
+
