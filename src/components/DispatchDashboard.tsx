@@ -1,10 +1,10 @@
-import { useState, useCallback } from 'react';
 import { useOrderItems } from '@/hooks/useOrderItems';
-import { OvenTimerPanel, DispatchedOrder } from '@/components/kds/OvenTimerPanel';
+import { OvenTimerPanel } from '@/components/kds/OvenTimerPanel';
 import { OvenHistoryPanel } from '@/components/kds/OvenHistoryPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Flame, History } from 'lucide-react';
+import { useDispatchedOrders } from '@/hooks/useDispatchedOrders';
 
 export function DispatchDashboard() {
   const { items } = useOrderItems({ status: ['in_oven', 'ready'] });
@@ -13,11 +13,7 @@ export function DispatchDashboard() {
     if (orderStatus === 'cancelled' || orderStatus === 'closed' || orderStatus === 'dispatched') return false;
     return i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at);
   });
-  const [dispatchedOrders, setDispatchedOrders] = useState<DispatchedOrder[]>([]);
-
-  const handleDispatch = useCallback((order: DispatchedOrder) => {
-    setDispatchedOrders(prev => [order, ...prev]);
-  }, []);
+  const { data: dispatchedOrders = [] } = useDispatchedOrders();
 
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)] p-4 md:p-6">
@@ -58,14 +54,14 @@ export function DispatchDashboard() {
             </div>
           ) : (
             <div className="max-w-2xl mx-auto">
-              <OvenTimerPanel onDispatch={handleDispatch} />
+              <OvenTimerPanel />
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="historico" className="flex-1 overflow-auto mt-0">
           <div className="max-w-2xl mx-auto">
-            <OvenHistoryPanel dispatchedOrders={dispatchedOrders} />
+            <OvenHistoryPanel />
           </div>
         </TabsContent>
       </Tabs>

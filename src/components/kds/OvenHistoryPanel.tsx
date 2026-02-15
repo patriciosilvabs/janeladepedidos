@@ -1,22 +1,19 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Check, Clock, Package } from 'lucide-react';
-import { OrderItemWithOrder } from '@/types/orderItems';
+import { Check, Clock, Package, Loader2 } from 'lucide-react';
+import { useDispatchedOrders } from '@/hooks/useDispatchedOrders';
 
-interface DispatchedOrder {
-  orderId: string;
-  orderDisplayId: string;
-  storeName: string | null;
-  customerName: string;
-  items: OrderItemWithOrder[];
-  dispatchedAt: Date;
-}
+export function OvenHistoryPanel() {
+  const { data: dispatchedOrders = [], isLoading } = useDispatchedOrders();
 
-interface OvenHistoryPanelProps {
-  dispatchedOrders: DispatchedOrder[];
-}
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
-export function OvenHistoryPanel({ dispatchedOrders }: OvenHistoryPanelProps) {
   if (dispatchedOrders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-center py-16">
@@ -42,7 +39,7 @@ export function OvenHistoryPanel({ dispatchedOrders }: OvenHistoryPanelProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {dispatchedOrders.map((order) => {
-          const timeAgo = getTimeAgo(order.dispatchedAt);
+          const timeAgo = getTimeAgo(new Date(order.dispatchedAt));
           return (
             <div
               key={order.orderId}

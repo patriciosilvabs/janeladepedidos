@@ -1,11 +1,12 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useSectors, Sector } from '@/hooks/useSectors';
 import { SectorQueuePanel } from './SectorQueuePanel';
-import { OvenTimerPanel, DispatchedOrder } from './OvenTimerPanel';
+import { OvenTimerPanel } from './OvenTimerPanel';
 import { OvenHistoryPanel } from './OvenHistoryPanel';
 import { KDSErrorBoundary } from './KDSErrorBoundary';
 import { useOrderItems } from '@/hooks/useOrderItems';
 import { useAuth } from '@/hooks/useAuth';
+import { useDispatchedOrders } from '@/hooks/useDispatchedOrders';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Loader2, CheckCircle2, Flame, History } from 'lucide-react';
@@ -24,12 +25,8 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
     const orderStatus = i.orders?.status;
     return orderStatus !== 'cancelled' && orderStatus !== 'closed' && orderStatus !== 'dispatched';
   }), [rawInOvenItems]);
-  const [dispatchedOrders, setDispatchedOrders] = useState<DispatchedOrder[]>([]);
+  const { data: dispatchedOrders = [] } = useDispatchedOrders();
   const [ovenSubTab, setOvenSubTab] = useState<'forno' | 'historico'>('forno');
-
-  const handleDispatch = useCallback((order: DispatchedOrder) => {
-    setDispatchedOrders(prev => [order, ...prev]);
-  }, []);
 
   const kdsSectors = useMemo(
     () => sectors?.filter((s) => s.view_type === 'kds') ?? [],
@@ -94,9 +91,9 @@ export function KDSItemsDashboard({ userSector }: KDSItemsDashboardProps) {
         </div>
 
         {ovenSubTab === 'forno' ? (
-          <OvenTimerPanel onDispatch={handleDispatch} />
+          <OvenTimerPanel />
         ) : (
-          <OvenHistoryPanel dispatchedOrders={dispatchedOrders} />
+          <OvenHistoryPanel />
         )}
       </div>
     </TabsContent>
