@@ -367,8 +367,7 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
           sectors!order_items_assigned_sector_id_fkey(id, name)
         `)
         .in('order_id', ovenOrderIds)
-        .neq('status', 'in_oven')
-        .neq('status', 'cancelled');
+        .not('status', 'in', '(in_oven,cancelled)');
       if (error) throw error;
       return data as unknown as OrderItemWithOrder[];
     },
