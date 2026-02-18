@@ -1,26 +1,34 @@
 
-# Correcao: Pedidos nao aparecem no tablet do forno/despacho
 
-## Problema
-A query de itens do forno busca TODOS os itens com status `in_oven` e `ready` sem filtro de data. Com o acumulo de centenas de itens antigos que nunca foram limpos, a lista de `ovenOrderIds` (IDs de pedidos para buscar itens "irmaos") gera uma URL tao longa que o banco de dados rejeita com erro **400 Bad Request**. Isso quebra a query de itens irmaos e o painel do forno fica vazio.
+# Limpeza automatica do historico do forno as 23:59
 
-Os demais tablets (producao) funcionam porque filtram por `sectorId` e status `pending`/`in_prep`, que retornam poucos resultados.
+## O que sera feito
 
-## Solucao
-Adicionar um filtro temporal na query principal do `useOrderItems` quando o status inclui `in_oven`/`ready` (usado pelo forno). Itens com mais de 48 horas serao ignorados, mantendo a lista de `ovenOrderIds` pequena e evitando o estouro de URL.
+Criar um agendamento (cron job) no banco de dados que roda toda noite as 23:59 e limpa o campo `oven_entry_at` dos itens com status `ready`. Isso faz com que a aba "Historico" do tablet do forno apareca vazia quando o operador chegar no dia seguinte, sem afetar o status dos pedidos nem o fluxo de despacho.
+
+## Por que funciona
+
+A aba "Historico" busca itens onde `oven_entry_at IS NOT NULL` e `status = 'ready'`. Ao zerar o `oven_entry_at` desses itens, eles simplesmente deixam de aparecer na consulta. Nenhum pedido e deletado, nenhum status e alterado.
 
 ## Detalhes Tecnicos
 
-### Arquivo: `src/hooks/useOrderItems.ts`
+### 1. Habilitar extensoes necessarias (migracao SQL)
 
-1. Na query principal (`queryFn`), quando o filtro de status inclui `in_oven` ou `ready`, adicionar um filtro `.gte('created_at', ...)` limitando aos ultimos 2 dias (48h). Isso reduz drasticamente o numero de resultados sem afetar a operacao normal (itens no forno ficam la por minutos, nao dias).
+Habilitar `pg_cron` e `pg_net` para permitir agendamento de tarefas no banco.
 
-2. Limitar o array `ovenOrderIds` a no maximo 50 pedidos (seguranca extra contra URLs longas). Se por algum motivo ainda houver muitos, a query de siblings continuara funcionando.
+### 2. Criar o cron job (via insert SQL)
 
-3. Na query de siblings, adicionar o mesmo filtro temporal como seguranca adicional.
+```text
+Agendamento: '59 23 * * *' (todos os dias as 23:59 UTC)
+Acao: UPDATE order_items SET oven_entry_at = NULL WHERE status = 'ready' AND oven_entry_at IS NOT NULL
+```
 
-### Resultado
-- A URL da query de siblings volta a ter tamanho aceitavel
-- Pedidos ativos aparecem normalmente no tablet do forno
-- Itens antigos/orfaos sao ignorados sem precisar limpa-los do banco
-- Nenhum impacto nos demais tablets
+Esse comando limpa apenas os itens que ja estao prontos e passaram pelo forno. Itens que ainda estao `in_oven` (em preparo ativo) nao sao afetados.
+
+### Observacao sobre fuso horario
+
+O cron roda em UTC. Se o horario local desejado e 23:59 no Brasil (UTC-3), o cron sera configurado para `59 2 * * *` (02:59 UTC do dia seguinte). Isso sera ajustado na implementacao.
+
+### Arquivos modificados
+- Nenhum arquivo de codigo -- apenas configuracao no banco de dados (1 migracao + 1 insert SQL)
+
