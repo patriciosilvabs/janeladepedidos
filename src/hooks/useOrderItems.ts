@@ -58,6 +58,15 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
         }
       }
 
+      // Filter old items when querying oven/ready statuses to avoid URL overflow
+      const ovenStatuses = ['in_oven', 'ready'];
+      const statusArr = Array.isArray(status) ? status : status ? [status] : [];
+      const isOvenQuery = statusArr.some(s => ovenStatuses.includes(s));
+      if (isOvenQuery) {
+        const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
+        query = query.gte('created_at', cutoff);
+      }
+
       const { data, error } = await query;
       if (error) throw error;
       return data as unknown as OrderItemWithOrder[];
@@ -339,7 +348,8 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
     items
       .filter(i => i.status === 'in_oven' || (i.status === 'ready' && i.oven_entry_at))
       .map(i => i.order_id)
-      .filter((v, i, a) => a.indexOf(v) === i),
+      .filter((v, i, a) => a.indexOf(v) === i)
+      .slice(0, 50),
     [items]
   );
 
@@ -367,7 +377,8 @@ export function useOrderItems(options: UseOrderItemsOptions = {}) {
           sectors!order_items_assigned_sector_id_fkey(id, name)
         `)
         .in('order_id', ovenOrderIds)
-        .not('status', 'in', '(in_oven,cancelled)');
+        .not('status', 'in', '(in_oven,cancelled)')
+        .gte('created_at', new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString());
       if (error) throw error;
       return data as unknown as OrderItemWithOrder[];
     },
