@@ -7,6 +7,7 @@ interface OrderColumnProps {
   icon: ReactNode;
   children: ReactNode;
   variant?: 'pending' | 'buffer' | 'ready' | 'dispatched';
+  headerAction?: ReactNode;
 }
 
 export function OrderColumn({
@@ -15,6 +16,7 @@ export function OrderColumn({
   icon,
   children,
   variant = 'pending',
+  headerAction,
 }: OrderColumnProps) {
   const variantStyles = {
     pending: 'border-yellow-500/30 bg-yellow-500/5',
@@ -47,9 +49,12 @@ export function OrderColumn({
           {icon}
           <h2 className="font-semibold">{title}</h2>
         </div>
-        <span className="rounded-full bg-background/20 px-3 py-1 text-sm font-medium">
-          {count}
-        </span>
+        <div className="flex items-center gap-2">
+          {headerAction}
+          <span className="rounded-full bg-background/20 px-3 py-1 text-sm font-medium">
+            {count}
+          </span>
+        </div>
       </div>
       <div className="flex-1 space-y-3 overflow-y-auto p-4">{children}</div>
     </div>
