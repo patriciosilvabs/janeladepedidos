@@ -7,7 +7,7 @@ import { useDynamicBufferSettings } from '@/hooks/useDynamicBufferSettings';
 import { OrderColumn } from './OrderColumn';
 import { OrderCard } from './OrderCard';
 import { BufferPanel } from './BufferPanel';
-import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { ChefHat, Clock, PackageCheck, Truck, Loader2, AlertCircle, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -40,6 +40,8 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
   const [collectingOrderId, setCollectingOrderId] = useState<string | null>(null);
   const [forceClosingOrderId, setForceClosingOrderId] = useState<string | null>(null);
   const [orderToForceClose, setOrderToForceClose] = useState<{ id: string; orderId: string } | null>(null);
+  const [cleaningReady, setCleaningReady] = useState(false);
+  const [confirmCleanReady, setConfirmCleanReady] = useState(false);
 
   // Track which orders we've already notified to avoid duplicate calls
   const notifiedOrdersRef = useRef<Set<string>>(new Set());
@@ -274,6 +276,31 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
     }
   };
 
+
+  const handleCleanupReadyOrders = async () => {
+    setCleaningReady(true);
+    setConfirmCleanReady(false);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status: 'closed' })
+        .eq('status', 'ready');
+      if (error) throw error;
+      toast({
+        title: 'Pedidos prontos limpos!',
+        description: `${readyOrders.length} pedido(s) foram fechados.`,
+      });
+    } catch (err) {
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível limpar os pedidos prontos.',
+        variant: 'destructive',
+      });
+    } finally {
+      setCleaningReady(false);
+    }
+  };
+
   const handleForceClose = async (orderId: string) => {
     setForceClosingOrderId(orderId);
     try {
@@ -438,6 +465,20 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
           count={readyOrders.length}
           icon={<PackageCheck className="h-5 w-5" />}
           variant="ready"
+          headerAction={
+            readyOrders.length > 0 ? (
+              <Button
+                onClick={() => setConfirmCleanReady(true)}
+                disabled={cleaningReady}
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs text-muted-foreground hover:text-destructive"
+              >
+                <XCircle className={cn("h-3 w-3 mr-1", cleaningReady && "animate-spin")} />
+                Limpar
+              </Button>
+            ) : undefined
+          }
         >
           {readyOrders.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
@@ -519,6 +560,30 @@ export function Dashboard({ isPolling = false, lastSync = null, pollingEnabled =
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Sim, forçar fechamento
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmation Dialog for Cleanup Ready Orders */}
+      <AlertDialog 
+        open={confirmCleanReady} 
+        onOpenChange={(open) => !open && setConfirmCleanReady(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Limpar pedidos prontos</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja fechar todos os {readyOrders.length} pedidos prontos? Eles serão marcados como encerrados e removidos da coluna.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleCleanupReadyOrders}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Sim, limpar todos
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
