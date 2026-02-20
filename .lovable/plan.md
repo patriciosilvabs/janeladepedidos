@@ -1,34 +1,30 @@
 
 
-# Limpeza automatica do historico do forno as 23:59
+# Limpeza automatica da coluna "Pedido Pronto" as 23:59
 
-## O que sera feito
+## Problema
 
-Criar um agendamento (cron job) no banco de dados que roda toda noite as 23:59 e limpa o campo `oven_entry_at` dos itens com status `ready`. Isso faz com que a aba "Historico" do tablet do forno apareca vazia quando o operador chegar no dia seguinte, sem afetar o status dos pedidos nem o fluxo de despacho.
+A coluna "Pedido Pronto" acumula pedidos com status `ready` indefinidamente. Na imagem, ha 759 pedidos parados, alguns com mais de 198 horas. Isso polui a interface e degrada a performance.
 
-## Por que funciona
+## Solucao
 
-A aba "Historico" busca itens onde `oven_entry_at IS NOT NULL` e `status = 'ready'`. Ao zerar o `oven_entry_at` desses itens, eles simplesmente deixam de aparecer na consulta. Nenhum pedido e deletado, nenhum status e alterado.
+Criar um segundo cron job no banco de dados que roda toda noite as 23:59 (horario de Brasilia) e fecha esses pedidos automaticamente.
 
 ## Detalhes Tecnicos
 
-### 1. Habilitar extensoes necessarias (migracao SQL)
-
-Habilitar `pg_cron` e `pg_net` para permitir agendamento de tarefas no banco.
-
-### 2. Criar o cron job (via insert SQL)
+### Cron Job (via SQL insert, sem migracao)
 
 ```text
-Agendamento: '59 23 * * *' (todos os dias as 23:59 UTC)
-Acao: UPDATE order_items SET oven_entry_at = NULL WHERE status = 'ready' AND oven_entry_at IS NOT NULL
+Nome: cleanup-ready-orders
+Agendamento: 59 2 * * * (02:59 UTC = 23:59 BRT)
+Acao: UPDATE public.orders SET status = 'closed' WHERE status = 'ready'
 ```
 
-Esse comando limpa apenas os itens que ja estao prontos e passaram pelo forno. Itens que ainda estao `in_oven` (em preparo ativo) nao sao afetados.
+O status `closed` e usado em vez de deletar os pedidos para manter a logica de "soft delete" que evita loops de re-importacao com o CardapioWeb. Pedidos fechados nao aparecem em nenhuma coluna do dashboard.
 
-### Observacao sobre fuso horario
+### Por que `closed` e nao `DELETE`
 
-O cron roda em UTC. Se o horario local desejado e 23:59 no Brasil (UTC-3), o cron sera configurado para `59 2 * * *` (02:59 UTC do dia seguinte). Isso sera ajustado na implementacao.
+A constraint `orders_status_check` permite os valores: `pending`, `waiting_buffer`, `ready`, `dispatched`, `closed`, `cancelled`. O status `closed` indica que o pedido foi encerrado e nao deve ser re-importado. Se os pedidos fossem deletados, o sistema de integracao poderia re-importa-los como novos.
 
 ### Arquivos modificados
-- Nenhum arquivo de codigo -- apenas configuracao no banco de dados (1 migracao + 1 insert SQL)
-
+- Nenhum arquivo de codigo -- apenas 1 insert SQL no banco para criar o cron job
